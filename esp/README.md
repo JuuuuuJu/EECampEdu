@@ -16,6 +16,10 @@ flash_tflite_model.py   flashes a `.tflite` file into the model partition
 flash_photo.py          converts an image and flashes it into the photos partition
 ```
 
+Dependencies are managed by ESP-IDF through `main/idf_component.yml`; this
+firmware uses `esp32-camera` for OV2640 capture and `esp-tflite-micro` for
+inference.
+
 ## Current State
 
 The default firmware mode is `TEST_MODE_UART_FRAME`, configured in
@@ -30,10 +34,10 @@ The default firmware mode is `TEST_MODE_UART_FRAME`, configured in
 
 This keeps the deploy path testable without OV2640 hardware.
 
-`CAMERA_FLASH_MODE` is scaffolded with `camera_capture` and `photo_storage`
-modules. The camera module is currently a stub; replace
-`src/camera_capture_stub.cpp` with the OV2640 ESP-IDF implementation when camera
-hardware is available.
+`CAMERA_FLASH_MODE` uses `camera_capture_ov2640.cpp` and `photo_storage`.
+The OV2640 module is ported from the provided Arduino `.ino` reference into an
+ESP-IDF style `camera_capture` implementation. `camera_capture_stub.cpp` remains
+only as a fallback/reference file and is not compiled by the current CMake file.
 
 ## Photo Flash Test Mode
 

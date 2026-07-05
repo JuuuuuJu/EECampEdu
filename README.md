@@ -29,6 +29,9 @@ inference, USB communication, and final motion output.
   if higher-resolution camera storage is needed.
 - Default firmware mode is `TEST_MODE_UART_FRAME`, so deployment can be tested
   without an OV2640 camera.
+- OV2640 integration is available in `esp/main/src/camera_capture_ov2640.cpp`;
+  the current real-camera path captures grayscale QQVGA and resizes it before
+  inference.
 
 ## Repository Layout
 
@@ -81,6 +84,10 @@ idf.py build
 
 The firmware expects a 16 MB ESP32-S3 board. PSRAM is enabled in
 `esp/sdkconfig`, `esp/sdkconfig.defaults`, and `esp/sdkconfig.defaults.esp32s3`.
+
+No `git clone --recursive` is required. ESP-IDF downloads managed components
+from `esp/main/idf_component.yml`, currently `esp32-camera` and
+`esp-tflite-micro`.
 
 ## Runtime Modes
 

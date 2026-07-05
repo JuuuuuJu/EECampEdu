@@ -57,7 +57,7 @@ Legend:
 | Path | Tag | Purpose |
 | --- | --- | --- |
 | `esp/main/include/model_config.hpp` | `COMMON` | Central config: runtime mode, frame size, crop settings, tensor arena, partition labels. |
-| `esp/main/include/camera_capture.hpp` | `CAMERA` | Camera capture interface to be implemented by the OV2640 integration. |
+| `esp/main/include/camera_capture.hpp` | `CAMERA` | Camera capture interface implemented by the OV2640 module. |
 | `esp/main/include/photo_storage.hpp` | `COMMON` | Photo partition read/write interface. Used by both fake-photo test and real camera flow. |
 
 ## ESP Source
@@ -65,7 +65,8 @@ Legend:
 | Path | Tag | Purpose |
 | --- | --- | --- |
 | `esp/main/src/app_main.cpp` | `COMMON` | TFLite model loading, preprocessing, inference, runtime-mode dispatch, UART test path, photo-flash test path, camera-flash path. |
-| `esp/main/src/camera_capture_stub.cpp` | `TEST` | Buildable placeholder when OV2640 hardware/code is unavailable. Replace with real camera implementation later. |
+| `esp/main/src/camera_capture_ov2640.cpp` | `CAMERA` | ESP-IDF OV2640 implementation ported from the provided Arduino `.ino` reference. |
+| `esp/main/src/camera_capture_stub.cpp` | `TEST` | Buildable placeholder kept as fallback/reference; not compiled by current CMake. |
 | `esp/main/src/photo_storage.cpp` | `COMMON` | Implements `photos` partition read/write. Used by `PHOTO_FLASH_TEST_MODE` and future camera capture. |
 
 ## Runtime Modes
@@ -74,7 +75,7 @@ Legend:
 | --- | --- | --- | --- |
 | `RuntimeMode::kTestUartFrame` | `TEST` | No camera | PC sends grayscale frames over UART; fastest deploy benchmark loop. |
 | `RuntimeMode::kPhotoFlashTest` | `TEST` | No camera | Preload image into flash to simulate `camera -> flash -> inference`. |
-| `RuntimeMode::kCameraFlash` | `CAMERA` | OV2640 required | Capture from OV2640, store to `photos`, then run inference. |
+| `RuntimeMode::kCameraFlash` | `CAMERA` | OV2640 required | Capture grayscale frame from OV2640, store to `photos`, resize into deploy frame, then run inference. |
 
 ## PC Tools
 

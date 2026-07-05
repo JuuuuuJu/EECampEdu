@@ -18,6 +18,7 @@ struct CameraFrame {
     int width;
     int height;
     CameraFrameFormat format;
+    void *handle;
 };
 
 esp_err_t camera_capture_init();

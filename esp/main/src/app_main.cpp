@@ -504,6 +504,19 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
     return true;
 }
 
+static void resize_grayscale_to_runtime_frame(const uint8_t *src,
+                                              int src_width,
+                                              int src_height,
+                                              uint8_t *dst) {
+    for (int y = 0; y < FRAME_HEIGHT; ++y) {
+        const int src_y = (FRAME_HEIGHT == 1) ? 0 : (y * (src_height - 1)) / (FRAME_HEIGHT - 1);
+        for (int x = 0; x < FRAME_WIDTH; ++x) {
+            const int src_x = (FRAME_WIDTH == 1) ? 0 : (x * (src_width - 1)) / (FRAME_WIDTH - 1);
+            dst[y * FRAME_WIDTH + x] = src[src_y * src_width + src_x];
+        }
+    }
+}
+
 static void uart_test_inference_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in TEST_MODE_UART_FRAME.");
@@ -593,7 +606,7 @@ static void photo_flash_test_task(void *pvParameters) {
 static void camera_flash_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in CAMERA_FLASH_MODE.");
-    ESP_LOGI(TAG, "Camera mode is scaffolded but uses a stub until OV2640 ESP-IDF driver code is integrated.");
+    ESP_LOGI(TAG, "Camera mode uses OV2640 capture, photo flash storage, grayscale resize, and TFLite inference.");
 
     esp_err_t err = photo_storage_init();
     if (err != ESP_OK) {
@@ -621,10 +634,24 @@ static void camera_flash_task(void *pvParameters) {
         }
 
         err = photo_storage_write_latest(frame);
-        camera_capture_release(&frame);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Photo storage write failed: %s", esp_err_to_name(err));
         }
+
+        if (frame.format == CameraFrameFormat::kGrayscale) {
+            if (!allocate_frame_buffers()) {
+                camera_capture_release(&frame);
+                vTaskDelete(NULL);
+                return;
+            }
+            resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+            run_inference_on_grayscale_frame(g_raw_frame);
+        } else {
+            ESP_LOGW(TAG,
+                     "Captured format is not grayscale. Stored photo only; inference waits for grayscale/JPEG decode support.");
+        }
+
+        camera_capture_release(&frame);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
