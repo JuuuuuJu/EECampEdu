@@ -1,0 +1,7 @@
+# Default PC environment for deploy integration.
+# Supports modern Python versions such as 3.12.
+numpy>=1.26,<3
+Pillow>=10,<12
+pyserial>=3.5,<4
+esptool>=4.7,<6
+packaging>=23,<26

@@ -1,0 +1,156 @@
+# EECampEdu Integrated Firmware
+
+This repository is the integration workspace for the gesture-controlled robotic
+arm system.
+
+## System Flow
+
+```text
+ESP32-S3 camera
+  -> photo flash partition
+  -> on-device grayscale / crop / resize / scale
+  -> int8 TFLite Micro gesture model
+  -> gesture result
+  -> robotic arm motion
+```
+
+PC is used for model fine-tuning, dataset creation, quantization, flashing, and
+benchmarking. ESP32-S3 is used for camera capture, local preprocessing, model
+inference, USB communication, and final motion output.
+
+## Current Integration Decision
+
+- Hand crop is performed on ESP32-S3.
+- Class order is fixed: `up`, `down`, `right`, `left`, `null`.
+- The stable baseline model is `Separable_CNN_int8.tflite`.
+- Model input contract is `96 x 96 x 1 int8`.
+- The camera team code supports `GRAYSCALE`, `RGB565`, `YUV422`, and `JPEG`.
+- The deploy path should first support grayscale capture, then add JPEG decode
+  if higher-resolution camera storage is needed.
+- Default firmware mode is `TEST_MODE_UART_FRAME`, so deployment can be tested
+  without an OV2640 camera.
+
+## Repository Layout
+
+```text
+docs/             Integration notes and architecture decisions
+esp/              ESP-IDF firmware and model flashing tools
+interfaces/       Cross-team contracts and command protocols
+pc/               PC-side benchmark, validation, and setup tools
+external/         References to external team code
+scripts/          Convenience scripts for setup/build/flash/test
+```
+
+For a per-file explanation with `TEST`, `CAMERA`, `COMMON`, and
+`MODEL_HANDOFF` tags, see `docs/file_structure.md`.
+
+## Environment Setup
+
+### PC Python Environment
+
+Use the AI PC or WSL environment for benchmark, image flashing tools, model
+validation, and future fine-tuning automation.
+
+```bash
+cd /mnt/d/EECampEdu
+bash scripts/setup_pc_env.sh
+source .venv/bin/activate
+```
+
+This installs `pc/requirements.txt`, including `Pillow`, `pyserial`, `esptool`,
+and model validation dependencies.
+
+The default environment supports modern Python versions such as Python 3.12.
+Legacy ONNX debug tools use older pinned packages and should be installed only
+when needed with Python 3.7-3.10:
+
+```bash
+python -m pip install -r pc/requirements-legacy-onnx.txt
+```
+
+### ESP-IDF Environment
+
+Use ESP-IDF v5.x with ESP32-S3 target support.
+
+```bash
+cd /mnt/d/EECampEdu/esp
+idf.py set-target esp32s3
+idf.py fullclean
+idf.py build
+```
+
+The firmware expects a 16 MB ESP32-S3 board. PSRAM is enabled in
+`esp/sdkconfig`, `esp/sdkconfig.defaults`, and `esp/sdkconfig.defaults.esp32s3`.
+
+## Runtime Modes
+
+Runtime mode is selected in `esp/main/include/model_config.hpp`.
+
+| Mode | Purpose | Hardware needed |
+| --- | --- | --- |
+| `RuntimeMode::kTestUartFrame` | PC sends grayscale frames over UART; current default benchmark path | no camera |
+| `RuntimeMode::kPhotoFlashTest` | Preload one image into `photos` flash partition and run inference from flash | no camera |
+| `RuntimeMode::kCameraFlash` | Capture from OV2640, store to flash, then infer | OV2640 required |
+
+## Build Firmware
+
+```bash
+cd esp
+idf.py fullclean
+idf.py build flash monitor
+```
+
+## Flash TFLite Model Only
+
+```bash
+cd esp
+python flash_tflite_model.py ../pc/artifacts/models/Separable_CNN_int8.tflite -p COM6
+```
+
+## Simulate Camera Photo In Flash
+
+When OV2640 hardware is not available, preload an image into the `photos`
+partition. The tool converts the image to `160 x 160 x 1` grayscale and writes
+the same photo header format used by firmware.
+
+```bash
+cd esp
+python flash_photo.py path/to/test_image.jpg -p COM6
+```
+
+Then set this in `esp/main/include/model_config.hpp`:
+
+```cpp
+constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kPhotoFlashTest;
+```
+
+Rebuild and flash firmware. On boot, ESP32-S3 reads the preloaded photo from
+flash and runs one inference pass.
+
+## Benchmark From PC
+
+```bash
+cd pc
+python benchmark/run_benchmark_png.py --model artifacts/models/Separable_CNN_int8.tflite --dataset artifacts/datasets
+```
+
+This benchmark talks to firmware running in `TEST_MODE_UART_FRAME`: PC sends a
+`160 x 160 x 1` grayscale frame, ESP32-S3 performs crop/resize/quantization, and
+then returns TFLite Micro inference results.
+
+## Model Fine-Tune Handoff
+
+The model-finetune team can build a foundation-model workflow on the AMD AI PC,
+but deploy expects fixed exported artifacts:
+
+```text
+pc/artifacts/models/<model_name>.tflite
+pc/artifacts/models/<model_name>.class_mapping.json
+pc/artifacts/models/<model_name>.preprocess_config.json
+pc/artifacts/reports/<model_name>.quantization_report.json
+```
+
+Examples and the expected handoff contract are in `pc/model_pipeline/`.
+
+See `docs/integration_contract.md` before changing model format, camera format,
+USB messages, or flash partition layout.
