@@ -24,6 +24,11 @@ inference, USB communication, and final motion output.
 - Class order is fixed: `up`, `down`, `right`, `left`, `null`.
 - The stable baseline model is `Separable_CNN_int8.tflite`.
 - Model input contract is `96 x 96 x 1 int8`.
+- ESP32-S3 CPU frequency must be `240 MHz` for benchmark parity with the
+  standalone deploy repo.
+- The default Separable CNN keeps tensor arena and frame buffers in internal RAM
+  for speed. Larger models can switch to PSRAM by setting
+  `PREFER_INTERNAL_TENSOR_ARENA=false`.
 - The camera team code supports `GRAYSCALE`, `RGB565`, `YUV422`, and `JPEG`.
 - The deploy path should first support grayscale capture, then add JPEG decode
   if higher-resolution camera storage is needed.
@@ -32,6 +37,9 @@ inference, USB communication, and final motion output.
 - OV2640 integration is available in `esp/main/src/camera_capture_ov2640.cpp`;
   the current real-camera path captures grayscale QQVGA and resizes it before
   inference.
+- Rotary encoder / push-button input from the input-interface team is ported as
+  an optional ESP-IDF GPIO module. It is disabled by default because the
+  prototype pins conflict with the current OV2640 wiring.
 
 ## Repository Layout
 
@@ -77,6 +85,11 @@ idf.py build
 
 The firmware expects a 16 MB ESP32-S3 board. PSRAM is enabled in
 `esp/sdkconfig`, `esp/sdkconfig.defaults`, and `esp/sdkconfig.defaults.esp32s3`.
+CPU frequency is set to 240 MHz for benchmark parity with the standalone deploy
+repo. The default Separable CNN keeps its tensor arena and frame buffers in
+internal RAM for speed; set `PREFER_INTERNAL_TENSOR_ARENA=false` in
+`esp/main/include/model_config.hpp` when testing larger models that require the
+full PSRAM tensor arena.
 
 No `git clone --recursive` is required. ESP-IDF downloads managed components
 from `esp/main/idf_component.yml`, currently `esp32-camera` and
@@ -137,6 +150,23 @@ python benchmark/run_benchmark_png.py --model artifacts/models/Separable_CNN_int
 This benchmark talks to firmware running in `TEST_MODE_UART_FRAME`: PC sends a
 `160 x 160 x 1` grayscale frame, ESP32-S3 performs crop/resize/quantization, and
 then returns TFLite Micro inference results.
+
+Expected baseline after the performance fix:
+
+```text
+Model              : Separable_CNN_int8.tflite
+CPU frequency      : 240 MHz
+Tensor arena       : internal RAM preferred
+Input frame        : 160 x 160 x 1 grayscale
+Model input        : 96 x 96 x 1 int8
+Model-only speed   : about 9 FPS
+Device compute     : about 8 FPS including ESP-side crop/resize/quantization
+End-to-end UART    : about 0.4 FPS because raw frames are streamed over 115200 baud UART
+```
+
+If model-only throughput drops to around `5-6 FPS`, check that the firmware was
+rebuilt with `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240`. A `160 MHz` build produces
+roughly the same slowdown ratio.
 
 ## Model Fine-Tune Handoff
 

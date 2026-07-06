@@ -30,6 +30,19 @@ constexpr int HAND_CROP_DARK_DELTA = 25;
 constexpr int HAND_CROP_MIN_THRESHOLD = 70;
 constexpr int HAND_CROP_MAX_THRESHOLD = 205;
 
+// Optional rotary encoder / push-button input from the input-interface team.
+// Disabled by default because the prototype GPIOs from sketch_dec17a.ino
+// conflict with the current OV2640 wiring: 4=SDA, 5=SCL, 15=XCLK, 18=Y7.
+constexpr bool ENABLE_INPUT_CONTROLS = false;
+constexpr int INPUT_ENCODER_CLK_GPIO = 5;
+constexpr int INPUT_ENCODER_DT_GPIO = 4;
+constexpr int INPUT_ENCODER_BUTTON_GPIO = 21;
+constexpr int INPUT_BUTTON2_GPIO = 18;
+constexpr int INPUT_DEBOUNCE_MS = 60;
+
+// Separable_CNN fits in internal RAM and runs much faster there. Set this false
+// for larger models that require the full PSRAM tensor arena.
+constexpr bool PREFER_INTERNAL_TENSOR_ARENA = false;
 constexpr int TENSOR_ARENA_SIZE = 800 * 1024;
 constexpr int FALLBACK_TENSOR_ARENA_SIZE = 256 * 1024;
 constexpr const char *MODEL_PARTITION_LABEL = "model";

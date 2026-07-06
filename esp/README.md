@@ -34,6 +34,16 @@ The default firmware mode is `TEST_MODE_UART_FRAME`, configured in
 
 This keeps the deploy path testable without OV2640 hardware.
 
+Performance-sensitive defaults:
+
+- ESP32-S3 CPU frequency is configured as `240 MHz`.
+- `Separable_CNN_int8.tflite` uses internal RAM for tensor arena and frame
+  buffers through `PREFER_INTERNAL_TENSOR_ARENA=true`.
+- Larger models may require `PREFER_INTERNAL_TENSOR_ARENA=false` so the full
+  PSRAM tensor arena can be used.
+- UART benchmark end-to-end throughput is limited mostly by raw frame transfer;
+  use model latency / device compute throughput when reporting deploy speed.
+
 `CAMERA_FLASH_MODE` uses `camera_capture_ov2640.cpp` and `photo_storage`.
 The OV2640 module is ported from the provided Arduino `.ino` reference into an
 ESP-IDF style `camera_capture` implementation. `camera_capture_stub.cpp` remains

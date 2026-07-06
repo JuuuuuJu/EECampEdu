@@ -19,6 +19,7 @@
 #include "tensorflow/lite/schema/schema_generated.h"
 
 #include "camera_capture.hpp"
+#include "input_controls.hpp"
 #include "model_config.hpp"
 #include "photo_storage.hpp"
 
@@ -43,6 +44,47 @@ static TfLiteTensor *g_input = nullptr;
 static TfLiteTensor *g_output = nullptr;
 static const void *g_mapped_model = nullptr;
 static esp_partition_mmap_handle_t g_model_mmap_handle = 0;
+
+static void input_controls_monitor_task(void *pvParameters) {
+    (void)pvParameters;
+    InputControlsSnapshot previous = input_controls_get_snapshot();
+    while (true) {
+        const InputControlsSnapshot current = input_controls_get_snapshot();
+        if (current.encoder_position != previous.encoder_position ||
+            current.encoder_button_presses != previous.encoder_button_presses ||
+            current.button2_presses != previous.button2_presses) {
+            ESP_LOGI(TAG,
+                     "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu",
+                     (long)current.encoder_position,
+                     (long)(current.encoder_position - previous.encoder_position),
+                     (unsigned long)current.encoder_button_presses,
+                     (unsigned long)current.button2_presses);
+            previous = current;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static void maybe_start_input_controls() {
+    if (!ENABLE_INPUT_CONTROLS) {
+        ESP_LOGI(TAG, "Input controls disabled.");
+        return;
+    }
+
+    esp_err_t err = input_controls_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Input controls init failed: %s", esp_err_to_name(err));
+        return;
+    }
+
+    xTaskCreatePinnedToCore(input_controls_monitor_task,
+                            "input_controls_monitor",
+                            4 * 1024,
+                            NULL,
+                            3,
+                            NULL,
+                            0);
+}
 
 static const char *runtime_mode_name() {
     switch (RUNTIME_MODE) {
@@ -384,14 +426,32 @@ static bool init_tflite_micro() {
         return false;
     }
 
-    g_tensor_arena = (uint8_t *)heap_caps_malloc(TENSOR_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    g_tensor_arena_size = TENSOR_ARENA_SIZE;
+    if (PREFER_INTERNAL_TENSOR_ARENA) {
+        g_tensor_arena = (uint8_t *)heap_caps_malloc(FALLBACK_TENSOR_ARENA_SIZE,
+                                                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        g_tensor_arena_size = FALLBACK_TENSOR_ARENA_SIZE;
+        if (g_tensor_arena == nullptr) {
+            ESP_LOGW(TAG,
+                     "Internal tensor arena allocation failed (%d bytes). Trying %d-byte PSRAM arena.",
+                     FALLBACK_TENSOR_ARENA_SIZE,
+                     TENSOR_ARENA_SIZE);
+        }
+    }
+
     if (g_tensor_arena == nullptr) {
-        ESP_LOGW(TAG,
-                 "PSRAM tensor arena allocation failed (%d bytes). Trying %d-byte internal fallback.",
-                 TENSOR_ARENA_SIZE,
-                 FALLBACK_TENSOR_ARENA_SIZE);
-        g_tensor_arena = (uint8_t *)heap_caps_malloc(FALLBACK_TENSOR_ARENA_SIZE, MALLOC_CAP_8BIT);
+        g_tensor_arena = (uint8_t *)heap_caps_malloc(TENSOR_ARENA_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        g_tensor_arena_size = TENSOR_ARENA_SIZE;
+        if (g_tensor_arena == nullptr) {
+            ESP_LOGW(TAG,
+                     "PSRAM tensor arena allocation failed (%d bytes). Trying %d-byte internal fallback.",
+                     TENSOR_ARENA_SIZE,
+                     FALLBACK_TENSOR_ARENA_SIZE);
+        }
+    }
+
+    if (g_tensor_arena == nullptr && !PREFER_INTERNAL_TENSOR_ARENA) {
+        g_tensor_arena = (uint8_t *)heap_caps_malloc(FALLBACK_TENSOR_ARENA_SIZE,
+                                                     MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         g_tensor_arena_size = FALLBACK_TENSOR_ARENA_SIZE;
     }
     if (g_tensor_arena == nullptr) {
@@ -403,7 +463,10 @@ static bool init_tflite_micro() {
         ESP_LOGE(TAG, "Failed to allocate tensor arena (%d bytes).", FALLBACK_TENSOR_ARENA_SIZE);
         return false;
     }
-    ESP_LOGI(TAG, "Tensor arena allocated: %d bytes.", g_tensor_arena_size);
+    ESP_LOGI(TAG,
+             "Tensor arena allocated: %d bytes (%s preferred).",
+             g_tensor_arena_size,
+             PREFER_INTERNAL_TENSOR_ARENA ? "internal" : "PSRAM");
 
     static tflite::MicroInterpreter interpreter(model, resolver, g_tensor_arena, g_tensor_arena_size);
     g_interpreter = &interpreter;
@@ -431,9 +494,9 @@ static bool allocate_frame_buffers() {
     const int model_bytes = INPUT_HEIGHT * INPUT_WIDTH * INPUT_CHANNEL;
 
     if (g_raw_frame == nullptr) {
-        g_raw_frame = (uint8_t *)heap_caps_malloc(expected_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        g_raw_frame = (uint8_t *)heap_caps_malloc(expected_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         if (g_raw_frame == nullptr) {
-            g_raw_frame = (uint8_t *)heap_caps_malloc(expected_bytes, MALLOC_CAP_8BIT);
+            g_raw_frame = (uint8_t *)heap_caps_malloc(expected_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         }
     }
     if (g_raw_frame == nullptr) {
@@ -442,9 +505,9 @@ static bool allocate_frame_buffers() {
     }
 
     if (g_model_frame == nullptr) {
-        g_model_frame = (uint8_t *)heap_caps_malloc(model_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        g_model_frame = (uint8_t *)heap_caps_malloc(model_bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
         if (g_model_frame == nullptr) {
-            g_model_frame = (uint8_t *)heap_caps_malloc(model_bytes, MALLOC_CAP_8BIT);
+            g_model_frame = (uint8_t *)heap_caps_malloc(model_bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
         }
     }
     if (g_model_frame == nullptr) {
@@ -660,6 +723,7 @@ static void camera_flash_task(void *pvParameters) {
 extern "C" void app_main() {
     ESP_LOGI(TAG, "Runtime mode: %s", runtime_mode_name());
     log_memory_status();
+    maybe_start_input_controls();
     if (!init_tflite_micro()) {
         ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
         return;

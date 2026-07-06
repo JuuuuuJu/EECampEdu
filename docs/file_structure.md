@@ -58,6 +58,7 @@ Legend:
 | --- | --- | --- |
 | `esp/main/include/model_config.hpp` | `COMMON` | Central config: runtime mode, frame size, crop settings, tensor arena, partition labels. |
 | `esp/main/include/camera_capture.hpp` | `CAMERA` | Camera capture interface implemented by the OV2640 module. |
+| `esp/main/include/input_controls.hpp` | `COMMON` | Optional rotary encoder / push-button input interface from the input-interface team. Disabled by default until GPIO conflicts are resolved. |
 | `esp/main/include/photo_storage.hpp` | `COMMON` | Photo partition read/write interface. Used by both fake-photo test and real camera flow. |
 
 ## ESP Source
@@ -67,6 +68,7 @@ Legend:
 | `esp/main/src/app_main.cpp` | `COMMON` | TFLite model loading, preprocessing, inference, runtime-mode dispatch, UART test path, photo-flash test path, camera-flash path. |
 | `esp/main/src/camera_capture_ov2640.cpp` | `CAMERA` | ESP-IDF OV2640 implementation ported from the provided Arduino `.ino` reference. |
 | `esp/main/src/camera_capture_stub.cpp` | `TEST` | Buildable placeholder kept as fallback/reference; not compiled by current CMake. |
+| `esp/main/src/input_controls.cpp` | `COMMON` | ESP-IDF GPIO/interrupt implementation for the rotary encoder and push button prototype. Current prototype pins conflict with OV2640, so this is compiled but disabled by config. |
 | `esp/main/src/photo_storage.cpp` | `COMMON` | Implements `photos` partition read/write. Used by `PHOTO_FLASH_TEST_MODE` and future camera capture. |
 
 ## Runtime Modes
@@ -82,8 +84,7 @@ Legend:
 | Path | Tag | Purpose |
 | --- | --- | --- |
 | `pc/README.md` | `COMMON` | PC tools overview. |
-| `pc/requirements.txt` | `COMMON` | Modern Python dependencies for deploy benchmark, image conversion, and flashing tools. |
-| `pc/requirements-legacy-onnx.txt` | `TEST` | Legacy Python 3.7-3.10 ONNX debug dependencies. |
+| `pc/requirements.txt` | `COMMON` | Single Python dependency file for deploy benchmark, image conversion, flashing tools, and PC TFLite reference inference. |
 | `pc/benchmark/run_benchmark_png.py` | `TEST` | Sends dataset images to ESP in UART test mode and compares PC TFLite reference output. |
 | `pc/benchmark/quant_sweep.py` | `MODEL_HANDOFF` | Quantization sweep / validation helper. |
 | `pc/tools/*.py` | `TEST` | Debug tools for ONNX/TFLite/ESP output comparison. |

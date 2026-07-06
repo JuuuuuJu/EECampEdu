@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 
 # Keep TensorFlow's optional CUDA / CPU feature banner out of benchmark logs.
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import numpy as np
@@ -20,6 +21,7 @@ BAUDRATE = int(os.environ.get("BENCHMARK_BAUDRATE", "115200"))
 DEFAULT_DATA_DIR = CNN_DIR / "dataset" / "test" / "tflite"
 READY_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_READY_TIMEOUT_SEC", "30"))
 READY_RETRY_LIMIT = int(os.environ.get("BENCHMARK_READY_RETRY_LIMIT", "2"))
+RESULT_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_RESULT_TIMEOUT_SEC", "20"))
 DEFAULT_TFLITE_MODEL_PATH = CNN_DIR.parent / "esp" / "main" / "Separable_CNN_int8.tflite"
 ENABLE_OUTPUT_COMPARE = os.environ.get("BENCHMARK_COMPARE_OUTPUT", "1") != "0"
 
@@ -290,18 +292,31 @@ class PCTFLiteReference:
         try:
             from tflite_runtime.interpreter import Interpreter
             backend_name = "tflite_runtime"
-        except ImportError:
+        except ImportError as tflite_error:
             try:
                 warnings.filterwarnings(
                     "ignore",
                     message=".*tf.lite.Interpreter is deprecated.*",
                     category=UserWarning,
                 )
-                from tensorflow.lite import Interpreter
-                backend_name = "tensorflow.lite"
-            except ImportError:
-                print("[WARN] PC TFLite reference disabled: install PC requirements first.")
+                # TensorFlow 2.18+ may not export Interpreter from the
+                # tensorflow.lite package directly, but tf.lite.Interpreter is
+                # still available.
+                old_stderr_fd = os.dup(2)
+                try:
+                    with open(os.devnull, "w") as devnull:
+                        os.dup2(devnull.fileno(), 2)
+                        import tensorflow as tf
+                finally:
+                    os.dup2(old_stderr_fd, 2)
+                    os.close(old_stderr_fd)
+                Interpreter = tf.lite.Interpreter
+                backend_name = f"tensorflow.lite ({tf.__version__})"
+            except (ImportError, AttributeError) as tf_error:
+                print("[WARN] PC TFLite reference disabled: TFLite interpreter backend unavailable.")
                 print("       Run: python -m pip install -r pc/requirements.txt")
+                print(f"       tflite_runtime import error: {tflite_error}")
+                print(f"       tensorflow.lite import error: {tf_error}")
                 print("       ESP32 benchmark will still run, but output similarity will be skipped.")
                 return False
 
@@ -403,6 +418,17 @@ def send_frame_to_esp32(ser, raw):
     return roundtrip_start_ns
 
 
+def setup_pc_reference_after_serial_ready():
+    pc_reference = PCTFLiteReference(TFLITE_MODEL_PATH)
+    print("[INFO] Initializing PC TFLite reference. TensorFlow backend may take a while on first load...")
+    start_ns = time.perf_counter_ns()
+    enabled = pc_reference.setup()
+    elapsed_ms = (time.perf_counter_ns() - start_ns) / 1_000_000.0
+    if enabled:
+        print(f"[INFO] PC TFLite reference initialization took {elapsed_ms:.1f} ms.")
+    return pc_reference, enabled
+
+
 def run_benchmark():
     image_files = []
     for extension in ("*.png", "*.jpg", "*.jpeg", "*.bmp"):
@@ -423,9 +449,6 @@ def run_benchmark():
         print_label_mapping_warnings(image_files)
     else:
         print("[INFO] Label checking disabled. Label Accuracy will be skipped.")
-
-    pc_reference = PCTFLiteReference(TFLITE_MODEL_PATH)
-    pc_reference_enabled = pc_reference.setup()
 
     try:
         ser = serial.Serial(PORT, BAUDRATE, timeout=1)
@@ -453,6 +476,14 @@ def run_benchmark():
     output_prob_cosine_total = 0.0
 
     print("Awaiting ESP32 sync signal...")
+    if not wait_for_ready(ser):
+        ser.close()
+        return
+
+    pc_reference, pc_reference_enabled = setup_pc_reference_after_serial_ready()
+    ser.reset_input_buffer()
+    need_ready = False
+
     try:
         for image_path in image_files:
             filename = Path(image_path).name
@@ -461,7 +492,7 @@ def run_benchmark():
             model_input_raw = preprocess_frame_to_model_input(raw)
             reference_scores = pc_reference.infer_scores(model_input_raw) if pc_reference_enabled else None
 
-            if not wait_for_ready(ser):
+            if need_ready and not wait_for_ready(ser):
                 break
 
             dump_raw_grayscale(image_path, raw, FRAME_WIDTH, FRAME_HEIGHT, "PC_FRAME_DUMP")
@@ -469,9 +500,16 @@ def run_benchmark():
             roundtrip_start_ns = send_frame_to_esp32(ser, raw)
             ready_retry_count = 0
             abort_benchmark = False
+            result_deadline = time.time() + RESULT_TIMEOUT_SEC
 
             while True:
                 line = ser.readline().decode("utf-8", errors="ignore").strip()
+                if not line and time.time() > result_deadline:
+                    print(f"[ERROR] Timed out waiting for RESULT from {filename} after {RESULT_TIMEOUT_SEC}s.")
+                    print("[HINT] Check ESP32 monitor output. Firmware should be in RuntimeMode::kTestUartFrame and print RESULT after receiving one frame.")
+                    abort_benchmark = True
+                    break
+
                 if "READY" in line:
                     if ready_retry_count >= READY_RETRY_LIMIT:
                         print(
@@ -491,6 +529,7 @@ def run_benchmark():
                         f"resending frame ({ready_retry_count}/{READY_RETRY_LIMIT})."
                     )
                     roundtrip_start_ns = send_frame_to_esp32(ser, raw)
+                    result_deadline = time.time() + RESULT_TIMEOUT_SEC
                     continue
 
                 if line.startswith("RESULT"):
@@ -585,6 +624,8 @@ def run_benchmark():
 
             if abort_benchmark:
                 break
+            if success_count > 0:
+                need_ready = True
     finally:
         ser.close()
 

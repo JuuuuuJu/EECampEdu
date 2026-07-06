@@ -4,6 +4,7 @@ idf_component_register(
     SRCS
         "src/app_main.cpp"
         "src/camera_capture_ov2640.cpp"
+        "src/input_controls.cpp"
         "src/photo_storage.cpp"
     INCLUDE_DIRS
         "include"
