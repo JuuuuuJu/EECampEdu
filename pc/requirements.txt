@@ -1,7 +1,9 @@
-# Default PC environment for deploy integration.
-# Supports modern Python versions such as 3.12.
+# Single PC environment for deploy integration.
+# Python 3.12 cannot use the old tflite-runtime wheels, so TensorFlow is used
+# as the PC-side TFLite reference backend for benchmark output comparison.
 numpy>=1.26,<3
 Pillow>=10,<12
 pyserial>=3.5,<4
 esptool>=4.7,<6
 packaging>=23,<26
+tensorflow>=2.18,<2.20

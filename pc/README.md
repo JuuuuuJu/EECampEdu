@@ -22,8 +22,6 @@ artifacts/reports/
 
 ## Requirements
 
-`requirements.txt` is the default modern environment for deploy integration,
-benchmark transport, image conversion, and flashing tools.
-
-`requirements-legacy-onnx.txt` keeps the old pinned ONNX debug stack. Use it
-only with Python 3.7-3.10 when those legacy ONNX scripts are needed.
+`requirements.txt` is the single PC environment for deploy integration,
+benchmark transport, image conversion, flashing tools, and PC-side TFLite
+reference inference.

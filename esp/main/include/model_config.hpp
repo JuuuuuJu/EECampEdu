@@ -13,7 +13,7 @@ enum class RuntimeMode {
 
 // Keep TEST mode as the default integration mode. It lets the deploy pipeline
 // run without an OV2640 by sending grayscale frames from the PC benchmark tool.
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kPhotoFlashTest;
+constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kTestUartFrame;
 
 constexpr int INPUT_HEIGHT = 96;
 constexpr int INPUT_WIDTH = 96;

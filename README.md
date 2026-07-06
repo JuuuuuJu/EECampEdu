@@ -60,16 +60,9 @@ bash scripts/setup_pc_env.sh
 source .venv/bin/activate
 ```
 
-This installs `pc/requirements.txt`, including `Pillow`, `pyserial`, `esptool`,
-and model validation dependencies.
-
-The default environment supports modern Python versions such as Python 3.12.
-Legacy ONNX debug tools use older pinned packages and should be installed only
-when needed with Python 3.7-3.10:
-
-```bash
-python -m pip install -r pc/requirements-legacy-onnx.txt
-```
+This installs the single PC dependency file, `pc/requirements.txt`, including
+`Pillow`, `pyserial`, `esptool`, and `tensorflow` for PC-side TFLite reference
+inference during output-similarity benchmark.
 
 ### ESP-IDF Environment
 

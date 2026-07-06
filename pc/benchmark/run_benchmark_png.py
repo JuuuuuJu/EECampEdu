@@ -2,7 +2,11 @@ import argparse
 import glob
 import os
 import time
+import warnings
 from pathlib import Path
+
+# Keep TensorFlow's optional CUDA / CPU feature banner out of benchmark logs.
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
 import numpy as np
 import serial
@@ -285,11 +289,19 @@ class PCTFLiteReference:
 
         try:
             from tflite_runtime.interpreter import Interpreter
+            backend_name = "tflite_runtime"
         except ImportError:
             try:
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*tf.lite.Interpreter is deprecated.*",
+                    category=UserWarning,
+                )
                 from tensorflow.lite import Interpreter
+                backend_name = "tensorflow.lite"
             except ImportError:
-                print("[WARN] PC TFLite reference disabled: install tflite_runtime or tensorflow.")
+                print("[WARN] PC TFLite reference disabled: install PC requirements first.")
+                print("       Run: python -m pip install -r pc/requirements.txt")
                 print("       ESP32 benchmark will still run, but output similarity will be skipped.")
                 return False
 
@@ -299,7 +311,7 @@ class PCTFLiteReference:
         self.output_detail = self.interpreter.get_output_details()[0]
         self.output_scale, self.output_zero_point = self.output_detail.get("quantization", (0.0, 0))
 
-        print(f"[INFO] PC TFLite reference enabled: {self.model_path}")
+        print(f"[INFO] PC TFLite reference enabled ({backend_name}): {self.model_path}")
         print(
             "[INFO] PC input: "
             f"shape={self.input_detail['shape'].tolist()}, "
