@@ -8,7 +8,7 @@ from pathlib import Path
 
 ESP_DIR = Path(__file__).resolve().parent
 PARTITIONS_CSV = ESP_DIR / "partitions.csv"
-DEFAULT_PORT = "/dev/ttyACM0"
+DEFAULT_PORT = "COM6"
 DEFAULT_BAUD = "460800"
 
 
@@ -63,7 +63,9 @@ def main():
         )
 
     cmd = [
-        "esptool.py",
+        sys.executable,
+        "-m",
+        "esptool",
         "--chip",
         args.chip,
         "-p",
@@ -79,7 +81,7 @@ def main():
     print(f"Model partition size  : {partition_size} bytes")
     print(f"Model file size       : {model_size} bytes")
     print("Command:")
-    print(" ".join(cmd))
+    print(" ".join(str(part) for part in cmd))
 
     if args.dry_run:
         return 0

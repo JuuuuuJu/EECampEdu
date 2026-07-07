@@ -32,7 +32,7 @@ Legend:
 | Path | Tag | Purpose |
 | --- | --- | --- |
 | `esp/CMakeLists.txt` | `COMMON` | ESP-IDF project root CMake. |
-| `esp/partitions.csv` | `COMMON` | Flash layout: firmware app, `model`, `photos`, and `storage`. |
+| `esp/partitions.csv` | `COMMON` | Flash layout: firmware app, `model`, and one large `photos` data partition. Photo and storage space are intentionally merged. |
 | `esp/sdkconfig` | `COMMON` | Current ESP32-S3 build config. |
 | `esp/sdkconfig.defaults` | `COMMON` | Default ESP32-S3 flash/PSRAM settings. |
 | `esp/sdkconfig.defaults.esp32s3` | `COMMON` | Target-specific default ESP32-S3 settings. |
@@ -114,9 +114,8 @@ Legend:
 
 | Path | Tag | Purpose |
 | --- | --- | --- |
-| `scripts/setup_pc_env.sh` | `COMMON` | Creates Python venv and installs PC requirements. |
-| `scripts/build_firmware.sh` | `COMMON` | Runs ESP-IDF build. |
-| `scripts/flash_model.sh` | `COMMON` | Flashes `.tflite` into the `model` partition. |
-| `scripts/flash_photo.sh` | `TEST` | Flashes a test image into the `photos` partition. |
-| `scripts/run_benchmark.sh` | `TEST` | Runs UART-frame benchmark. |
+| `scripts/setup_pc_env.py` | `COMMON` | Creates/updates the Windows conda environment and installs PC requirements. |
+| `esp/flash_tflite_model.py` | `COMMON` | Flashes `.tflite` into the `model` partition. |
+| `esp/flash_photo.py` | `TEST` | Flashes a test image into the `photos` partition. |
+| `pc/benchmark/run_benchmark_png.py` | `TEST` | Runs UART-frame benchmark over a Windows COM port. |
 | `scripts/README.md` | `COMMON` | Script summary. |

@@ -40,8 +40,8 @@ constexpr int INPUT_ENCODER_BUTTON_GPIO = 21;
 constexpr int INPUT_BUTTON2_GPIO = 18;
 constexpr int INPUT_DEBOUNCE_MS = 60;
 
-// Separable_CNN fits in internal RAM and runs much faster there. Set this false
-// for larger models that require the full PSRAM tensor arena.
+// Integration default: keep the tensor arena on PSRAM so all supported model
+// candidates use the same memory path. Set true only for small-model speed tests.
 constexpr bool PREFER_INTERNAL_TENSOR_ARENA = false;
 constexpr int TENSOR_ARENA_SIZE = 800 * 1024;
 constexpr int FALLBACK_TENSOR_ARENA_SIZE = 256 * 1024;

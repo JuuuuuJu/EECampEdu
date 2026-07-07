@@ -44,9 +44,21 @@ static TfLiteTensor *g_input = nullptr;
 static TfLiteTensor *g_output = nullptr;
 static const void *g_mapped_model = nullptr;
 static esp_partition_mmap_handle_t g_model_mmap_handle = 0;
+static TaskHandle_t g_input_controls_task_handle = nullptr;
+static TaskHandle_t g_uart_inference_task_handle = nullptr;
+static TaskHandle_t g_photo_flash_task_handle = nullptr;
+static TaskHandle_t g_camera_flash_task_handle = nullptr;
 
 static void input_controls_monitor_task(void *pvParameters) {
     (void)pvParameters;
+    esp_err_t err = input_controls_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Input controls init failed: %s", esp_err_to_name(err));
+        g_input_controls_task_handle = nullptr;
+        vTaskDelete(NULL);
+        return;
+    }
+
     InputControlsSnapshot previous = input_controls_get_snapshot();
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
@@ -71,19 +83,17 @@ static void maybe_start_input_controls() {
         return;
     }
 
-    esp_err_t err = input_controls_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Input controls init failed: %s", esp_err_to_name(err));
-        return;
+    const BaseType_t created = xTaskCreatePinnedToCore(input_controls_monitor_task,
+                                                       "input_controls_monitor",
+                                                       4 * 1024,
+                                                       NULL,
+                                                       3,
+                                                       &g_input_controls_task_handle,
+                                                       0);
+    if (created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create input_controls_monitor task.");
+        g_input_controls_task_handle = nullptr;
     }
-
-    xTaskCreatePinnedToCore(input_controls_monitor_task,
-                            "input_controls_monitor",
-                            4 * 1024,
-                            NULL,
-                            3,
-                            NULL,
-                            0);
 }
 
 static const char *runtime_mode_name() {
@@ -587,6 +597,12 @@ static void uart_test_inference_task(void *pvParameters) {
              FRAME_WIDTH,
              FRAME_HEIGHT,
              FRAME_CHANNEL);
+    if (!init_tflite_micro()) {
+        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
+        g_uart_inference_task_handle = nullptr;
+        vTaskDelete(NULL);
+        return;
+    }
     uart_driver_install(UART_NUM_0, 1024 * 32, 0, 0, NULL, 0);
 
     const int expected_bytes = FRAME_HEIGHT * FRAME_WIDTH * FRAME_CHANNEL;
@@ -620,6 +636,12 @@ static void photo_flash_test_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in PHOTO_FLASH_TEST_MODE.");
     ESP_LOGI(TAG, "Reading one preloaded grayscale photo from the '%s' partition.", PHOTOS_PARTITION_LABEL);
+    if (!init_tflite_micro()) {
+        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
+        g_photo_flash_task_handle = nullptr;
+        vTaskDelete(NULL);
+        return;
+    }
 
     if (!allocate_frame_buffers()) {
         vTaskDelete(NULL);
@@ -663,6 +685,7 @@ static void photo_flash_test_task(void *pvParameters) {
 
     run_inference_on_grayscale_frame(g_raw_frame);
     ESP_LOGI(TAG, "PHOTO_FLASH_TEST_MODE completed one inference pass.");
+    g_photo_flash_task_handle = nullptr;
     vTaskDelete(NULL);
 }
 
@@ -670,6 +693,12 @@ static void camera_flash_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in CAMERA_FLASH_MODE.");
     ESP_LOGI(TAG, "Camera mode uses OV2640 capture, photo flash storage, grayscale resize, and TFLite inference.");
+    if (!init_tflite_micro()) {
+        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
+        g_camera_flash_task_handle = nullptr;
+        vTaskDelete(NULL);
+        return;
+    }
 
     esp_err_t err = photo_storage_init();
     if (err != ESP_OK) {
@@ -724,38 +753,46 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "Runtime mode: %s", runtime_mode_name());
     log_memory_status();
     maybe_start_input_controls();
-    if (!init_tflite_micro()) {
-        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
-        return;
-    }
 
     if (RUNTIME_MODE == RuntimeMode::kTestUartFrame) {
-        xTaskCreatePinnedToCore(uart_test_inference_task,
-                                "uart_test_inference_task",
-                                16 * 1024,
-                                NULL,
-                                5,
-                                NULL,
-                                1);
+        const BaseType_t created = xTaskCreatePinnedToCore(uart_test_inference_task,
+                                                           "uart_test_inference_task",
+                                                           16 * 1024,
+                                                           NULL,
+                                                           5,
+                                                           &g_uart_inference_task_handle,
+                                                           1);
+        if (created != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create uart_test_inference_task.");
+            g_uart_inference_task_handle = nullptr;
+        }
         return;
     }
 
     if (RUNTIME_MODE == RuntimeMode::kPhotoFlashTest) {
-        xTaskCreatePinnedToCore(photo_flash_test_task,
-                                "photo_flash_test_task",
-                                16 * 1024,
-                                NULL,
-                                5,
-                                NULL,
-                                1);
+        const BaseType_t created = xTaskCreatePinnedToCore(photo_flash_test_task,
+                                                           "photo_flash_test_task",
+                                                           16 * 1024,
+                                                           NULL,
+                                                           5,
+                                                           &g_photo_flash_task_handle,
+                                                           1);
+        if (created != pdPASS) {
+            ESP_LOGE(TAG, "Failed to create photo_flash_test_task.");
+            g_photo_flash_task_handle = nullptr;
+        }
         return;
     }
 
-    xTaskCreatePinnedToCore(camera_flash_task,
-                            "camera_flash_task",
-                            16 * 1024,
-                            NULL,
-                            5,
-                            NULL,
-                            1);
+    const BaseType_t created = xTaskCreatePinnedToCore(camera_flash_task,
+                                                       "camera_flash_task",
+                                                       16 * 1024,
+                                                       NULL,
+                                                       5,
+                                                       &g_camera_flash_task_handle,
+                                                       1);
+    if (created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create camera_flash_task.");
+        g_camera_flash_task_handle = nullptr;
+    }
 }

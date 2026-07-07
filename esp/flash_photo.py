@@ -12,7 +12,7 @@ from PIL import Image
 
 ESP_DIR = Path(__file__).resolve().parent
 PARTITIONS_CSV = ESP_DIR / "partitions.csv"
-DEFAULT_PORT = "/dev/ttyACM0"
+DEFAULT_PORT = "COM6"
 DEFAULT_BAUD = "460800"
 FRAME_WIDTH = 160
 FRAME_HEIGHT = 160
@@ -101,7 +101,9 @@ def main():
         cleanup = blob_path
 
     cmd = [
-        "esptool.py",
+        sys.executable,
+        "-m",
+        "esptool",
         "--chip",
         args.chip,
         "-p",
@@ -118,7 +120,7 @@ def main():
     print(f"Generated photo blob   : {len(blob)} bytes")
     print(f"Stored frame           : {args.width}x{args.height} grayscale")
     print("Command:")
-    print(" ".join(cmd))
+    print(" ".join(str(part) for part in cmd))
 
     try:
         if args.dry_run:

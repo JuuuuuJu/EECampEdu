@@ -1,14 +1,18 @@
 # Scripts
 
-Suggested script entry points:
+Minimal Python entry points:
 
 ```text
-setup_pc_env.sh       install PC benchmark/fine-tune dependencies
-build_firmware.sh     run ESP-IDF build
-flash_firmware.sh     flash ESP firmware
-flash_model.sh        flash only the TFLite model partition
-flash_photo.sh        convert an image and flash it into the photos partition
-run_benchmark.sh      run benchmark against ESP32-S3
+setup_pc_env.py       create/update the Windows conda PC environment
 ```
 
-Keep scripts thin wrappers around the documented commands.
+Flash and benchmark tools are already Python programs, so they are run directly:
+
+```text
+esp/flash_tflite_model.py
+esp/flash_photo.py
+pc/benchmark/run_benchmark_png.py
+```
+
+Default conda environment name: `eecampedu`.
+Default serial port: `COM6`.

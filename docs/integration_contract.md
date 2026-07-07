@@ -55,8 +55,7 @@ PC image file
 | --- | ---: | --- |
 | `factory` | 3 MB | firmware app |
 | `model` | 1 MB | active `.tflite` model |
-| `photos` | 4 MB | captured image storage |
-| `storage` | 7 MB | remaining filesystem / future use |
+| `photos` | remaining flash from `0x410000` | captured image / future storage area |
 
 The current model set fits in a 1 MB model partition except larger experimental
 models such as full MobileNet variants. Increase `model` if those must be

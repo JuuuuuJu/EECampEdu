@@ -16,7 +16,7 @@ from PIL import Image
 SCRIPT_DIR = Path(__file__).resolve().parent
 CNN_DIR = SCRIPT_DIR.parent
 
-PORT = os.environ.get("BENCHMARK_PORT", "/dev/ttyACM0")
+PORT = os.environ.get("BENCHMARK_PORT", "COM6")
 BAUDRATE = int(os.environ.get("BENCHMARK_BAUDRATE", "115200"))
 DEFAULT_DATA_DIR = CNN_DIR / "dataset" / "test" / "tflite"
 READY_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_READY_TIMEOUT_SEC", "30"))
