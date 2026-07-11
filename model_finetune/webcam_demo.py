@@ -5,56 +5,64 @@ import numpy as np
 
 # Force clean execution engines
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
+os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
 import cv2
 import tensorflow as tf
 
 # CONFIGURATION
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FIRMWARE_MODEL_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "firmware", "pc", "artifacts", "models"))
 IMG_SIZE = (96, 96)
 class_names = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
 
-# Model mappings
+# Model mappings (using Keras models)
 MODELS = {
-    '1': (os.path.join(FIRMWARE_MODEL_DIR, 'Separable_CNN_int8.tflite'), 'Separable CNN'),
-    '2': (os.path.join(FIRMWARE_MODEL_DIR, 'Mini_ResNet_int8.tflite'), 'Mini ResNet'),
-    '3': (os.path.join(FIRMWARE_MODEL_DIR, 'Baseline_CNN_int8.tflite'), 'Baseline CNN'),
-    '4': (os.path.join(FIRMWARE_MODEL_DIR, 'MobileNetV1_0.25_int8.tflite'), 'MobileNetV1 0.25'),
-    '5': (os.path.join(FIRMWARE_MODEL_DIR, 'MobileNetV2_0.35_int8.tflite'), 'MobileNetV2 0.35')
+    '1': ('models/Mini_ResNet_finetuned_96.keras', 'Mini ResNet FT (96x96)'),
+    '2': ('models/Mini_ResNet_finetuned_128.keras', 'Mini ResNet FT (128x128)')
 }
 
-current_key = '1'
+current_key = '2'
 model_path, model_name = MODELS[current_key]
-interpreter = None
-input_details = None
-output_details = None
-input_scale, input_zero_point = 1.0, 0
-output_scale, output_zero_point = 1.0, 0
+model = None
 error_msg = ""
 
-def load_tflite_model(key):
-    global interpreter, input_details, output_details
-    global input_scale, input_zero_point, output_scale, output_zero_point
-    global model_path, model_name, error_msg, current_key
+current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
+expected_channels = 1
 
+def load_keras_model(key):
+    global model, model_path, model_name, error_msg, current_key, current_classes, expected_channels, IMG_SIZE
+    
     path, name = MODELS[key]
     if not os.path.exists(path):
         error_msg = f"Error: {path} not found!"
         print(error_msg)
         return False
-
+        
     try:
         print(f"Loading {name} ({path})...")
-        interpreter = tf.lite.Interpreter(model_path=path)
-        interpreter.allocate_tensors()
-
-        input_details = interpreter.get_input_details()[0]
-        output_details = interpreter.get_output_details()[0]
-
-        input_scale, input_zero_point = input_details['quantization']
-        output_scale, output_zero_point = output_details['quantization']
-
+        model = tf.keras.models.load_model(path)
+        
+        # Extract metadata from model
+        input_shape = model.input_shape
+        IMG_SIZE = (input_shape[1], input_shape[2])
+        expected_channels = input_shape[3]
+        print(f"Model expects input resolution: {IMG_SIZE}")
+        print(f"Model expects {expected_channels} input channel(s)")
+        
+        # Dynamically set class list based on output shape
+        num_classes = model.output_shape[-1]
+        if num_classes == 4:
+            current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT']
+            print(f"Detected 4-class model ({current_classes})")
+        elif num_classes == 7:
+            current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'PAPER', 'SCISSORS', 'STONE']
+            print(f"Detected 7-class model ({current_classes})")
+        elif num_classes == 3:
+            current_classes = ['PAPER', 'SCISSORS', 'STONE']
+            print(f"Detected 3-class model ({current_classes})")
+        else:
+            current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
+            print(f"Detected 5-class model ({current_classes})")
+            
         model_path = path
         model_name = name
         current_key = key
@@ -66,11 +74,11 @@ def load_tflite_model(key):
         return False
 
 # Load default model
-for k in ['1', '2', '3', '4', '5']:
-    if load_tflite_model(k):
+for k in ['2', '1']:
+    if load_keras_model(k):
         break
 else:
-    print("Error: No valid model files found in workspace.")
+    print("Warning: No pre-trained Keras model files found in workspace. Run train.py or train_transfer_learning.py first.")
     sys.exit(1)
 
 # Initialize webcam
@@ -110,47 +118,60 @@ while True:
     # Extract ROI from frame
     roi = frame[y1:y2, x1:x2]
 
-    # Preprocessing (Grayscale -> Resize -> Normalize -> Quantize)
+    # Preprocessing
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     resized_roi = cv2.resize(gray_roi, IMG_SIZE)
     normalized_roi = resized_roi.astype(np.float32) / 255.0
-
-    # INT8 Quantization
-    quantized_roi = np.clip(np.round((normalized_roi / input_scale) + input_zero_point), -128, 127).astype(np.int8)
-
-    # Reshape for model input
-    input_data = np.expand_dims(quantized_roi, axis=0)
-    input_data = np.expand_dims(input_data, axis=-1)
+    
+    # Match the model's float32 input range (MobileNet expects [-1, 1], CNNs expect [0, 1])
+    if 'MobileNet' in model_name:
+        float_roi = (normalized_roi * 2.0) - 1.0
+    else:
+        float_roi = normalized_roi
+        
+    # Input Preparation
+    if expected_channels == 3:
+        rgb_roi = np.stack([float_roi] * 3, axis=-1)
+        input_data = np.expand_dims(rgb_roi, axis=0).astype(np.float32)
+    else:
+        input_data = np.expand_dims(float_roi, axis=0)
+        input_data = np.expand_dims(input_data, axis=-1).astype(np.float32)
 
     # Run Inference
-    interpreter.set_tensor(input_details['index'], input_data)
-    interpreter.invoke()
-
-    output_data = interpreter.get_tensor(output_details['index'])[0]
-
-    # INT8 Dequantization
-    dequantized_output = (output_data.astype(np.float32) - output_zero_point) * output_scale
-
+    output_data = model(input_data, training=False)[0].numpy()
+    
     # Argmax prediction
-    pred_idx = np.argmax(dequantized_output)
-    predicted_label = class_names[pred_idx] if pred_idx < len(class_names) else "UNKNOWN"
-    confidence = dequantized_output[pred_idx]
+    pred_idx = np.argmax(output_data)
+    confidence = output_data[pred_idx]
+
+    # Adaptive Confidence Thresholding Filter for stability
+    if len(current_classes) > 5:
+        CONFIDENCE_THRESHOLD = 0.55 # 7 classes (UP/DOWN/LEFT/RIGHT/PAPER/SCISSORS/STONE)
+    elif len(current_classes) == 3:
+        CONFIDENCE_THRESHOLD = 0.65 # 3 classes (PAPER/SCISSORS/STONE)
+    else:
+        CONFIDENCE_THRESHOLD = 0.70 # 4 or 5 classes
+        
+    if confidence < CONFIDENCE_THRESHOLD:
+        predicted_label = 'NULL'
+    else:
+        predicted_label = current_classes[pred_idx] if pred_idx < len(current_classes) else "UNKNOWN"
 
     # Render Prediction Output
     text_color = (0, 255, 0) if predicted_label != 'NULL' else (0, 0, 255)
     result_text = f"Pred: {predicted_label} ({confidence * 100:.1f}%)"
     cv2.putText(frame, result_text, (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.1, text_color, 3)
-
+    
     # Render Active Model Info
-    cv2.putText(frame, f"Model: {model_name} (INT8)", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
+    cv2.putText(frame, f"Model: {model_name} (Keras)", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
     # Render Switch Model Menu at the bottom
     cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (50, 50, 50), -1)
     cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (150, 150, 150), 1)
-
-    cv2.putText(frame, "Switch Model [Press 1-5]:", (20, height - 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame, "1: Separable CNN | 2: Mini ResNet | 3: Baseline CNN", (20, height - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
-    cv2.putText(frame, "4: MobileNetV1  | 5: MobileNetV2  | [q]: Quit | [s]: Save Frame", (20, height - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    
+    cv2.putText(frame, "Switch Model [Press 1-2]:", (20, height - 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame, "1: Mini ResNet 96x96 (FT) | 2: Mini ResNet 128x128 (FT)", (20, height - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    cv2.putText(frame, "[q]: Quit | [s]: Take Snapshot", (20, height - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
 
     # If there is a loading error, show it in red
     if error_msg:
@@ -168,14 +189,15 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key in [ord('1'), ord('2'), ord('3'), ord('4'), ord('5')]:
+    elif key in [ord('1'), ord('2')]:
         target_key = chr(key)
-        load_tflite_model(target_key)
+        load_keras_model(target_key)
     elif key == ord('s'):
         timestamp = int(time.time())
         img_name = f"snapshot_{predicted_label}_{timestamp}.jpg"
         cv2.imwrite(img_name, frame)
         print(f"Snapshot saved: {img_name}")
+
 
 cap.release()
 cv2.destroyAllWindows()
