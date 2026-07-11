@@ -68,7 +68,7 @@ def parse_args():
         "--data-dir",
         dest="data_dir",
         default=os.environ.get("BENCHMARK_DATA_DIR", str(DEFAULT_DATA_DIR)),
-        help="Dataset folder. Relative paths are resolved from the cnn/ directory.",
+        help="Dataset folder. Relative paths are resolved from firmware/pc.",
     )
     parser.add_argument(
         "-0",
@@ -85,7 +85,19 @@ def parse_args():
     parser.add_argument(
         "--model",
         default=os.environ.get("BENCHMARK_TFLITE_MODEL", str(DEFAULT_TFLITE_MODEL_PATH)),
-        help="PC reference .tflite path. Relative paths are resolved from the cnn/ directory.",
+        help="PC reference .tflite path. Relative paths are resolved from firmware/pc.",
+    )
+    parser.add_argument(
+        "--port",
+        default=os.environ.get("BENCHMARK_PORT", PORT),
+        help="Serial port connected to ESP32-S3. Default: BENCHMARK_PORT or COM6.",
+    )
+    parser.add_argument(
+        "--baudrate",
+        "--baud",
+        type=int,
+        default=int(os.environ.get("BENCHMARK_BAUDRATE", str(BAUDRATE))),
+        help="Serial baudrate. Default: BENCHMARK_BAUDRATE or 115200.",
     )
     parser.add_argument(
         "--frame-size",
@@ -104,6 +116,8 @@ ARGS = parse_args()
 DATA_DIR = resolve_data_dir(ARGS.data_dir)
 TFLITE_MODEL_PATH = resolve_project_path(ARGS.model)
 FRAME_WIDTH, FRAME_HEIGHT = parse_frame_size(ARGS.frame_size)
+PORT = ARGS.port
+BAUDRATE = ARGS.baudrate
 ENABLE_LABELS = (not ARGS.no_label) and ARGS.label == "1"
 ENABLE_PC_CROP = not ARGS.no_crop
 

@@ -34,7 +34,6 @@ bool App::Init() {
     ImGui::StyleColorsDark();
     style = &ImGui::GetStyle();
     style->ScaleAllSizes(main_scale);
-    style->FontScaleDpi = main_scale;
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
