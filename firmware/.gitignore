@@ -1,0 +1,20 @@
+# ESP-IDF generated files
+esp/build/
+esp/managed_components/
+esp/sdkconfig.old
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+my_env*/
+
+# Local/generated artifacts
+pc/artifacts/
+*.log
+
+# Large local datasets should stay outside git unless intentionally curated.
+external/model_finetune/datasets/
+
+.vscode/

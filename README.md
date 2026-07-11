@@ -1,188 +1,84 @@
-# EECampEdu Integrated Firmware
+# EECampEdu
 
-This repository is the integration workspace for the gesture-controlled robotic
-arm system.
-
-## System Flow
+This repository is split into two integration areas:
 
 ```text
-ESP32-S3 camera
-  -> photo flash partition
-  -> on-device grayscale / crop / resize / scale
-  -> int8 TFLite Micro gesture model
-  -> gesture result
-  -> robotic arm motion
+EECampEdu/
+  model_finetune/   Training, fine-tuning, datasets, and source `.keras` models.
+  firmware/         ESP32-S3 firmware, deploy quantization, flashing, and benchmark tools.
 ```
 
-PC is used for model fine-tuning, dataset creation, quantization, flashing, and
-benchmarking. ESP32-S3 is used for camera capture, local preprocessing, model
-inference, USB communication, and final motion output.
+All paths are resolved relative to the repository location. After cloning, do
+not edit scripts to match a local drive letter.
 
-This integration branch is Windows-first. PC tools are installed through conda
-and run as Python commands from PowerShell.
-
-## Current Integration Decision
-
-- Hand crop is performed on ESP32-S3.
-- Class order is fixed: `up`, `down`, `right`, `left`, `null`.
-- The stable baseline model is `Separable_CNN_int8.tflite`.
-- Model input contract is `96 x 96 x 1 int8`.
-- ESP32-S3 CPU frequency must be `240 MHz` for benchmark parity with the
-  standalone deploy repo.
-- PSRAM is enabled by default. The tensor arena uses PSRAM unless
-  `PREFER_INTERNAL_TENSOR_ARENA` is explicitly changed.
-- Photo and generic storage are merged into one large `photos` partition; there
-  is no separate `storage` partition in the current integrated layout.
-- The camera team code supports `GRAYSCALE`, `RGB565`, `YUV422`, and `JPEG`.
-- The deploy path should first support grayscale capture, then add JPEG decode
-  if higher-resolution camera storage is needed.
-- Default firmware mode is `TEST_MODE_UART_FRAME`, so deployment can be tested
-  without an OV2640 camera.
-- OV2640 integration is available in `esp/main/src/camera_capture_ov2640.cpp`;
-  the current real-camera path captures grayscale QQVGA and resizes it before
-  inference.
-- Rotary encoder / push-button input from the input-interface team is ported as
-  an optional ESP-IDF GPIO module. It is disabled by default because the
-  prototype pins conflict with the current OV2640 wiring.
-
-## Repository Layout
+## Workflow
 
 ```text
-docs/             Integration notes and architecture decisions
-esp/              ESP-IDF firmware and model flashing tools
-interfaces/       Cross-team contracts and command protocols
-pc/               PC-side benchmark, validation, and setup tools
-external/         References to external team code
-scripts/          Convenience scripts for setup/build/flash/test
+model_finetune/models/*.keras
+  -> firmware deploy quantization with representative calibration images
+  -> firmware/pc/artifacts/models/*_int8.tflite
+  -> flash ESP32-S3 model partition
+  -> run camera or UART benchmark inference
 ```
 
-For a per-file explanation with `TEST`, `CAMERA`, `COMMON`, and
-`MODEL_HANDOFF` tags, see `docs/file_structure.md`.
+## Windows PC Setup
 
-## Environment Setup
-
-### PC Python Environment
-
-Use Windows PowerShell with conda for benchmark, image flashing tools, model
-validation, and future fine-tuning automation.
+Use PowerShell with conda:
 
 ```powershell
-cd D:\0706\EECampEdu
-python scripts\setup_pc_env.py
+cd EECampEdu
+python firmware\scripts\setup_pc_env.py
 conda activate eecampedu
 ```
 
-This installs the single PC dependency file, `pc/requirements.txt`, including
-`Pillow`, `pyserial`, `esptool`, and `tensorflow` for PC-side TFLite reference
-inference during output-similarity benchmark. The default conda environment uses
-Python 3.10 for native Windows TensorFlow compatibility.
+## Quantize A Keras Model
 
-### ESP-IDF Environment
+Default inputs:
 
-Use ESP-IDF v5.x with ESP32-S3 target support.
-
-```powershell
-cd D:\0706\EECampEdu\esp
-idf.py set-target esp32s3
-idf.py fullclean
-idf.py build
+```text
+model_finetune/models/<model_name>.keras
+model_finetune/dataset/train/
 ```
 
-The firmware expects a 16 MB ESP32-S3 board. PSRAM is enabled in
-`esp/sdkconfig`, `esp/sdkconfig.defaults`, and `esp/sdkconfig.defaults.esp32s3`.
-CPU frequency is set to 240 MHz for benchmark parity with the standalone deploy
-repo. `PREFER_INTERNAL_TENSOR_ARENA=false` keeps the default tensor arena path
-on PSRAM.
+Command:
 
-No `git clone --recursive` is required. ESP-IDF downloads managed components
-from `esp/main/idf_component.yml`, currently `esp32-camera` and
-`esp-tflite-micro`.
+```powershell
+python firmware\pc\tools\quantize_keras_model.py --model-name Separable_CNN
+```
 
-## Runtime Modes
+Generated deploy artifacts:
 
-Runtime mode is selected in `esp/main/include/model_config.hpp`.
-
-| Mode | Purpose | Hardware needed |
-| --- | --- | --- |
-| `RuntimeMode::kTestUartFrame` | PC sends grayscale frames over UART; current default benchmark path | no camera |
-| `RuntimeMode::kPhotoFlashTest` | Preload one image into `photos` flash partition and run inference from flash | no camera |
-| `RuntimeMode::kCameraFlash` | Capture from OV2640, store to flash, then infer | OV2640 required |
+```text
+firmware/pc/artifacts/models/Separable_CNN_int8.tflite
+firmware/pc/artifacts/reports/Separable_CNN_quantization_report.json
+```
 
 ## Build Firmware
 
-Build, flash in `esp/`.
+```powershell
+cd firmware\esp
+idf.py set-target esp32s3
+idf.py fullclean
+idf.py build
+idf.py -p COM6 flash monitor
+```
 
-## Flash TFLite Model Only
+## Flash Model Only
+
+From repository root:
 
 ```powershell
-cd D:\0706\EECampEdu
-python esp\flash_tflite_model.py "pc\artifacts\models\Separable_CNN_int8.tflite" -p COM6
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Separable_CNN_int8.tflite" -p COM6
 ```
 
-The Python flashing helpers call `python -m esptool`, which is more reliable
-than invoking `esptool.py` directly on Windows conda environments.
+## Benchmark
 
-## Simulate Camera Photo In Flash
-
-When OV2640 hardware is not available, preload an image into the `photos`
-partition. The tool converts the image to `160 x 160 x 1` grayscale and writes
-the same photo header format used by firmware.
+Firmware must run `RuntimeMode::kTestUartFrame`.
 
 ```powershell
-cd D:\0706\EECampEdu
-python esp\flash_photo.py "path\to\test_image.jpg" -p COM6
+cd firmware\pc
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\Separable_CNN_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
-Then set this in `esp/main/include/model_config.hpp`:
-
-```cpp
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kPhotoFlashTest;
-```
-
-Rebuild and flash firmware. On boot, ESP32-S3 reads the preloaded photo from
-flash and runs one inference pass.
-
-## Benchmark From PC
-
-```powershell
-cd D:\0706\EECampEdu\pc
-$env:BENCHMARK_PORT="COM6"
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Separable_CNN_int8.tflite" --dataset "artifacts\datasets"
-```
-
-This benchmark talks to firmware running in `TEST_MODE_UART_FRAME`: PC sends a
-`160 x 160 x 1` grayscale frame, ESP32-S3 performs crop/resize/quantization, and
-then returns TFLite Micro inference results.
-
-Baseline reporting fields:
-
-```text
-Model              : Separable_CNN_int8.tflite
-CPU frequency      : 240 MHz
-Tensor arena       : PSRAM by default
-Input frame        : 160 x 160 x 1 grayscale
-Model input        : 96 x 96 x 1 int8
-Primary metrics    : model latency, device compute throughput, label accuracy, output similarity
-UART note          : end-to-end UART throughput is dominated by raw frame transfer at 115200 baud
-```
-
-If model-only throughput drops to around `5-6 FPS`, check that the firmware was
-rebuilt with `CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240`. A `160 MHz` build produces
-roughly the same slowdown ratio.
-
-## Model Fine-Tune Handoff
-
-The model-finetune team can build a foundation-model workflow on the AMD AI PC,
-but deploy expects fixed exported artifacts:
-
-```text
-pc/artifacts/models/<model_name>.tflite
-pc/artifacts/models/<model_name>.class_mapping.json
-pc/artifacts/models/<model_name>.preprocess_config.json
-pc/artifacts/reports/<model_name>.quantization_report.json
-```
-
-Examples and the expected handoff contract are in `pc/model_pipeline/`.
-
-See `docs/integration_contract.md` before changing model format, camera format,
-USB messages, or flash partition layout.
+See `firmware/README.md` for firmware runtime modes, flash layout, camera
+integration, and cross-team details.
