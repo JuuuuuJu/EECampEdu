@@ -24,3 +24,6 @@ model_finetune/models/*_saved_model/
 *.log
 .vscode/
 .idea/
+
+# Local PC app builds
+apps/*/build/

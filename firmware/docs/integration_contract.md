@@ -52,12 +52,12 @@ PC benchmark
   -> 96 x 96 x 1 int8 model input
 ```
 
-Photo flash test mode:
+Legacy photo flash test mode:
 
 ```text
 PC image file
   -> esp/flash_photo.py
-  -> photos partition
+  -> raw flash test storage
   -> ESP reads latest stored grayscale frame
   -> ESP crop/resize
   -> 96 x 96 x 1 int8 model input
@@ -69,7 +69,7 @@ PC image file
 | --- | ---: | --- |
 | `factory` | 3 MB | firmware app |
 | `model` | 1 MB | active `.tflite` model |
-| `photos` | remaining flash from `0x410000` | captured image / future storage area |
+| `storage` | remaining flash from `0x410000` | FAT USB MSC drive for captured JPEG frames |
 
 The current model set fits in a 1 MB model partition except larger experimental
 models such as full MobileNet variants. Increase `model` if those must be
@@ -89,3 +89,25 @@ device_us       : int
 ```
 
 `null` means no clear gesture or no action.
+
+## Cross-Team Runtime Contract
+
+1. Model team trains and exports `.keras` only. Deploy owns calibration and int8
+   TFLite generation.
+2. Deploy flashes firmware plus the active `.tflite` model, then runs UART
+   benchmark and output-similarity checks.
+3. Camera team provides OV2640 capture. USB camera mode captures VGA JPEG.
+4. USB camera integration follows `0711_integration/camera_usb/EECampEdu`.
+   CDC can stream base64 image payloads for live preview / UI debugging through
+   `firmware/pc/tools/camera_controller.py`; MSC can expose the FAT `/usb`
+   storage partition to the host PC for file inspection.
+5. Input team owns the PC UI path. The integrated app is `apps/esp32_cam_input_app`, based on Dear ImGui + SDL3. It exposes the ImGui demo window, input-control placeholders, USB CDC command buttons, and a serial monitor for the TinyUSB camera firmware.
+6. Output team controls the robotic arm. Firmware contains an ESP-IDF LEDC
+   output module, but it is disabled until servo GPIOs no longer conflict with
+   OV2640 camera pins.
+
+Note: USB MSC is a mass-storage refresh path, not a true webcam protocol. For
+silky continuous video, UVC or a dedicated bulk streaming protocol would be more
+appropriate than repeatedly mounting and reading JPEG files from FAT storage.
+
+

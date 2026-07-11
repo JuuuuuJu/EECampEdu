@@ -20,10 +20,400 @@
 
 #include "camera_capture.hpp"
 #include "input_controls.hpp"
+#include "output_controls.hpp"
 #include "model_config.hpp"
 #include "photo_storage.hpp"
+#include "usb_composite.hpp"
+#include "esp_camera.h"
+#include "img_converters.h"
+#include "freertos/semphr.h"
+#include "esp_vfs_fat.h"
+#include <dirent.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <unistd.h>
 
 static const char *TAG = "TFLM_GESTURE";
+
+static uint8_t *g_raw_frame = nullptr;
+static uint8_t *g_model_frame = nullptr;
+static uint8_t *g_tensor_arena = nullptr;
+static bool g_tflite_ready = false;
+
+// Forward declarations for functions defined further down in app_main.cpp
+static bool allocate_frame_buffers();
+static void resize_grayscale_to_runtime_frame(const uint8_t *src, int src_width, int src_height, uint8_t *dst);
+static bool run_inference_on_grayscale_frame(const uint8_t *g_raw_frame);
+
+static bool streaming_mode = false;
+static SemaphoreHandle_t camera_mutex = NULL;
+static pixformat_t g_current_format = PIXFORMAT_GRAYSCALE;
+static framesize_t g_current_size = FRAMESIZE_96X96;
+static TaskHandle_t g_input_controls_task_handle = nullptr;
+static TaskHandle_t g_uart_test_task_handle = nullptr;
+static TaskHandle_t g_camera_stream_task_handle = nullptr;
+static TaskHandle_t g_usb_cdc_command_task_handle = nullptr;
+static TaskHandle_t g_photo_flash_task_handle = nullptr;
+static TaskHandle_t g_camera_flash_task_handle = nullptr;
+static TaskHandle_t g_output_controls_task_handle = nullptr;
+
+static void dual_printf(const char *format, ...) {
+    char buffer[256];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(buffer, sizeof(buffer), format, args);
+    va_end(args);
+    
+    printf("%s", buffer);
+    fflush(stdout);
+    
+    usb_cdc_printf("%s", buffer);
+}
+
+static void send_frame_to_pc(const CameraFrame &frame) {
+    usb_cdc_printf("---START_IMAGE:%d:%d:%d:%d---\n", (int)frame.format, frame.width, frame.height, (int)frame.size);
+    usb_cdc_write_base64(frame.data, frame.size);
+    usb_cdc_printf("---END_IMAGE---\n");
+}
+
+static void usb_list_files() {
+    usb_cdc_printf("\n--- LOCAL FLASH FILE LIST ---\n");
+    usb_msc_mount_to_app();
+    vTaskDelay(pdMS_TO_TICKS(50)); // Wait for VFS mount
+    
+    DIR *dir = opendir("/usb");
+    if (!dir) {
+        usb_cdc_printf("ERROR: Failed to open root directory.\n");
+        return;
+    }
+    
+    struct dirent *entry;
+    int count = 0;
+    size_t total_size = 0;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_type != DT_DIR) {
+            char filepath[512];
+            snprintf(filepath, sizeof(filepath), "/usb/%s", entry->d_name);
+            struct stat st;
+            if (stat(filepath, &st) == 0) {
+                usb_cdc_printf("  - /usb/%s (%d bytes)\n", entry->d_name, (int)st.st_size);
+                total_size += st.st_size;
+                count++;
+            }
+        }
+    }
+    closedir(dir);
+    
+    struct statvfs s;
+    if (statvfs("/usb", &s) == 0) {
+        uint64_t free_bytes = ((uint64_t)s.f_bfree * s.f_frsize);
+        usb_cdc_printf("Total: %d files, used space: %d bytes (Free: %llu bytes)\n", 
+                       count, (int)total_size, (unsigned long long)free_bytes);
+    } else {
+        usb_cdc_printf("Total: %d files, used space: %d bytes\n", count, (int)total_size);
+    }
+    usb_cdc_printf("-----------------------------\n\n");
+}
+
+static void camera_stream_task(void *pvParameters) {
+    (void)pvParameters;
+    ESP_LOGI(TAG, "Camera stream task started.");
+    
+    while (true) {
+        if (streaming_mode) {
+            if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
+                CameraFrame frame = {};
+                esp_err_t err = camera_capture_frame(&frame);
+                if (err == ESP_OK) {
+                    send_frame_to_pc(frame);
+                    
+                    // Also run inference if it's grayscale
+                    if (g_tflite_ready && frame.format == CameraFrameFormat::kGrayscale) {
+                        if (allocate_frame_buffers()) {
+                            resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+                            run_inference_on_grayscale_frame(g_raw_frame);
+                        }
+                    }
+                    camera_capture_release(&frame);
+                }
+                xSemaphoreGive(camera_mutex);
+            }
+            vTaskDelay(pdMS_TO_TICKS(15)); // Stream task rate limiter
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    }
+}
+
+static void usb_cdc_command_task(void *pvParameters) {
+    (void)pvParameters;
+    usb_cdc_msg_t msg;
+    QueueHandle_t q = usb_cdc_get_queue();
+    char cmd_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
+    
+    while (true) {
+        if (xQueueReceive(q, &msg, portMAX_DELAY)) {
+            if (msg.buf_len > 0) {
+                // Null-terminate the command
+                memcpy(cmd_buf, msg.buf, msg.buf_len);
+                cmd_buf[msg.buf_len] = '\0';
+                
+                // Strip trailing newlines or carriage returns
+                while (msg.buf_len > 0 && (cmd_buf[msg.buf_len - 1] == '\n' || cmd_buf[msg.buf_len - 1] == '\r')) {
+                    cmd_buf[msg.buf_len - 1] = '\0';
+                    msg.buf_len--;
+                }
+                
+                if (strlen(cmd_buf) == 0) continue;
+                
+                // Parse command
+                if (strcasecmp(cmd_buf, "format") == 0) {
+                    dual_printf("Formatting storage partition... please wait...\n");
+                    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                        esp_camera_deinit();
+                        xSemaphoreGive(camera_mutex);
+                    }
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                    
+                    usb_msc_mount_to_app();
+                    esp_err_t err = esp_vfs_fat_spiflash_format_rw_wl("/usb", "storage");
+                    if (err == ESP_OK) {
+                        dual_printf("FATFS partition formatted successfully! Rebooting device to sync...\n");
+                        vTaskDelay(pdMS_TO_TICKS(500));
+                        esp_restart();
+                    } else {
+                        dual_printf("ERROR: FATFS partition formatting failed.\n");
+                    }
+                    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                        camera_capture_init();
+                        xSemaphoreGive(camera_mutex);
+                    }
+                    continue;
+                }
+                
+                if (strcasecmp(cmd_buf, "usb") == 0) {
+                    streaming_mode = false;
+                    dual_printf("[System] Streaming: DISABLED (USB Mode)\n");
+                    dual_printf("Exposing storage partition to host PC as USB drive...\n");
+                    usb_msc_mount_to_pc();
+                    continue;
+                }
+                
+                char action = cmd_buf[0];
+                const char *argStr = cmd_buf + 1;
+                while (*argStr == ' ' || *argStr == '\t') {
+                    argStr++;
+                }
+                int val = atoi(argStr);
+                
+                switch (action) {
+                    case 'c':
+                    case 'C': {
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            CameraFrame frame = {};
+                            esp_err_t err = camera_capture_frame(&frame);
+                            if (err == ESP_OK) {
+                                send_frame_to_pc(frame);
+                                if (g_tflite_ready && frame.format == CameraFrameFormat::kGrayscale) {
+                                    if (allocate_frame_buffers()) {
+                                        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+                                        run_inference_on_grayscale_frame(g_raw_frame);
+                                    }
+                                }
+                                camera_capture_release(&frame);
+                            } else {
+                                dual_printf("ERROR: Capture failed: %s\n", esp_err_to_name(err));
+                            }
+                            xSemaphoreGive(camera_mutex);
+                        }
+                        break;
+                    }
+                    case 'd':
+                    case 'D': {
+                        streaming_mode = (val == 1);
+                        dual_printf("[System] Streaming: %s\n", streaming_mode ? "ENABLED" : "DISABLED");
+                        break;
+                    }
+                    case 'w':
+                    case 'W': {
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            CameraFrame frame = {};
+                            esp_err_t err = camera_capture_frame(&frame);
+                            if (err == ESP_OK) {
+                                err = photo_storage_write_latest(frame);
+                                if (err == ESP_OK) {
+                                    dual_printf("[System] Saved frame to flash successfully.\n");
+                                } else {
+                                    dual_printf("ERROR: Save failed: %s\n", esp_err_to_name(err));
+                                }
+                                camera_capture_release(&frame);
+                            }
+                            xSemaphoreGive(camera_mutex);
+                        }
+                        break;
+                    }
+                    case 'l':
+                    case 'L': {
+                        usb_list_files();
+                        break;
+                    }
+                    case 'k':
+                    case 'K': {
+                        usb_msc_mount_to_app();
+                        vTaskDelay(pdMS_TO_TICKS(50));
+                        unlink("/usb/latest.raw");
+                        unlink("/usb/latest.meta");
+                        unlink("/usb/latest.bmp");
+                        dual_printf("[System] Cleared files in storage partition.\n");
+                        break;
+                    }
+                    case 'i':
+                    case 'I': {
+                        if (!g_tflite_ready) {
+                            dual_printf("ERROR,TFLITE_NOT_READY\n");
+                            break;
+                        }
+                        if (allocate_frame_buffers()) {
+                            StoredPhotoMetadata metadata = {};
+                            esp_err_t err = photo_storage_read_latest(g_raw_frame, 
+                                                FRAME_HEIGHT * FRAME_WIDTH * FRAME_CHANNEL, 
+                                                &metadata);
+                            if (err == ESP_OK) {
+                                resize_grayscale_to_runtime_frame(g_raw_frame, metadata.width, metadata.height, g_raw_frame);
+                                run_inference_on_grayscale_frame(g_raw_frame);
+                            } else {
+                                dual_printf("ERROR: Failed to read latest photo: %s\n", esp_err_to_name(err));
+                            }
+                        }
+                        break;
+                    }
+                    case 'f':
+                    case 'F': {
+                        int format_val = PIXFORMAT_GRAYSCALE;
+                        if (val == 1) format_val = PIXFORMAT_RGB565;
+                        else if (val == 2) format_val = PIXFORMAT_YUV422;
+                        else if (val == 3) format_val = PIXFORMAT_JPEG;
+                        
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            esp_err_t err = camera_capture_reinit(format_val, (int)g_current_size);
+                            if (err == ESP_OK) {
+                                g_current_format = (pixformat_t)format_val;
+                                dual_printf("[System] Pixel Format updated successfully.\n");
+                            } else {
+                                dual_printf("ERROR: Reinit format failed: %s\n", esp_err_to_name(err));
+                            }
+                            xSemaphoreGive(camera_mutex);
+                        }
+                        break;
+                    }
+                    case 's':
+                    case 'S': {
+                        int size_val = FRAMESIZE_96X96;
+                        if (val == 1) size_val = FRAMESIZE_QQVGA;
+                        else if (val == 2) size_val = FRAMESIZE_QVGA;
+                        else if (val == 3) size_val = FRAMESIZE_VGA;
+                        else if (val == 4) size_val = FRAMESIZE_SVGA;
+                        else if (val == 5) size_val = FRAMESIZE_UXGA;
+                        
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            esp_err_t err = camera_capture_reinit((int)g_current_format, size_val);
+                            if (err == ESP_OK) {
+                                g_current_size = (framesize_t)size_val;
+                                dual_printf("[System] Resolution updated successfully.\n");
+                            } else {
+                                dual_printf("ERROR: Reinit resolution failed: %s\n", esp_err_to_name(err));
+                            }
+                            xSemaphoreGive(camera_mutex);
+                        }
+                        break;
+                    }
+                    case 'e':
+                    case 'E': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_exposure_ctrl(s, val);
+                            dual_printf("[System] Exposure Control updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'g':
+                    case 'G': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_gain_ctrl(s, val);
+                            dual_printf("[System] Gain Control updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'v':
+                    case 'V': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_aec_value(s, val);
+                            dual_printf("[System] Manual Exposure AEC value updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'a':
+                    case 'A': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_agc_gain(s, val);
+                            dual_printf("[System] Manual Gain AGC value updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'b':
+                    case 'B': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_brightness(s, val);
+                            dual_printf("[System] Brightness updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 't':
+                    case 'T': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_contrast(s, val);
+                            dual_printf("[System] Contrast updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'x':
+                    case 'X': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_saturation(s, val);
+                            dual_printf("[System] Saturation updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'm':
+                    case 'M': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_hmirror(s, val);
+                            dual_printf("[System] Horizontal Mirror updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'p':
+                    case 'P': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_vflip(s, val);
+                            dual_printf("[System] Vertical Flip updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
 static constexpr int kExpectedTfliteSchemaVersion = 3;
 
 static constexpr int kClassCount = 5;
@@ -35,30 +425,16 @@ static constexpr const char *kClassNames[kClassCount] = {
     "null",
 };
 
-static uint8_t *g_raw_frame = nullptr;
-static uint8_t *g_model_frame = nullptr;
-static uint8_t *g_tensor_arena = nullptr;
+
 static int g_tensor_arena_size = 0;
 static tflite::MicroInterpreter *g_interpreter = nullptr;
 static TfLiteTensor *g_input = nullptr;
 static TfLiteTensor *g_output = nullptr;
 static const void *g_mapped_model = nullptr;
 static esp_partition_mmap_handle_t g_model_mmap_handle = 0;
-static TaskHandle_t g_input_controls_task_handle = nullptr;
-static TaskHandle_t g_uart_inference_task_handle = nullptr;
-static TaskHandle_t g_photo_flash_task_handle = nullptr;
-static TaskHandle_t g_camera_flash_task_handle = nullptr;
 
 static void input_controls_monitor_task(void *pvParameters) {
     (void)pvParameters;
-    esp_err_t err = input_controls_init();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Input controls init failed: %s", esp_err_to_name(err));
-        g_input_controls_task_handle = nullptr;
-        vTaskDelete(NULL);
-        return;
-    }
-
     InputControlsSnapshot previous = input_controls_get_snapshot();
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
@@ -83,6 +459,12 @@ static void maybe_start_input_controls() {
         return;
     }
 
+    esp_err_t err = input_controls_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Input controls init failed: %s", esp_err_to_name(err));
+        return;
+    }
+
     const BaseType_t created = xTaskCreatePinnedToCore(input_controls_monitor_task,
                                                        "input_controls_monitor",
                                                        4 * 1024,
@@ -96,6 +478,25 @@ static void maybe_start_input_controls() {
     }
 }
 
+static void maybe_start_output_controls() {
+    if (!ENABLE_ROBOT_ARM_OUTPUT) {
+        ESP_LOGI(TAG, "Robot arm output disabled.");
+        return;
+    }
+
+    const BaseType_t created = xTaskCreatePinnedToCore(output_controls_task,
+                                                       "output_controls_task",
+                                                       4 * 1024,
+                                                       NULL,
+                                                       3,
+                                                       &g_output_controls_task_handle,
+                                                       0);
+    if (created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create output_controls_task.");
+        g_output_controls_task_handle = nullptr;
+    }
+}
+
 static const char *runtime_mode_name() {
     switch (RUNTIME_MODE) {
         case RuntimeMode::kTestUartFrame:
@@ -104,6 +505,10 @@ static const char *runtime_mode_name() {
             return "PHOTO_FLASH_TEST_MODE";
         case RuntimeMode::kCameraFlash:
             return "CAMERA_FLASH_MODE";
+        case RuntimeMode::kInputOutputSelfTest:
+            return "INPUT_OUTPUT_SELF_TEST";
+        case RuntimeMode::kCameraUsbMsc:
+            return "CAMERA_USB_MSC_MODE";
     }
     return "UNKNOWN";
 }
@@ -496,6 +901,7 @@ static bool init_tflite_micro() {
 
     printf("CLASS_MAP,0=%s,1=%s,2=%s,3=%s,4=%s\n",
            kClassNames[0], kClassNames[1], kClassNames[2], kClassNames[3], kClassNames[4]);
+    g_tflite_ready = true;
     return true;
 }
 
@@ -529,6 +935,10 @@ static bool allocate_frame_buffers() {
 }
 
 static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
+    if (!g_tflite_ready || g_interpreter == nullptr || g_input == nullptr || g_output == nullptr) {
+        dual_printf("ERROR,TFLITE_NOT_READY\n");
+        return false;
+    }
     dump_frame("DEVICE_FRAME_DUMP", frame, FRAME_WIDTH, FRAME_HEIGHT);
     const int64_t preprocess_start_time = esp_timer_get_time();
     if (!preprocess_frame_to_model_input(frame, g_model_frame)) {
@@ -564,16 +974,16 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
     const int64_t preprocess_us = preprocess_end_time - preprocess_start_time;
     const int64_t invoke_us = end_time - start_time;
     const int64_t device_compute_us = preprocess_us + invoke_us;
-    printf("RESULT,%d,%lld,%lld,%lld",
+    dual_printf("RESULT,%d,%lld,%lld,%lld",
            pred_index,
            (long long)invoke_us,
            (long long)preprocess_us,
            (long long)device_compute_us);
     for (int i = 0; i < kClassCount; ++i) {
-        printf(",%d", scores[i]);
+        dual_printf(",%d", scores[i]);
     }
-    printf("\n");
-    fflush(stdout);
+    dual_printf("\n");
+    output_controls_enqueue(static_cast<OutputGestureAction>(pred_index));
     return true;
 }
 
@@ -590,6 +1000,41 @@ static void resize_grayscale_to_runtime_frame(const uint8_t *src,
     }
 }
 
+static void input_output_self_test_task(void *pvParameters) {
+    (void)pvParameters;
+    ESP_LOGI(TAG, "Input/output self-test task started.");
+
+    const OutputGestureAction sequence[] = {
+        OutputGestureAction::kUp,
+        OutputGestureAction::kDown,
+        OutputGestureAction::kRight,
+        OutputGestureAction::kLeft,
+        OutputGestureAction::kNull,
+    };
+    int index = 0;
+
+    while (true) {
+        if (ENABLE_INPUT_CONTROLS) {
+            const InputControlsSnapshot snapshot = input_controls_get_snapshot();
+            dual_printf("SELFTEST_INPUT,pos=%ld,enc_btn=%lu,btn2=%lu,enc_level=%d,btn2_level=%d\n",
+                        (long)snapshot.encoder_position,
+                        (unsigned long)snapshot.encoder_button_presses,
+                        (unsigned long)snapshot.button2_presses,
+                        snapshot.encoder_button_level,
+                        snapshot.button2_level);
+        } else {
+            dual_printf("SELFTEST_INPUT,disabled\n");
+        }
+
+        const OutputGestureAction action = sequence[index];
+        dual_printf("SELFTEST_OUTPUT,action=%d,enabled=%d\n",
+                    (int)action,
+                    ENABLE_ROBOT_ARM_OUTPUT ? 1 : 0);
+        output_controls_enqueue(action);
+        index = (index + 1) % (int)(sizeof(sequence) / sizeof(sequence[0]));
+        vTaskDelay(pdMS_TO_TICKS(IO_SELF_TEST_INTERVAL_MS));
+    }
+}
 static void uart_test_inference_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in TEST_MODE_UART_FRAME.");
@@ -597,12 +1042,6 @@ static void uart_test_inference_task(void *pvParameters) {
              FRAME_WIDTH,
              FRAME_HEIGHT,
              FRAME_CHANNEL);
-    if (!init_tflite_micro()) {
-        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
-        g_uart_inference_task_handle = nullptr;
-        vTaskDelete(NULL);
-        return;
-    }
     uart_driver_install(UART_NUM_0, 1024 * 32, 0, 0, NULL, 0);
 
     const int expected_bytes = FRAME_HEIGHT * FRAME_WIDTH * FRAME_CHANNEL;
@@ -635,13 +1074,7 @@ static void uart_test_inference_task(void *pvParameters) {
 static void photo_flash_test_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in PHOTO_FLASH_TEST_MODE.");
-    ESP_LOGI(TAG, "Reading one preloaded grayscale photo from the '%s' partition.", PHOTOS_PARTITION_LABEL);
-    if (!init_tflite_micro()) {
-        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
-        g_photo_flash_task_handle = nullptr;
-        vTaskDelete(NULL);
-        return;
-    }
+    ESP_LOGI(TAG, "Reading one preloaded grayscale photo from USB FAT storage.");
 
     if (!allocate_frame_buffers()) {
         vTaskDelete(NULL);
@@ -661,7 +1094,7 @@ static void photo_flash_test_task(void *pvParameters) {
                                     &metadata);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Photo read failed: %s", esp_err_to_name(err));
-        ESP_LOGE(TAG, "Use esp/flash_photo.py to preload a test image into the photos partition.");
+        ESP_LOGE(TAG, "Use esp/flash_photo.py or camera_usb W command to preload latest.raw/latest.meta in /usb FAT storage.");
         vTaskDelete(NULL);
         return;
     }
@@ -685,7 +1118,6 @@ static void photo_flash_test_task(void *pvParameters) {
 
     run_inference_on_grayscale_frame(g_raw_frame);
     ESP_LOGI(TAG, "PHOTO_FLASH_TEST_MODE completed one inference pass.");
-    g_photo_flash_task_handle = nullptr;
     vTaskDelete(NULL);
 }
 
@@ -693,12 +1125,6 @@ static void camera_flash_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in CAMERA_FLASH_MODE.");
     ESP_LOGI(TAG, "Camera mode uses OV2640 capture, photo flash storage, grayscale resize, and TFLite inference.");
-    if (!init_tflite_micro()) {
-        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
-        g_camera_flash_task_handle = nullptr;
-        vTaskDelete(NULL);
-        return;
-    }
 
     esp_err_t err = photo_storage_init();
     if (err != ESP_OK) {
@@ -753,46 +1179,68 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "Runtime mode: %s", runtime_mode_name());
     log_memory_status();
     maybe_start_input_controls();
+    maybe_start_output_controls();
+
+    if (RUNTIME_MODE == RuntimeMode::kInputOutputSelfTest) {
+        xTaskCreatePinnedToCore(input_output_self_test_task,
+                                "input_output_self_test_task",
+                                4 * 1024,
+                                NULL,
+                                4,
+                                NULL,
+                                0);
+        return;
+    }
+
+    const bool model_ready = init_tflite_micro();
+    if (!model_ready && RUNTIME_MODE != RuntimeMode::kCameraUsbMsc) {
+        ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
+        return;
+    }
+    if (!model_ready) {
+        ESP_LOGW(TAG, "TFLite Micro unavailable; continuing camera/USB test without inference.");
+    }
 
     if (RUNTIME_MODE == RuntimeMode::kTestUartFrame) {
-        const BaseType_t created = xTaskCreatePinnedToCore(uart_test_inference_task,
-                                                           "uart_test_inference_task",
-                                                           16 * 1024,
-                                                           NULL,
-                                                           5,
-                                                           &g_uart_inference_task_handle,
-                                                           1);
-        if (created != pdPASS) {
-            ESP_LOGE(TAG, "Failed to create uart_test_inference_task.");
-            g_uart_inference_task_handle = nullptr;
-        }
+        xTaskCreatePinnedToCore(uart_test_inference_task,
+                                "uart_test_inference_task",
+                                16 * 1024,
+                                NULL,
+                                5,
+                                &g_uart_test_task_handle,
+                                1);
         return;
     }
+
+    // Initialize USB Composite CDC + MSC interfaces
+    usb_composite_init();
+    camera_mutex = xSemaphoreCreateMutex();
+    configASSERT(camera_mutex);
+
+    // Create camera streaming and command parsing tasks
+    xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, &g_camera_stream_task_handle, 1);
+    xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, &g_usb_cdc_command_task_handle, 0);
 
     if (RUNTIME_MODE == RuntimeMode::kPhotoFlashTest) {
-        const BaseType_t created = xTaskCreatePinnedToCore(photo_flash_test_task,
-                                                           "photo_flash_test_task",
-                                                           16 * 1024,
-                                                           NULL,
-                                                           5,
-                                                           &g_photo_flash_task_handle,
-                                                           1);
-        if (created != pdPASS) {
-            ESP_LOGE(TAG, "Failed to create photo_flash_test_task.");
-            g_photo_flash_task_handle = nullptr;
-        }
+        xTaskCreatePinnedToCore(photo_flash_test_task,
+                                "photo_flash_test_task",
+                                16 * 1024,
+                                NULL,
+                                5,
+                                &g_photo_flash_task_handle,
+                                1);
         return;
     }
 
-    const BaseType_t created = xTaskCreatePinnedToCore(camera_flash_task,
-                                                       "camera_flash_task",
-                                                       16 * 1024,
-                                                       NULL,
-                                                       5,
-                                                       &g_camera_flash_task_handle,
-                                                       1);
-    if (created != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create camera_flash_task.");
-        g_camera_flash_task_handle = nullptr;
+    if (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
+        return;
     }
+
+    xTaskCreatePinnedToCore(camera_flash_task,
+                            "camera_flash_task",
+                            16 * 1024,
+                            NULL,
+                            5,
+                            &g_camera_flash_task_handle,
+                            1);
 }

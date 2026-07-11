@@ -5,7 +5,9 @@ idf_component_register(
         "src/app_main.cpp"
         "src/camera_capture_ov2640.cpp"
         "src/input_controls.cpp"
+        "src/output_controls.cpp"
         "src/photo_storage.cpp"
+        "src/usb_composite.cpp"
     INCLUDE_DIRS
         "include"
     REQUIRES
@@ -19,4 +21,8 @@ idf_component_register(
         spi_flash
         esp32-camera
         esp-tflite-micro
+        esp_tinyusb
+        esp_driver_uart
+        esp_driver_gpio
+        esp_driver_ledc
 )

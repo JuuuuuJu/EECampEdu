@@ -9,6 +9,8 @@ enum class RuntimeMode {
     kTestUartFrame,
     kPhotoFlashTest,
     kCameraFlash,
+    kInputOutputSelfTest,
+    kCameraUsbMsc,
 };
 
 // Keep TEST mode as the default integration mode. It lets the deploy pipeline
@@ -40,10 +42,41 @@ constexpr int INPUT_ENCODER_BUTTON_GPIO = 21;
 constexpr int INPUT_BUTTON2_GPIO = 18;
 constexpr int INPUT_DEBOUNCE_MS = 60;
 
+// Input/output unit-test mode. This mode does not require a flashed TFLite model.
+constexpr int IO_SELF_TEST_INTERVAL_MS = 1000;
+
+// Robot arm output from robotic_arm.ino, ported to ESP-IDF LEDC. Disabled by
+// default because ROBOT_ARM_BASE_GPIO=18 conflicts with OV2640 Y7 on the
+// current camera wiring.
+constexpr bool ENABLE_ROBOT_ARM_OUTPUT = false;
+constexpr int ROBOT_ARM_BASE_GPIO = 18;
+constexpr int ROBOT_ARM_ARM_GPIO = 19;
+constexpr int ROBOT_ARM_PITCH_GPIO = 22;
+constexpr int ROBOT_ARM_CLAW_GPIO = 21;
+constexpr int ROBOT_ARM_BASE_INITIAL_DEG = 90;
+constexpr int ROBOT_ARM_ARM_INITIAL_DEG = 90;
+constexpr int ROBOT_ARM_PITCH_INITIAL_DEG = 90;
+constexpr int ROBOT_ARM_CLAW_INITIAL_DEG = 30;
+constexpr int ROBOT_ARM_PITCH_MIN_DEG = 30;
+constexpr int ROBOT_ARM_PITCH_MAX_DEG = 125;
+constexpr int ROBOT_ARM_STEP_DEG = 5;
+constexpr int ROBOT_ARM_SERVO_MIN_US = 500;
+constexpr int ROBOT_ARM_SERVO_MAX_US = 2500;
+constexpr int ROBOT_ARM_SERVO_FREQ_HZ = 50;
+constexpr int ROBOT_ARM_SERVO_DUTY_BITS = 16;
+
 // Integration default: keep the tensor arena on PSRAM so all supported model
 // candidates use the same memory path. Set true only for small-model speed tests.
 constexpr bool PREFER_INTERNAL_TENSOR_ARENA = false;
 constexpr int TENSOR_ARENA_SIZE = 800 * 1024;
 constexpr int FALLBACK_TENSOR_ARENA_SIZE = 256 * 1024;
 constexpr const char *MODEL_PARTITION_LABEL = "model";
-constexpr const char *PHOTOS_PARTITION_LABEL = "photos";
+constexpr const char *STORAGE_PARTITION_LABEL = "storage";
+constexpr const char *USB_MSC_MOUNT_PATH = "/usb";
+
+// Camera + USB CDC/MSC integration mode. CDC can stream base64 frames to the
+// PC camera controller, and MSC exposes the FAT /usb storage partition. The
+// current camera_usb storage command writes latest.raw/latest.meta/latest.bmp.
+constexpr bool CAMERA_USB_CONTINUOUS_CAPTURE = true;
+constexpr bool CAMERA_USB_KEEP_SEQUENCE = true;
+constexpr int CAMERA_USB_CAPTURE_INTERVAL_MS = 250;
