@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "model_name": "Separable_CNN",
+  "source_model": "model_finetune/models/Separable_CNN.keras",
+  "exported_tflite": "firmware/pc/artifacts/models/Separable_CNN_int8.tflite",
+  "calibration_dir": "model_finetune/dataset/train",
+  "calibration_samples": 200,
+  "input": {
+    "shape": [1, 96, 96, 1],
+    "dtype": "int8",
+    "scale": 0.003527,
+    "zero_point": -128
+  },
+  "output": {
+    "shape": [1, 5],
+    "dtype": "int8",
+    "scale": 0.00390625,
+    "zero_point": -128
+  },
+  "operators": ["CONV_2D", "DEPTHWISE_CONV_2D", "MAX_POOL_2D", "FULLY_CONNECTED", "RESHAPE", "SOFTMAX"],
+  "metrics": {
+    "label_accuracy": null,
+    "top1_match_vs_pc_reference": null,
+    "score_mae_vs_pc_reference": null,
+    "max_score_error_vs_pc_reference": null,
+    "cosine_similarity_vs_pc_reference": null
+  }
+}

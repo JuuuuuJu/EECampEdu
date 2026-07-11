@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "classes": [
+    {"index": 0, "name": "up", "action": "move_up"},
+    {"index": 1, "name": "down", "action": "move_down"},
+    {"index": 2, "name": "right", "action": "move_right"},
+    {"index": 3, "name": "left", "action": "move_left"},
+    {"index": 4, "name": "null", "action": "no_action"}
+  ]
+}
