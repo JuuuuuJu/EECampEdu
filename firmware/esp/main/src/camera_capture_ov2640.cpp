@@ -5,6 +5,8 @@
 #include "esp_camera.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char *TAG = "CAMERA_CAPTURE";
 
@@ -28,14 +30,12 @@ static constexpr int VSYNC_GPIO_NUM = 6;
 static constexpr int HREF_GPIO_NUM = 7;
 static constexpr int PCLK_GPIO_NUM = 13;
 
-// First real-camera milestone: capture a small grayscale frame. The deploy
-// side can resize/crop this later without requiring JPEG decode.
-static constexpr pixformat_t kDefaultPixelFormat = PIXFORMAT_GRAYSCALE;
-static constexpr framesize_t kDefaultFrameSize = FRAMESIZE_QQVGA; // 160 x 120
 static constexpr int kXclkFrequencyHz = 10000000;
 static constexpr int kJpegQuality = 12;
 
 static bool g_camera_initialized = false;
+static pixformat_t g_current_format = PIXFORMAT_GRAYSCALE;
+static framesize_t g_current_size = FRAMESIZE_96X96;
 
 static CameraFrameFormat map_frame_format(pixformat_t format) {
     switch (format) {
@@ -93,30 +93,30 @@ esp_err_t camera_capture_init() {
     config.xclk_freq_hz = kXclkFrequencyHz;
     config.ledc_timer = LEDC_TIMER_0;
     config.ledc_channel = LEDC_CHANNEL_0;
-    config.pixel_format = kDefaultPixelFormat;
-    config.frame_size = kDefaultFrameSize;
+    config.pixel_format = g_current_format;
+    config.frame_size = g_current_size;
     config.jpeg_quality = kJpegQuality;
     config.grab_mode = CAMERA_GRAB_LATEST;
-
-#ifdef CONFIG_SPIRAM
-    config.fb_location = CAMERA_FB_IN_PSRAM;
-    config.fb_count = (kDefaultPixelFormat == PIXFORMAT_JPEG) ? 2 : 1;
+    config.fb_count = 1;
+#if CONFIG_SPIRAM
+    const bool prefer_psram_fb = (g_current_format == PIXFORMAT_JPEG) || (g_current_size >= FRAMESIZE_QVGA);
+    if (prefer_psram_fb) {
+        config.fb_location = CAMERA_FB_IN_PSRAM;
+        config.fb_count = 2;
+    } else {
+        config.fb_location = CAMERA_FB_IN_DRAM;
+    }
 #else
     config.fb_location = CAMERA_FB_IN_DRAM;
-    config.fb_count = 1;
 #endif
 
     ESP_LOGI(TAG,
              "Initializing OV2640: format=%s frame_size=%d xclk=%d Hz fb_count=%d location=%s",
-             format_name(kDefaultPixelFormat),
-             (int)kDefaultFrameSize,
+             format_name(g_current_format),
+             (int)g_current_size,
              kXclkFrequencyHz,
              config.fb_count,
-#ifdef CONFIG_SPIRAM
-             "PSRAM"
-#else
-             "DRAM"
-#endif
+             config.fb_location == CAMERA_FB_IN_PSRAM ? "PSRAM" : "DRAM"
     );
 
     esp_err_t err = esp_camera_init(&config);
@@ -142,6 +142,31 @@ esp_err_t camera_capture_init() {
     g_camera_initialized = true;
     ESP_LOGI(TAG, "OV2640 camera initialized.");
     return ESP_OK;
+}
+
+esp_err_t camera_capture_reinit(int format_val, int framesize_val) {
+    pixformat_t format = (pixformat_t)format_val;
+    framesize_t size = (framesize_t)framesize_val;
+
+    if (size >= FRAMESIZE_VGA && format != PIXFORMAT_JPEG) {
+        ESP_LOGE(TAG, "ERROR: Raw formats at VGA and higher resolutions are disabled to prevent DRAM overflow crashes.");
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (g_camera_initialized && g_current_format == format && g_current_size == size) {
+        return ESP_OK; // Re-configuration already active; bypass.
+    }
+
+    if (g_camera_initialized) {
+        esp_camera_deinit();
+        vTaskDelay(pdMS_TO_TICKS(150));
+        g_camera_initialized = false;
+    }
+
+    g_current_format = format;
+    g_current_size = size;
+
+    return camera_capture_init();
 }
 
 esp_err_t camera_capture_frame(CameraFrame *frame) {
@@ -170,12 +195,6 @@ esp_err_t camera_capture_frame(CameraFrame *frame) {
     frame->format = map_frame_format(fb->format);
     frame->handle = fb;
 
-    ESP_LOGI(TAG,
-             "Captured frame: %dx%d bytes=%u format=%s",
-             frame->width,
-             frame->height,
-             (unsigned)frame->size,
-             format_name(fb->format));
     return ESP_OK;
 }
 

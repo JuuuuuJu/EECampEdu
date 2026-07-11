@@ -22,5 +22,6 @@ struct CameraFrame {
 };
 
 esp_err_t camera_capture_init();
+esp_err_t camera_capture_reinit(int format_val, int framesize_val);
 esp_err_t camera_capture_frame(CameraFrame *frame);
 void camera_capture_release(CameraFrame *frame);

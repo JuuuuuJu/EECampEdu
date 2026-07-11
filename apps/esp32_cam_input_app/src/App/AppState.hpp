@@ -1,0 +1,48 @@
+#pragma once
+
+#include "Usb/UsbCdcClient.hpp"
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+class AppState {
+public:
+    void Init();
+    void PollUsb();
+    bool ConnectUsb();
+    void DisconnectUsb();
+    void SendUsbCommand(const std::string& command, const std::string& label);
+    bool IsUsbConnected() const;
+
+    float camera_focus = 0.0f;
+    int exposure = 0;
+    int gain = 0;
+    int frame_size = 0;      // Firmware protocol: 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA, 4=SVGA, 5=UXGA.
+    int pixel_format = 0;   // Firmware protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG.
+    bool stream_enabled = false;
+    bool vertical_flip = false;
+    bool show_imgui_demo = true;
+
+    char usb_port[64] = "COM6";
+    int baud_rate = 115200;
+    std::string usb_status;
+    std::string last_command;
+    std::string usb_rx_log;
+    std::string last_frame_header;
+    int received_image_count = 0;
+
+    std::vector<uint8_t> latest_frame_rgba;
+    int latest_frame_width = 0;
+    int latest_frame_height = 0;
+    int latest_frame_format = -1;
+    bool latest_frame_dirty = false;
+
+private:
+    UsbCdcClient usb_client;
+    std::string cdc_parse_buffer;
+
+    void AppendUsbLog(const std::string& text);
+    void ParseCdcFrames();
+    void StoreDecodedFrame(int format, int width, int height, const std::vector<uint8_t>& payload);
+};

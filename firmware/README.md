@@ -7,7 +7,7 @@ arm system.
 
 ```text
 ESP32-S3 camera
-  -> photo flash partition
+  -> FAT storage partition / USB MSC drive
   -> on-device grayscale / crop / resize / scale
   -> int8 TFLite Micro gesture model
   -> gesture result
@@ -32,8 +32,8 @@ and run as Python commands from PowerShell.
   standalone deploy repo.
 - PSRAM is enabled by default. The tensor arena uses PSRAM unless
   `PREFER_INTERNAL_TENSOR_ARENA` is explicitly changed.
-- Photo and generic storage are merged into one large `photos` partition; there
-  is no separate `storage` partition in the current integrated layout.
+- Camera photos are written into one large FAT `storage` partition, which is
+  exposed to the PC as a USB MSC drive in camera USB mode.
 - The camera team code supports `GRAYSCALE`, `RGB565`, `YUV422`, and `JPEG`.
 - The deploy path should first support grayscale capture, then add JPEG decode
   if higher-resolution camera storage is needed.
@@ -106,12 +106,55 @@ Runtime mode is selected in `esp/main/include/model_config.hpp`.
 | Mode | Purpose | Hardware needed |
 | --- | --- | --- |
 | `RuntimeMode::kTestUartFrame` | PC sends grayscale frames over UART; current default benchmark path | no camera |
-| `RuntimeMode::kPhotoFlashTest` | Preload one image into `photos` flash partition and run inference from flash | no camera |
+| `RuntimeMode::kPhotoFlashTest` | Legacy raw-photo test path for one preloaded grayscale image | no camera |
 | `RuntimeMode::kCameraFlash` | Capture from OV2640, store to flash, then infer | OV2640 required |
+| `RuntimeMode::kInputOutputSelfTest` | Logs input state and cycles output actions without model/camera | input/output hardware optional |
+| `RuntimeMode::kCameraUsbMsc` | Camera USB CDC live preview plus USB MSC storage | OV2640 + USB |
+
+Full module and integration test procedures are documented in `docs/test_plan.md`.
 
 ## Build Firmware
 
 Build, flash in `esp/`.
+
+## Camera + USB CDC/MSC Mode
+
+Set this in `esp/main/include/model_config.hpp`:
+
+```cpp
+constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
+```
+
+The USB camera path now follows `0711_integration/camera_usb/EECampEdu` as the
+source of truth. ESP32-S3 initializes TinyUSB CDC + MSC and creates FreeRTOS
+camera / command tasks with task handles.
+
+Supported paths:
+
+```text
+CDC live preview  : ESP sends base64 image frames to firmware/pc/tools/camera_controller.py
+USB MSC storage   : ESP exposes the FAT storage partition as a USB drive
+On-device infer   : grayscale captures can be cropped/resized and sent to TFLite Micro
+```
+
+Main CDC commands inherited from the camera_usb integration:
+
+```text
+C / c        capture one frame and stream it over CDC
+D / d 0|1    disable/enable continuous CDC streaming
+W / w        capture and write latest.raw/latest.meta/latest.bmp into /usb
+L / l        list files in /usb
+K / k        clear latest.raw/latest.meta/latest.bmp
+I / i        run inference from the latest stored grayscale frame
+F / f <n>    set pixel format: 0 gray, 1 RGB565, 2 YUV422, 3 JPEG
+S / s <n>    set frame size: 0 96x96, 1 QQVGA, 2 QVGA, 3 VGA, 4 SVGA, 5 UXGA
+usb          expose FAT storage to the host PC
+format       format FAT storage and reboot
+```
+
+CDC streaming is useful for live preview and UI debugging. USB MSC is useful
+when the PC app wants to inspect or load files from ESP storage. This is not a
+true UVC webcam protocol.
 
 ## Flash TFLite Model Only
 
@@ -125,9 +168,9 @@ than invoking `esptool.py` directly on Windows conda environments.
 
 ## Simulate Camera Photo In Flash
 
-When OV2640 hardware is not available, preload an image into the `photos`
-partition. The tool converts the image to `160 x 160 x 1` grayscale and writes
-the same photo header format used by firmware.
+When OV2640 hardware is not available, the older photo-flash test path can
+preload an image into flash. This is now a legacy deploy test path and is
+separate from USB MSC camera storage.
 
 ```powershell
 cd EECampEdu

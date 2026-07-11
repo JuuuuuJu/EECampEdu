@@ -1,44 +1,36 @@
 # PC Tools
 
-PC-side code is used for model verification, benchmark, dataset handling, and
-deploy-side quantization on the AI PC.
+PC-side code is used for model verification, benchmark, dataset handling, and deploy-side quantization on the AI PC.
 
 ## Layout
 
 ```text
-benchmark/      ESP benchmark and PC TFLite reference comparison
-model_pipeline/ Model-finetune handoff contract and examples
-tools/          debugging and model validation helpers
-artifacts/      generated local files; ignored by git
+benchmark/       ESP benchmark and PC TFLite reference comparison
+model_pipeline/  Model-finetune handoff contract and examples
+tools/           debugging/model helpers plus camera_controller.py for USB CDC preview
+artifacts/       generated local files; ignored by git
 ```
 
-Expected artifacts:
+The desktop UI is intentionally outside firmware at:
 
 ```text
-artifacts/models/*_int8.tflite
-artifacts/datasets/
-artifacts/reports/
+../../apps/esp32_cam_input_app/
 ```
 
 ## Requirements
 
-`requirements.txt` is the single PC dependency file for deploy integration,
-benchmark transport, image conversion, flashing tools, and PC-side TFLite
-reference inference. Install it through the Windows conda setup script:
+`requirements.txt` is the single Python dependency file for deploy integration, benchmark transport, image conversion, flashing tools, and PC-side TFLite reference inference. Install it through the Windows conda setup script from the repository root:
 
 ```powershell
-cd EECampEdu
-python firmware\scripts\setup_pc_env.py
+python scripts\\setup_env.py
 conda activate eecampedu
 ```
 
-The default environment uses Python 3.10 for native Windows TensorFlow
-compatibility.
+The setup script also installs native build packages for the top-level ImGui app (`cmake`, `ninja`, `sdl3`). Dear ImGui is fetched by CMake, not vendored into this repository.
 
 ## Quantize Keras Source Model
 
-The current deploy pipeline reads `.keras` source models, not float32 `.tflite`
-files. Default source models are expected under:
+The current deploy pipeline reads `.keras` source models, not float32 `.tflite` files. Default source models are expected under:
 
 ```text
 model_finetune/models/
@@ -51,9 +43,6 @@ cd EECampEdu
 python firmware\pc\tools\quantize_keras_model.py --model-name Separable_CNN
 ```
 
-Useful alternatives:
+## USB Camera Controller
 
-```powershell
-python firmware\pc\tools\quantize_keras_model.py --model-name Baseline_CNN
-python firmware\pc\tools\quantize_keras_model.py --keras model_finetune\models\Separable_CNN.keras --model-name Separable_CNN
-```
+`tools/camera_controller.py` talks to the ESP32-S3 TinyUSB CDC port, receives base64 image frames for live preview, and sends camera commands such as capture, streaming, format, and resolution changes. USB MSC storage can expose the FAT storage partition to the host PC for file inspection.
