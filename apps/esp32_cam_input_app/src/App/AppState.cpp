@@ -1,10 +1,12 @@
 #include "AppState.hpp"
+#include "Image/JpegDecoder.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
+#include <utility>
 
 static int Base64Value(char c) {
     if (c >= 'A' && c <= 'Z') return c - 'A';
@@ -51,6 +53,7 @@ void AppState::Init() {
     usb_rx_log.clear();
     last_frame_header.clear();
     cdc_parse_buffer.clear();
+    cdc_receiving_image_frame = false;
     received_image_count = 0;
     latest_frame_rgba.clear();
     latest_frame_width = 0;
@@ -79,6 +82,7 @@ void AppState::DisconnectUsb() {
     }
     usb_status = "Disconnected";
     stream_enabled = false;
+    cdc_receiving_image_frame = false;
 }
 
 bool AppState::IsUsbConnected() const {
@@ -120,11 +124,19 @@ void AppState::PollUsb() {
         return;
     }
 
-    AppendUsbLog(chunk);
+    const bool chunk_has_image_marker =
+        chunk.find("---START_IMAGE:") != std::string::npos ||
+        chunk.find("---END_IMAGE---") != std::string::npos;
+    if (!cdc_receiving_image_frame && !chunk_has_image_marker) {
+        AppendUsbLog(chunk);
+    }
+
     cdc_parse_buffer += chunk;
-    constexpr size_t kMaxParseBytes = 2 * 1024 * 1024;
+    constexpr size_t kMaxParseBytes = 4 * 1024 * 1024;
     if (cdc_parse_buffer.size() > kMaxParseBytes) {
         cdc_parse_buffer.erase(0, cdc_parse_buffer.size() - kMaxParseBytes);
+        cdc_receiving_image_frame = false;
+        AppendUsbLog("[PC] CDC parse buffer overflow; dropped old frame data.\n");
     }
     ParseCdcFrames();
 }
@@ -144,6 +156,7 @@ void AppState::ParseCdcFrames() {
     while (true) {
         size_t start = cdc_parse_buffer.find(start_marker);
         if (start == std::string::npos) {
+            cdc_receiving_image_frame = false;
             if (cdc_parse_buffer.size() > 4096) {
                 cdc_parse_buffer.erase(0, cdc_parse_buffer.size() - 4096);
             }
@@ -156,6 +169,7 @@ void AppState::ParseCdcFrames() {
 
         size_t header_end = cdc_parse_buffer.find("---", start + start_marker.size());
         if (header_end == std::string::npos) {
+            cdc_receiving_image_frame = true;
             return;
         }
         header_end += 3;
@@ -167,16 +181,19 @@ void AppState::ParseCdcFrames() {
         std::string header = cdc_parse_buffer.substr(0, header_end);
         if (!ParseFrameHeader(header, &format, &width, &height, &byte_count)) {
             cdc_parse_buffer.erase(0, header_end);
+            cdc_receiving_image_frame = false;
             continue;
         }
 
         size_t payload_start = header_end;
-        while (payload_start < cdc_parse_buffer.size() && (cdc_parse_buffer[payload_start] == '\r' || cdc_parse_buffer[payload_start] == '\n')) {
+        while (payload_start < cdc_parse_buffer.size() &&
+               (cdc_parse_buffer[payload_start] == '\r' || cdc_parse_buffer[payload_start] == '\n')) {
             payload_start += 1;
         }
 
         size_t end = cdc_parse_buffer.find(end_marker, payload_start);
         if (end == std::string::npos) {
+            cdc_receiving_image_frame = true;
             return;
         }
 
@@ -189,6 +206,8 @@ void AppState::ParseCdcFrames() {
             << " bytes=" << byte_count << " decoded=" << payload.size();
         last_frame_header = oss.str();
         received_image_count += 1;
+        cdc_receiving_image_frame = false;
+        AppendUsbLog("[RX_FRAME] " + last_frame_header + "\n");
 
         cdc_parse_buffer.erase(0, end + end_marker.size());
     }
@@ -228,7 +247,8 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
         }
         latest_frame_rgba.resize(pixels * 4);
         for (size_t i = 0; i < pixels; ++i) {
-            uint16_t packed = static_cast<uint16_t>(payload[i * 2]) | (static_cast<uint16_t>(payload[i * 2 + 1]) << 8);
+            uint16_t packed = static_cast<uint16_t>(payload[i * 2]) |
+                              (static_cast<uint16_t>(payload[i * 2 + 1]) << 8);
             uint8_t r = static_cast<uint8_t>(((packed >> 11) & 0x1F) * 255 / 31);
             uint8_t g = static_cast<uint8_t>(((packed >> 5) & 0x3F) * 255 / 63);
             uint8_t b = static_cast<uint8_t>((packed & 0x1F) * 255 / 31);
@@ -237,6 +257,23 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
             latest_frame_rgba[i * 4 + 2] = b;
             latest_frame_rgba[i * 4 + 3] = 255;
         }
+        latest_frame_dirty = true;
+        return;
+    }
+
+    if (format == 3) {
+        std::vector<uint8_t> decoded_rgba;
+        int decoded_width = 0;
+        int decoded_height = 0;
+        std::string decode_error;
+        if (!DecodeJpegToRgba(payload.data(), payload.size(), &decoded_rgba, &decoded_width, &decoded_height, &decode_error)) {
+            latest_frame_rgba.clear();
+            AppendUsbLog("[PC] JPEG decode failed: " + decode_error + "\n");
+            return;
+        }
+        latest_frame_rgba = std::move(decoded_rgba);
+        latest_frame_width = decoded_width;
+        latest_frame_height = decoded_height;
         latest_frame_dirty = true;
         return;
     }

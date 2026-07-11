@@ -1,4 +1,4 @@
-import serial
+﻿import serial
 import base64
 import os
 import threading
@@ -87,8 +87,8 @@ saving_next_frame_lock = threading.Lock()
 
 # Camera settings state tracking (local representation of ESP32 state)
 camera_state = {
-    "format": "GRAYSCALE",
-    "resolution": "96x96",
+    "format": "JPEG",
+    "resolution": "VGA (640x480)",
     "aec": 1,         # 1 = Auto, 0 = Manual
     "exposure": 0,    # 0 to 1200
     "agc": 1,         # 1 = Auto, 0 = Manual
@@ -102,15 +102,15 @@ camera_state = {
 }
 
 def save_frame(img_bytes, metadata, fmt_id):
-    # Decide extension based on Espressif's pixformat_t enum:
-    # 0=RGB565, 1=YUV422, 2=YUV420, 3=GRAYSCALE, 4=JPEG
-    if fmt_id == 4:
+    # Decide extension based on firmware CameraFrameFormat enum:
+    # Firmware CameraFrameFormat: 0=GRAYSCALE, 1=RGB565, 2=YUV422, 3=JPEG
+    if fmt_id == 3:
         ext = "jpg"
-    elif fmt_id == 3:
-        ext = "gray"
     elif fmt_id == 0:
-        ext = "rgb565"
+        ext = "gray"
     elif fmt_id == 1:
+        ext = "rgb565"
+    elif fmt_id == 2:
         ext = "yuv422"
     else:
         ext = "bin"
@@ -125,7 +125,7 @@ def save_frame(img_bytes, metadata, fmt_id):
             
         print(f"Image decoded and saved successfully to: {filepath}")
         
-        if fmt_id == 4:
+        if fmt_id == 3:
             print("File is a valid JPEG, you can open it directly in any viewer.")
     except Exception as ex:
         print(f"❌ Failed to save image: {ex}")
@@ -186,12 +186,18 @@ def read_serial_thread():
                         
                         # Decide extension based on format
                         orig_ext = file_metadata["filename"].split(".")[-1].lower()
-                        if orig_ext == "bmp": ext = "bmp"
-                        elif fmt_id == 4: ext = "jpg"
-                        elif fmt_id == 3: ext = "gray"
-                        elif fmt_id == 0: ext = "rgb565"
-                        elif fmt_id == 1: ext = "yuv422"
-                        else: ext = "bin"
+                        if orig_ext == "bmp":
+                            ext = "bmp"
+                        elif fmt_id == 3:
+                            ext = "jpg"
+                        elif fmt_id == 0:
+                            ext = "gray"
+                        elif fmt_id == 1:
+                            ext = "rgb565"
+                        elif fmt_id == 2:
+                            ext = "yuv422"
+                        else:
+                            ext = "bin"
                         
                         # Enforce correct extension in PC file name
                         if not clean_name.lower().endswith(f".{ext}"):
@@ -333,13 +339,13 @@ def print_help_menu():
     print("-"*60)
     print("📁 General and Storage commands:")
     print("  h                   - Display this Help menu")
-    print("  c                   - Trigger image acquisition (saved to PC & CV processed on ESP32)")
+    print("  c / Space           - Capture preview frame and run ESP32 model inference")
     print("  d1 / d0             - Start/Stop Continuous live camera stream (GUI preview)")
     print("  w                   - Capture image and save locally to ESP32 Flash storage")
     print("  l                   - List all files stored in ESP32 Flash storage (displays index numbers)")
     print("  r <idx/file> [cv]   - Retrieve file from ESP32 Flash (r 0 to retrieve all files). Append 'cv' for CV copy")
     print("  k <idx/file>        - Delete/Kill a file from ESP32 Flash (k 0 to delete all files)")
-    print("  i <idx/file>        - Feed a stored file to local CV model task (i 0 to infer on all files)")
+    print("  i <idx/file>        - Legacy stored-file inference command; use c/Space for live camera model test")
     print("  format              - Format ESP32 Flash partition")
     print("  usb                 - Expose ESP32 storage to PC as USB drive")
     print("\n🎨 Pixel Format (f <0-3>):")
@@ -708,14 +714,14 @@ def run_gui():
             
             img_bgr = None
             try:
-                if fmt_id == 4:  # JPEG
+                if fmt_id == 3:  # JPEG
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                elif fmt_id == 3:  # Grayscale
+                elif fmt_id == 0:  # Grayscale
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     img_gray = nparr.reshape((metadata['height'], metadata['width']))
                     img_bgr = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
-                elif fmt_id == 0:  # RGB565
+                elif fmt_id == 1:  # RGB565
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     pixels = nparr.view(dtype=np.uint16).byteswap().reshape((metadata['height'], metadata['width']))
                     
@@ -727,7 +733,7 @@ def run_gui():
                     img_bgr[..., 2] = r  # OpenCV uses BGR
                     img_bgr[..., 1] = g
                     img_bgr[..., 0] = b
-                elif fmt_id == 1:  # YUV422
+                elif fmt_id == 2:  # YUV422
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     yuv = nparr.reshape((metadata['height'], metadata['width'], 2))
                     img_bgr = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_YUY2)
@@ -792,9 +798,9 @@ def run_gui():
 # Reset state and clear buffer BEFORE starting the serial reader thread
 try:
     print("[Python UI] Resetting ESP32 camera stream state...")
-    ser.write(b"d0\n")         # Stop streaming
-    ser.write(b"f0\n")         # Set to Grayscale
-    ser.write(b"s0\n")         # Set to 96x96
+    ser.write(b"d0\n")         # Stop streaming while reconfiguring
+    ser.write(b"f3\n")         # Set to JPEG for VGA live preview
+    ser.write(b"s3\n")         # Set to VGA 640x480
     time.sleep(0.3)            # Wait for ESP32 to receive and process
     ser.reset_input_buffer()   # Clear all leftover garbage bytes in serial FIFO
 except Exception as e:
@@ -819,3 +825,8 @@ finally:
     # Ensure camera stops streaming and serial connection closes
     ser.write(b"d0\n")
     ser.close()
+
+
+
+
+

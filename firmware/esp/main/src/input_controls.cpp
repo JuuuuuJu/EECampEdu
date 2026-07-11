@@ -20,6 +20,10 @@ static volatile TickType_t g_last_encoder_button_tick = 0;
 static volatile TickType_t g_last_button2_tick = 0;
 static bool g_initialized = false;
 
+static bool is_valid_gpio(int gpio) {
+    return gpio >= 0;
+}
+
 static bool debounce_from_isr(volatile TickType_t *last_tick) {
     const TickType_t now = xTaskGetTickCountFromISR();
     const TickType_t delay_ticks = pdMS_TO_TICKS(INPUT_DEBOUNCE_MS);
@@ -66,6 +70,9 @@ static void IRAM_ATTR button2_isr(void *arg) {
 }
 
 static esp_err_t configure_input_gpio(int gpio, gpio_int_type_t interrupt_type) {
+    if (!is_valid_gpio(gpio)) {
+        return ESP_OK;
+    }
     gpio_config_t config = {};
     config.pin_bit_mask = 1ULL << gpio;
     config.mode = GPIO_MODE_INPUT;
@@ -112,9 +119,11 @@ esp_err_t input_controls_init() {
     if (err != ESP_OK) {
         return err;
     }
-    err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO), button2_isr, nullptr);
-    if (err != ESP_OK) {
-        return err;
+    if (is_valid_gpio(INPUT_BUTTON2_GPIO)) {
+        err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO), button2_isr, nullptr);
+        if (err != ESP_OK) {
+            return err;
+        }
     }
 
     g_initialized = true;
@@ -136,6 +145,8 @@ InputControlsSnapshot input_controls_get_snapshot() {
     portEXIT_CRITICAL(&g_input_mux);
 
     snapshot.encoder_button_level = gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_BUTTON_GPIO));
-    snapshot.button2_level = gpio_get_level(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO));
+    snapshot.button2_level = is_valid_gpio(INPUT_BUTTON2_GPIO)
+                                 ? gpio_get_level(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO))
+                                 : -1;
     return snapshot;
 }

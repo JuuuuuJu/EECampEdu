@@ -43,12 +43,13 @@ static bool g_tflite_ready = false;
 // Forward declarations for functions defined further down in app_main.cpp
 static bool allocate_frame_buffers();
 static void resize_grayscale_to_runtime_frame(const uint8_t *src, int src_width, int src_height, uint8_t *dst);
+static esp_err_t capture_grayscale_inference_frame();
 static bool run_inference_on_grayscale_frame(const uint8_t *g_raw_frame);
 
-static bool streaming_mode = false;
+static bool streaming_mode = CAMERA_USB_CONTINUOUS_CAPTURE;
 static SemaphoreHandle_t camera_mutex = NULL;
-static pixformat_t g_current_format = PIXFORMAT_GRAYSCALE;
-static framesize_t g_current_size = FRAMESIZE_96X96;
+static pixformat_t g_current_format = PIXFORMAT_JPEG;
+static framesize_t g_current_size = FRAMESIZE_VGA;
 static TaskHandle_t g_input_controls_task_handle = nullptr;
 static TaskHandle_t g_uart_test_task_handle = nullptr;
 static TaskHandle_t g_camera_stream_task_handle = nullptr;
@@ -125,7 +126,7 @@ static void camera_stream_task(void *pvParameters) {
     ESP_LOGI(TAG, "Camera stream task started.");
     
     while (true) {
-        if (streaming_mode) {
+        if (streaming_mode && usb_cdc_is_connected()) {
             if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
                 CameraFrame frame = {};
                 esp_err_t err = camera_capture_frame(&frame);
@@ -214,22 +215,24 @@ static void usb_cdc_command_task(void *pvParameters) {
                 switch (action) {
                     case 'c':
                     case 'C': {
-                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
                             CameraFrame frame = {};
                             esp_err_t err = camera_capture_frame(&frame);
                             if (err == ESP_OK) {
                                 send_frame_to_pc(frame);
-                                if (g_tflite_ready && frame.format == CameraFrameFormat::kGrayscale) {
-                                    if (allocate_frame_buffers()) {
-                                        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
-                                        run_inference_on_grayscale_frame(g_raw_frame);
-                                    }
-                                }
                                 camera_capture_release(&frame);
                             } else {
                                 dual_printf("ERROR: Capture failed: %s\n", esp_err_to_name(err));
                             }
+
+                            // Camera-controller unit test uses c/Space. Keep preview as VGA JPEG,
+                            // but run model inference from a temporary grayscale capture path.
+                            if (g_tflite_ready) {
+                                capture_grayscale_inference_frame();
+                            }
                             xSemaphoreGive(camera_mutex);
+                        } else {
+                            dual_printf("ERROR: Camera busy; capture skipped.\n");
                         }
                         break;
                     }
@@ -274,21 +277,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                     }
                     case 'i':
                     case 'I': {
-                        if (!g_tflite_ready) {
-                            dual_printf("ERROR,TFLITE_NOT_READY\n");
-                            break;
-                        }
-                        if (allocate_frame_buffers()) {
-                            StoredPhotoMetadata metadata = {};
-                            esp_err_t err = photo_storage_read_latest(g_raw_frame, 
-                                                FRAME_HEIGHT * FRAME_WIDTH * FRAME_CHANNEL, 
-                                                &metadata);
-                            if (err == ESP_OK) {
-                                resize_grayscale_to_runtime_frame(g_raw_frame, metadata.width, metadata.height, g_raw_frame);
-                                run_inference_on_grayscale_frame(g_raw_frame);
-                            } else {
-                                dual_printf("ERROR: Failed to read latest photo: %s\n", esp_err_to_name(err));
-                            }
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(4000)) == pdTRUE) {
+                            capture_grayscale_inference_frame();
+                            xSemaphoreGive(camera_mutex);
+                        } else {
+                            dual_printf("ERROR: Camera busy; inference capture skipped.\n");
                         }
                         break;
                     }
@@ -578,8 +571,41 @@ static void dump_frame(const char *name, const uint8_t *frame, int width, int he
            (unsigned long long)sum);
 }
 
-static bool is_foreground_pixel(uint8_t pixel, int threshold) {
-    return pixel < threshold;
+struct CropCandidate {
+    int area;
+    int x0;
+    int y0;
+    int x1;
+    int y1;
+    int threshold;
+    bool bright_foreground;
+};
+
+static CropCandidate find_foreground_candidate(const uint8_t *frame, int threshold, bool bright_foreground) {
+    CropCandidate candidate = {};
+    candidate.area = 0;
+    candidate.x0 = FRAME_WIDTH - 1;
+    candidate.y0 = FRAME_HEIGHT - 1;
+    candidate.x1 = 0;
+    candidate.y1 = 0;
+    candidate.threshold = threshold;
+    candidate.bright_foreground = bright_foreground;
+
+    for (int y = 0; y < FRAME_HEIGHT; ++y) {
+        for (int x = 0; x < FRAME_WIDTH; ++x) {
+            const uint8_t pixel = frame[y * FRAME_WIDTH + x];
+            const bool is_foreground = bright_foreground ? (pixel > threshold) : (pixel < threshold);
+            if (!is_foreground) {
+                continue;
+            }
+            ++candidate.area;
+            if (x < candidate.x0) candidate.x0 = x;
+            if (x > candidate.x1) candidate.x1 = x;
+            if (y < candidate.y0) candidate.y0 = y;
+            if (y > candidate.y1) candidate.y1 = y;
+        }
+    }
+    return candidate;
 }
 
 static bool find_hand_crop_box(const uint8_t *frame,
@@ -596,57 +622,54 @@ static bool find_hand_crop_box(const uint8_t *frame,
     }
 
     const int mean = (int)(sum / total);
-    const int threshold = clamp_int(mean - HAND_CROP_DARK_DELTA,
-                                    HAND_CROP_MIN_THRESHOLD,
-                                    HAND_CROP_MAX_THRESHOLD);
+    const int dark_threshold = clamp_int(mean - HAND_CROP_DARK_DELTA,
+                                         HAND_CROP_MIN_THRESHOLD,
+                                         HAND_CROP_MAX_THRESHOLD);
+    const int bright_threshold = clamp_int(mean + HAND_CROP_DARK_DELTA,
+                                           HAND_CROP_MIN_THRESHOLD,
+                                           HAND_CROP_MAX_THRESHOLD);
 
-    int area = 0;
-    int x0 = FRAME_WIDTH - 1;
-    int y0 = FRAME_HEIGHT - 1;
-    int x1 = 0;
-    int y1 = 0;
-
-    for (int y = 0; y < FRAME_HEIGHT; ++y) {
-        for (int x = 0; x < FRAME_WIDTH; ++x) {
-            if (!is_foreground_pixel(frame[y * FRAME_WIDTH + x], threshold)) {
-                continue;
-            }
-            ++area;
-            if (x < x0) {
-                x0 = x;
-            }
-            if (x > x1) {
-                x1 = x;
-            }
-            if (y < y0) {
-                y0 = y;
-            }
-            if (y > y1) {
-                y1 = y;
-            }
-        }
-    }
+    CropCandidate dark = find_foreground_candidate(frame, dark_threshold, false);
+    CropCandidate bright = find_foreground_candidate(frame, bright_threshold, true);
 
     const int min_area = total * HAND_CROP_MIN_AREA_PERCENT / 100;
-    const bool found = area >= min_area;
-    if (!found) {
-        x0 = 0;
-        y0 = 0;
-        x1 = FRAME_WIDTH - 1;
-        y1 = FRAME_HEIGHT - 1;
+    const bool dark_ok = dark.area >= min_area;
+    const bool bright_ok = bright.area >= min_area;
+
+    CropCandidate chosen = dark;
+    bool found = false;
+    if (dark_ok && bright_ok) {
+        // Choose the smaller foreground region; it is usually the hand rather than the background.
+        chosen = (dark.area <= bright.area) ? dark : bright;
+        found = true;
+    } else if (dark_ok) {
+        chosen = dark;
+        found = true;
+    } else if (bright_ok) {
+        chosen = bright;
+        found = true;
     }
 
-    const int crop_w = x1 - x0 + 1;
-    const int crop_h = y1 - y0 + 1;
+    if (!found) {
+        chosen.area = total;
+        chosen.x0 = 0;
+        chosen.y0 = 0;
+        chosen.x1 = FRAME_WIDTH - 1;
+        chosen.y1 = FRAME_HEIGHT - 1;
+        chosen.threshold = mean;
+    }
+
+    const int crop_w = chosen.x1 - chosen.x0 + 1;
+    const int crop_h = chosen.y1 - chosen.y0 + 1;
     const int margin_x = crop_w * HAND_CROP_MARGIN_PERCENT / 100;
     const int margin_y = crop_h * HAND_CROP_MARGIN_PERCENT / 100;
 
-    *crop_x0 = clamp_int(x0 - margin_x, 0, FRAME_WIDTH - 1);
-    *crop_y0 = clamp_int(y0 - margin_y, 0, FRAME_HEIGHT - 1);
-    *crop_x1 = clamp_int(x1 + margin_x, 0, FRAME_WIDTH - 1);
-    *crop_y1 = clamp_int(y1 + margin_y, 0, FRAME_HEIGHT - 1);
-    *best_area_out = area;
-    *threshold_out = threshold;
+    *crop_x0 = clamp_int(chosen.x0 - margin_x, 0, FRAME_WIDTH - 1);
+    *crop_y0 = clamp_int(chosen.y0 - margin_y, 0, FRAME_HEIGHT - 1);
+    *crop_x1 = clamp_int(chosen.x1 + margin_x, 0, FRAME_WIDTH - 1);
+    *crop_y1 = clamp_int(chosen.y1 + margin_y, 0, FRAME_HEIGHT - 1);
+    *best_area_out = chosen.area;
+    *threshold_out = chosen.bright_foreground ? bright_threshold : dark_threshold;
     return found;
 }
 
@@ -995,13 +1018,60 @@ static void resize_grayscale_to_runtime_frame(const uint8_t *src,
                                               int src_width,
                                               int src_height,
                                               uint8_t *dst) {
+    const int side = (src_width < src_height) ? src_width : src_height;
+    const int crop_x0 = (src_width - side) / 2;
+    const int crop_y0 = (src_height - side) / 2;
+
     for (int y = 0; y < FRAME_HEIGHT; ++y) {
-        const int src_y = (FRAME_HEIGHT == 1) ? 0 : (y * (src_height - 1)) / (FRAME_HEIGHT - 1);
+        const int src_y = crop_y0 + ((FRAME_HEIGHT == 1) ? 0 : (y * (side - 1)) / (FRAME_HEIGHT - 1));
         for (int x = 0; x < FRAME_WIDTH; ++x) {
-            const int src_x = (FRAME_WIDTH == 1) ? 0 : (x * (src_width - 1)) / (FRAME_WIDTH - 1);
+            const int src_x = crop_x0 + ((FRAME_WIDTH == 1) ? 0 : (x * (side - 1)) / (FRAME_WIDTH - 1));
             dst[y * FRAME_WIDTH + x] = src[src_y * src_width + src_x];
         }
     }
+}
+static esp_err_t capture_grayscale_inference_frame() {
+    if (!g_tflite_ready) {
+        dual_printf("ERROR,TFLITE_NOT_READY\n");
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!allocate_frame_buffers()) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    const pixformat_t previous_format = g_current_format;
+    const framesize_t previous_size = g_current_size;
+    const bool previous_streaming_mode = streaming_mode;
+    streaming_mode = false;
+
+    esp_err_t err = camera_capture_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA);
+    if (err != ESP_OK) {
+        streaming_mode = previous_streaming_mode;
+        dual_printf("ERROR: Failed to switch camera to grayscale inference mode: %s\n", esp_err_to_name(err));
+        return err;
+    }
+    g_current_format = PIXFORMAT_GRAYSCALE;
+    g_current_size = FRAMESIZE_QVGA;
+
+    CameraFrame frame = {};
+    err = camera_capture_frame(&frame);
+    if (err == ESP_OK) {
+        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+        run_inference_on_grayscale_frame(g_raw_frame);
+        camera_capture_release(&frame);
+    } else {
+        dual_printf("ERROR: Grayscale inference capture failed: %s\n", esp_err_to_name(err));
+    }
+
+    esp_err_t restore_err = camera_capture_reinit((int)previous_format, (int)previous_size);
+    if (restore_err == ESP_OK) {
+        g_current_format = previous_format;
+        g_current_size = previous_size;
+    } else {
+        dual_printf("ERROR: Failed to restore camera preview mode: %s\n", esp_err_to_name(restore_err));
+    }
+    streaming_mode = previous_streaming_mode;
+    return err;
 }
 
 static void input_output_self_test_task(void *pvParameters) {
@@ -1221,6 +1291,16 @@ extern "C" void app_main() {
     camera_mutex = xSemaphoreCreateMutex();
     configASSERT(camera_mutex);
 
+    if (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
+        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+            esp_err_t camera_err = camera_capture_reinit(CAMERA_USB_DEFAULT_PIXEL_FORMAT, CAMERA_USB_DEFAULT_FRAME_SIZE);
+            if (camera_err != ESP_OK) {
+                ESP_LOGE(TAG, "Camera init failed for CDC preview: %s", esp_err_to_name(camera_err));
+            }
+            xSemaphoreGive(camera_mutex);
+        }
+    }
+
     // Create camera streaming and command parsing tasks
     xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, &g_camera_stream_task_handle, 1);
     xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, &g_usb_cdc_command_task_handle, 0);
@@ -1248,3 +1328,9 @@ extern "C" void app_main() {
                             &g_camera_flash_task_handle,
                             1);
 }
+
+
+
+
+
+

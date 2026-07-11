@@ -45,9 +45,9 @@ void CameraViewerWin::draw(AppState& state, SDL_Renderer* renderer) {
         const float scale = std::max(1.0f, std::min(available_width / static_cast<float>(texture_width), 4.0f));
         ImGui::Image(reinterpret_cast<ImTextureID>(preview_texture), ImVec2(texture_width * scale, texture_height * scale));
     } else if (state.latest_frame_format == 3) {
-        ImGui::TextWrapped("JPEG frame received. Preview requires a JPEG decoder; switch ESP pixel format to Grayscale or RGB565 for live texture preview.");
+        ImGui::TextWrapped("JPEG frame received, but no decoded texture is available yet. Check the serial log for JPEG decode errors.");
     } else {
-        ImGui::TextWrapped("Waiting for a grayscale or RGB565 CDC frame.");
+        ImGui::TextWrapped("Waiting for a CDC image frame.");
     }
 
     ImGui::SeparatorText("Serial log");
