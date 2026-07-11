@@ -16,12 +16,11 @@ Dependencies are not vendored in this app:
 
 ## Build
 
-From the repository root after running `python scripts\\setup_env.py`:
+From the repository root after running `python scripts\setup_env.py`:
 
 ```powershell
 conda activate eecampedu
-cmake -S apps\esp32_cam_input_app -B apps\esp32_cam_input_app\build -G Ninja
-cmake --build apps\esp32_cam_input_app\build
+python scripts\build_input_app.py --clean
 ```
 
 Run:
@@ -31,3 +30,9 @@ apps\esp32_cam_input_app\build\eecampedu_input_demo.exe
 ```
 
 Use firmware `RuntimeMode::kCameraUsbMsc` for USB CDC/MSC integration testing.
+
+## Build Note
+
+Use `python scripts\build_input_app.py --clean` from the repository root. The script forces the x64 Visual Studio / Build Tools compiler so SDL3 matches the conda 64-bit package.
+
+Do not configure this app with old `C:\MinGW\bin\c++.exe`; it can make CMake reject `SDL3Config.cmake` as an incompatible 64-bit package. If the script cannot find a compiler, install Visual Studio Build Tools with `Desktop development with C++`.

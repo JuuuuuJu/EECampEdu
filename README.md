@@ -37,7 +37,7 @@ Use PowerShell with conda:
 
 ```powershell
 cd EECampEdu
-python scripts\\setup_env.py
+python scripts\setup_env.py
 conda activate eecampedu
 ```
 
@@ -96,10 +96,16 @@ python -u benchmark\run_benchmark_png.py --model "artifacts\models\Separable_CNN
 
 Firmware should run `RuntimeMode::kCameraUsbMsc` for CDC/MSC testing.
 
+Build the PC UI from the repository root:
+
 ```powershell
-cmake -S apps\esp32_cam_input_app -B apps\esp32_cam_input_app\build -G Ninja
-cmake --build apps\esp32_cam_input_app\build
+conda activate eecampedu
+python scripts\build_input_app.py --clean
 apps\esp32_cam_input_app\build\eecampedu_input_demo.exe
 ```
+
+The input demo must be built with a 64-bit Windows C++ compiler. The build script finds Visual Studio / Build Tools `vcvars64.bat` and prevents CMake from accidentally using old `C:\MinGW\bin\c++.exe`. This matters because the conda `SDL3` package is 64-bit; using the old MinGW compiler can make `find_package(SDL3)` fail with an incompatible 64-bit package message.
+
+If the script cannot find a compiler, install Visual Studio Build Tools with `Desktop development with C++`.
 
 See `firmware/docs/test_plan.md` for unit-test and full-integration procedures.

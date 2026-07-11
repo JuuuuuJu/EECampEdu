@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdint.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -30,7 +31,6 @@
 #include "esp_vfs_fat.h"
 #include <dirent.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <unistd.h>
 
 static const char *TAG = "TFLM_GESTURE";
@@ -105,11 +105,15 @@ static void usb_list_files() {
     }
     closedir(dir);
     
-    struct statvfs s;
-    if (statvfs("/usb", &s) == 0) {
-        uint64_t free_bytes = ((uint64_t)s.f_bfree * s.f_frsize);
-        usb_cdc_printf("Total: %d files, used space: %d bytes (Free: %llu bytes)\n", 
-                       count, (int)total_size, (unsigned long long)free_bytes);
+    const esp_partition_t *storage = esp_partition_find_first(
+        ESP_PARTITION_TYPE_DATA,
+        ESP_PARTITION_SUBTYPE_ANY,
+        "storage");
+    if (storage != nullptr) {
+        usb_cdc_printf("Total: %d files, used space: %d bytes (storage partition: %llu bytes)\n",
+                       count,
+                       (int)total_size,
+                       (unsigned long long)storage->size);
     } else {
         usb_cdc_printf("Total: %d files, used space: %d bytes\n", count, (int)total_size);
     }
