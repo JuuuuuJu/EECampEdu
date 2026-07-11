@@ -10,16 +10,18 @@ import cv2
 import tensorflow as tf
 
 # CONFIGURATION
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FIRMWARE_MODEL_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "firmware", "pc", "artifacts", "models"))
 IMG_SIZE = (96, 96)
 class_names = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
 
 # Model mappings
 MODELS = {
-    '1': ('models/Separable_CNN_int8.tflite', 'Separable CNN'),
-    '2': ('models/Mini_ResNet_int8.tflite', 'Mini ResNet'),
-    '3': ('models/Baseline_CNN_int8.tflite', 'Baseline CNN'),
-    '4': ('models/MobileNetV1_0.25_int8.tflite', 'MobileNetV1 0.25'),
-    '5': ('models/MobileNetV2_0.35_int8.tflite', 'MobileNetV2 0.35')
+    '1': (os.path.join(FIRMWARE_MODEL_DIR, 'Separable_CNN_int8.tflite'), 'Separable CNN'),
+    '2': (os.path.join(FIRMWARE_MODEL_DIR, 'Mini_ResNet_int8.tflite'), 'Mini ResNet'),
+    '3': (os.path.join(FIRMWARE_MODEL_DIR, 'Baseline_CNN_int8.tflite'), 'Baseline CNN'),
+    '4': (os.path.join(FIRMWARE_MODEL_DIR, 'MobileNetV1_0.25_int8.tflite'), 'MobileNetV1 0.25'),
+    '5': (os.path.join(FIRMWARE_MODEL_DIR, 'MobileNetV2_0.35_int8.tflite'), 'MobileNetV2 0.35')
 }
 
 current_key = '1'
@@ -35,24 +37,24 @@ def load_tflite_model(key):
     global interpreter, input_details, output_details
     global input_scale, input_zero_point, output_scale, output_zero_point
     global model_path, model_name, error_msg, current_key
-    
+
     path, name = MODELS[key]
     if not os.path.exists(path):
         error_msg = f"Error: {path} not found!"
         print(error_msg)
         return False
-        
+
     try:
         print(f"Loading {name} ({path})...")
         interpreter = tf.lite.Interpreter(model_path=path)
         interpreter.allocate_tensors()
-        
+
         input_details = interpreter.get_input_details()[0]
         output_details = interpreter.get_output_details()[0]
-        
+
         input_scale, input_zero_point = input_details['quantization']
         output_scale, output_zero_point = output_details['quantization']
-        
+
         model_path = path
         model_name = name
         current_key = key
@@ -112,10 +114,10 @@ while True:
     gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
     resized_roi = cv2.resize(gray_roi, IMG_SIZE)
     normalized_roi = resized_roi.astype(np.float32) / 255.0
-    
+
     # INT8 Quantization
     quantized_roi = np.clip(np.round((normalized_roi / input_scale) + input_zero_point), -128, 127).astype(np.int8)
-    
+
     # Reshape for model input
     input_data = np.expand_dims(quantized_roi, axis=0)
     input_data = np.expand_dims(input_data, axis=-1)
@@ -123,12 +125,12 @@ while True:
     # Run Inference
     interpreter.set_tensor(input_details['index'], input_data)
     interpreter.invoke()
-    
+
     output_data = interpreter.get_tensor(output_details['index'])[0]
-    
+
     # INT8 Dequantization
     dequantized_output = (output_data.astype(np.float32) - output_zero_point) * output_scale
-    
+
     # Argmax prediction
     pred_idx = np.argmax(dequantized_output)
     predicted_label = class_names[pred_idx] if pred_idx < len(class_names) else "UNKNOWN"
@@ -138,14 +140,14 @@ while True:
     text_color = (0, 255, 0) if predicted_label != 'NULL' else (0, 0, 255)
     result_text = f"Pred: {predicted_label} ({confidence * 100:.1f}%)"
     cv2.putText(frame, result_text, (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.1, text_color, 3)
-    
+
     # Render Active Model Info
     cv2.putText(frame, f"Model: {model_name} (INT8)", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
     # Render Switch Model Menu at the bottom
     cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (50, 50, 50), -1)
     cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (150, 150, 150), 1)
-    
+
     cv2.putText(frame, "Switch Model [Press 1-5]:", (20, height - 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
     cv2.putText(frame, "1: Separable CNN | 2: Mini ResNet | 3: Baseline CNN", (20, height - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
     cv2.putText(frame, "4: MobileNetV1  | 5: MobileNetV2  | [q]: Quit | [s]: Save Frame", (20, height - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)

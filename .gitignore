@@ -13,6 +13,13 @@ firmware/esp/sdkconfig.old
 # Local generated deploy artifacts
 firmware/pc/artifacts/
 
+# Local model-finetune generated outputs
+model_finetune/plots/
+model_finetune/debug_injected_images/
+model_finetune/__pycache__/
+model_finetune/models/*.tflite
+model_finetune/models/*_saved_model/
+
 # Logs and local editor files
 *.log
 .vscode/

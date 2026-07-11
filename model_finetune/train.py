@@ -212,67 +212,39 @@ def get_mobilenet_v2_model():
     return tf.keras.Model(inputs, outputs), base_model
 
 # ==========================================
-# 3. QUANTIZATION & EVALUATION UTILITIES
+# 3. KERAS EVALUATION UTILITIES
 # ==========================================
-def quantize_and_save(keras_model, filename):
-    def representative_data_gen():
-        for input_value, _ in train_ds.unbatch().take(100):
-            yield [tf.expand_dims(input_value, 0)]
-    converter = tf.lite.TFLiteConverter.from_keras_model(keras_model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    converter.representative_dataset = representative_data_gen
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    converter.inference_input_type = tf.int8
-    converter.inference_output_type = tf.int8
-    tflite_model = converter.convert()
-    with open(filename, 'wb') as f:
-        f.write(tflite_model)
-
-def evaluate_tflite(model_path, dataset_type, ds_input=None, label_input=None):
-    interpreter = tf.lite.Interpreter(model_path=model_path)
-    interpreter.allocate_tensors()
-    input_det = interpreter.get_input_details()[0]
-    output_det = interpreter.get_output_details()[0]
-    scale, zero_point = input_det['quantization']
-    
+def evaluate_keras_model(model, dataset_type, ds_input=None, label_input=None):
     correct, total = 0, 0
-    
+
     if dataset_type == 'tf_ds':
-        iterator = ds_input.unbatch()
+        for images, labels in ds_input:
+            predictions = model.predict(images, verbose=0)
+            predicted_labels = np.argmax(predictions, axis=1)
+            labels_np = labels.numpy()
+            correct += int(np.sum(predicted_labels == labels_np))
+            total += len(labels_np)
     else:
-        if ds_input is None or len(ds_input) == 0: return "N/A"
-        iterator = zip(ds_input, label_input)
-        
-    for img, label in iterator:
-        img_np = img.numpy() if dataset_type == 'tf_ds' else img
-        lbl_np = label.numpy() if dataset_type == 'tf_ds' else label
-        
-        q_img = np.clip(np.round((img_np / scale) + zero_point), -128, 127).astype(np.int8)
-        q_img = np.expand_dims(q_img, axis=0)
-        
-        interpreter.set_tensor(input_det['index'], q_img)
-        interpreter.invoke()
-        pred = np.argmax(interpreter.get_tensor(output_det['index']))
-        
-        if pred == lbl_np: correct += 1
-        total += 1
-        
+        if ds_input is None or len(ds_input) == 0:
+            return "N/A"
+        predictions = model.predict(ds_input, verbose=0)
+        predicted_labels = np.argmax(predictions, axis=1)
+        correct = int(np.sum(predicted_labels == label_input))
+        total = len(label_input)
+
+    if total == 0:
+        return "N/A"
     return f"{(correct / total) * 100:.2f}%"
 
-def profile_latency(model_path):
-    interpreter = tf.lite.Interpreter(model_path=model_path)
-    interpreter.allocate_tensors()
-    input_det = interpreter.get_input_details()[0]
-    dummy_input = np.random.randint(-128, 127, size=input_det['shape'], dtype=np.int8)
-    
-    interpreter.set_tensor(input_det['index'], dummy_input)
-    interpreter.invoke()
-    
-    runs = 200
+
+def profile_keras_latency(model):
+    dummy_input = np.random.rand(1, IMG_SIZE[0], IMG_SIZE[1], 1).astype(np.float32)
+    model.predict(dummy_input, verbose=0)
+
+    runs = 100
     start = time.time()
     for _ in range(runs):
-        interpreter.set_tensor(input_det['index'], dummy_input)
-        interpreter.invoke()
+        model.predict(dummy_input, verbose=0)
     return f"{((time.time() - start) / runs) * 1000:.3f} ms"
 
 # ==========================================
@@ -327,8 +299,6 @@ for name, model_fn in models_to_test.items():
         
     # Ensure models directory exists
     os.makedirs("models", exist_ok=True)
-    tflite_name = f"models/{name}_int8.tflite"
-    tflite_float_name = f"models/{name}_float32.tflite"
     keras_source_name = f"models/{name}.keras"
     saved_model_name = f"models/{name}_saved_model"
     
@@ -348,27 +318,15 @@ for name, model_fn in models_to_test.items():
         except Exception as e2:
             print(f"  Failed to save SavedModel source model for {name}: {e2}")
     
-    print(f"  Saving float32 TFLite model for {name}...")
     try:
-        converter_float = tf.lite.TFLiteConverter.from_keras_model(model)
-        tflite_float_model = converter_float.convert()
-        with open(tflite_float_name, 'wb') as f:
-            f.write(tflite_float_model)
-        print(f"  Float32 TFLite model saved at {tflite_float_name}")
-    except Exception as e:
-        print(f"  Failed to save float32 model for {name}: {e}")
-        
-    print(f"  Quantizing {name}...")
-    try:
-        quantize_and_save(model, tflite_name)
-        acc_clean = evaluate_tflite(tflite_name, 'tf_ds', ds_input=val_clean_ds)
-        acc_real = evaluate_tflite(tflite_name, 'numpy', ds_input=x_real, label_input=y_real)
-        latency = profile_latency(tflite_name)
-        size = f"{os.path.getsize(tflite_name) / 1024:.1f} KB"
-        print("  Evaluation Complete.")
+        acc_clean = evaluate_keras_model(model, 'tf_ds', ds_input=val_clean_ds)
+        acc_real = evaluate_keras_model(model, 'numpy', ds_input=x_real, label_input=y_real)
+        latency = profile_keras_latency(model)
+        size = f"{os.path.getsize(keras_source_name) / 1024:.1f} KB" if os.path.exists(keras_source_name) else "N/A"
+        print("  Keras evaluation complete.")
     except Exception as e:
         acc_clean, acc_real, latency, size = "ERR", "ERR", "ERR", "ERR"
-        print(f"  Failed to process {name}: {e}")
+        print(f"  Failed to evaluate {name}: {e}")
         
     # Optional plotting. Disabled by default so model export does not require
     # matplotlib in the deploy/model handoff environment.
@@ -430,7 +388,7 @@ for name, model_fn in models_to_test.items():
 # 5. PRINT RESULTS COMPARISON
 # ==========================================
 print("\n" + "="*82)
-print(f"{'Model Architecture':<22} | {'Clean Val Acc':<15} | {'Real Acc':<10} | {'PC Latency':<12} | {'File Size'}")
+print(f"{'Model Architecture':<22} | {'Clean Val Acc':<15} | {'Real Acc':<10} | {'Keras Latency':<12} | {'Keras Size'}")
 print("="*82)
 for name, metrics in results.items():
     print(f"{name:<22} | {metrics['Clean Acc']:<15} | {metrics['Real Acc']:<10} | {metrics['PC Latency']:<12} | {metrics['Size']}")
