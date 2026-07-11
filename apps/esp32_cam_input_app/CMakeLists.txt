@@ -20,6 +20,7 @@ add_executable(eecampedu_input_demo
     src/main.cpp
     src/App/App.cpp
     src/App/AppState.cpp
+    src/Image/JpegDecoder.cpp
     src/Windows/CameraViewerWin.cpp
     src/Windows/ControlsWin.cpp
     src/Usb/UsbCdcClient.cpp
@@ -41,5 +42,6 @@ target_include_directories(eecampedu_input_demo PRIVATE
 target_link_libraries(eecampedu_input_demo PRIVATE SDL3::SDL3)
 
 if (WIN32)
+    target_link_libraries(eecampedu_input_demo PRIVATE windowscodecs ole32)
     target_compile_definitions(eecampedu_input_demo PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()

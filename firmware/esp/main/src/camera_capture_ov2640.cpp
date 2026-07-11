@@ -34,8 +34,8 @@ static constexpr int kXclkFrequencyHz = 10000000;
 static constexpr int kJpegQuality = 12;
 
 static bool g_camera_initialized = false;
-static pixformat_t g_current_format = PIXFORMAT_GRAYSCALE;
-static framesize_t g_current_size = FRAMESIZE_96X96;
+static pixformat_t g_current_format = PIXFORMAT_JPEG;
+static framesize_t g_current_size = FRAMESIZE_VGA;
 
 static CameraFrameFormat map_frame_format(pixformat_t format) {
     switch (format) {
@@ -207,3 +207,5 @@ void camera_capture_release(CameraFrame *frame) {
     esp_camera_fb_return(fb);
     memset(frame, 0, sizeof(*frame));
 }
+
+

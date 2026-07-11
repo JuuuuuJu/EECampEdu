@@ -13,9 +13,9 @@ enum class RuntimeMode {
     kCameraUsbMsc,
 };
 
-// Keep TEST mode as the default integration mode. It lets the deploy pipeline
-// run without an OV2640 by sending grayscale frames from the PC benchmark tool.
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kInputOutputSelfTest;
+// Integration default: run OV2640 + USB CDC/MSC so the ImGui app can show live preview.
+// Switch to kTestUartFrame for deploy benchmark without OV2640.
+constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
 
 constexpr int INPUT_HEIGHT = 96;
 constexpr int INPUT_WIDTH = 96;
@@ -33,26 +33,25 @@ constexpr int HAND_CROP_MIN_THRESHOLD = 70;
 constexpr int HAND_CROP_MAX_THRESHOLD = 205;
 
 // Optional rotary encoder / push-button input from the input-interface team.
-// Disabled by default because the prototype GPIOs from sketch_dec17a.ino
-// conflict with the current OV2640 wiring: 4=SDA, 5=SCL, 15=XCLK, 18=Y7.
+// PCB allocation: GPIO21/47/48 are reserved for the rotary encoder.
 constexpr bool ENABLE_INPUT_CONTROLS = true;
-constexpr int INPUT_ENCODER_CLK_GPIO = 5;
-constexpr int INPUT_ENCODER_DT_GPIO = 4;
-constexpr int INPUT_ENCODER_BUTTON_GPIO = 21;
-constexpr int INPUT_BUTTON2_GPIO = 18;
+constexpr int INPUT_ENCODER_CLK_GPIO = 21;
+constexpr int INPUT_ENCODER_DT_GPIO = 47;
+constexpr int INPUT_ENCODER_BUTTON_GPIO = 48;
+constexpr int INPUT_BUTTON2_GPIO = -1;
 constexpr int INPUT_DEBOUNCE_MS = 60;
 
 // Input/output unit-test mode. This mode does not require a flashed TFLite model.
 constexpr int IO_SELF_TEST_INTERVAL_MS = 1000;
 
-// Robot arm output from robotic_arm.ino, ported to ESP-IDF LEDC. Disabled by
-// default because ROBOT_ARM_BASE_GPIO=18 conflicts with OV2640 Y7 on the
-// current camera wiring.
+// Robot arm output from robotic_arm.ino, ported to ESP-IDF LEDC.
+// PCB allocation: GPIO39/40/41/42 are reserved for output servos.
+// Keep disabled by default so servos do not move unexpectedly during non-output tests.
 constexpr bool ENABLE_ROBOT_ARM_OUTPUT = false;
-constexpr int ROBOT_ARM_BASE_GPIO = 18;
-constexpr int ROBOT_ARM_ARM_GPIO = 19;
-constexpr int ROBOT_ARM_PITCH_GPIO = 22;
-constexpr int ROBOT_ARM_CLAW_GPIO = 21;
+constexpr int ROBOT_ARM_BASE_GPIO = 39;
+constexpr int ROBOT_ARM_ARM_GPIO = 40;
+constexpr int ROBOT_ARM_PITCH_GPIO = 41;
+constexpr int ROBOT_ARM_CLAW_GPIO = 42;
 constexpr int ROBOT_ARM_BASE_INITIAL_DEG = 90;
 constexpr int ROBOT_ARM_ARM_INITIAL_DEG = 90;
 constexpr int ROBOT_ARM_PITCH_INITIAL_DEG = 90;
@@ -80,3 +79,8 @@ constexpr const char *USB_MSC_MOUNT_PATH = "/usb";
 constexpr bool CAMERA_USB_CONTINUOUS_CAPTURE = true;
 constexpr bool CAMERA_USB_KEEP_SEQUENCE = true;
 constexpr int CAMERA_USB_CAPTURE_INTERVAL_MS = 250;
+constexpr int CAMERA_USB_DEFAULT_PIXEL_FORMAT = 3; // 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG
+constexpr int CAMERA_USB_DEFAULT_FRAME_SIZE = 3;   // 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA
+
+
+

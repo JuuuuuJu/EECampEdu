@@ -18,8 +18,8 @@ public:
     float camera_focus = 0.0f;
     int exposure = 0;
     int gain = 0;
-    int frame_size = 0;      // Firmware protocol: 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA, 4=SVGA, 5=UXGA.
-    int pixel_format = 0;   // Firmware protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG.
+    int frame_size = 3;      // Firmware protocol: 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA, 4=SVGA, 5=UXGA.
+    int pixel_format = 3;   // Firmware protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG.
     bool stream_enabled = false;
     bool vertical_flip = false;
     bool show_imgui_demo = true;
@@ -41,6 +41,7 @@ public:
 private:
     UsbCdcClient usb_client;
     std::string cdc_parse_buffer;
+    bool cdc_receiving_image_frame = false;
 
     void AppendUsbLog(const std::string& text);
     void ParseCdcFrames();
