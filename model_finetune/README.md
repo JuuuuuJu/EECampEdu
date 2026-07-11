@@ -8,39 +8,42 @@ This folder keeps only the files needed to train gesture models and hand off
 ```text
 model_finetune/
   dataset/
-    train/          Training images used by train.py
+    train/          Training images used by the training scripts
     validation/     Preserved validation set for benchmark / manual checks
   models/
-    *.keras         Source Keras models for firmware-side int8 quantization
-  train.py
+    *.keras, *.onnx Source models (Keras & ONNX)
+  train.py, train_96.py, train_128.py
   webcam_demo.py    Optional PC camera demo
 ```
 
 ## Class Order
 
 ```text
-up, down, right, left, null
+up, down, right, left, null  (Note: train_96.py and train_128.py use 4 classes: up, down, right, left)
 ```
 
 Keep this order aligned with firmware and benchmark tools.
 
 ## Train Models
 
-Run from this folder:
+Run from this folder (choose the training script for your desired model/size):
 
 ```powershell
 cd model_finetune
-python train.py
+python train.py            # Main CNN/MobileNet (5-class)
+python train_96.py         # Transfer Learning 96x96 (4-class)
+python train_128.py        # Transfer Learning 128x128 (4-class)
 ```
 
 The training script reads images from `dataset/train/`, converts them to
 grayscale, resizes them to `96 x 96`, normalizes pixels to `[0.0, 1.0]`, and
 splits the training set internally for validation.
 
-The important handoff artifact is:
+The important handoff artifacts are:
 
 ```text
 models/<model_name>.keras
+models/<model_name>.onnx
 ```
 
 Firmware deploy quantization reads these `.keras` files and generates int8

@@ -1,0 +1,26 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Local configuration
+local_settings.py
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Model/Output files that might be generated locally
+*.lite
+*.h5
+*.tflite
+models/
+plots/
