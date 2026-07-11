@@ -18,9 +18,3 @@ local_settings.py
 # Jupyter Notebook checkpoints
 .ipynb_checkpoints
 
-# Model/Output files that might be generated locally
-*.lite
-*.h5
-*.tflite
-models/
-plots/
