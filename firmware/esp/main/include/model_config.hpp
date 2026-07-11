@@ -34,7 +34,7 @@ constexpr int HAND_CROP_MAX_THRESHOLD = 205;
 
 // Optional rotary encoder / push-button input from the input-interface team.
 // PCB allocation: GPIO21/47/48 are reserved for the rotary encoder.
-constexpr bool ENABLE_INPUT_CONTROLS = true;
+constexpr bool ENABLE_INPUT_CONTROLS = false;
 constexpr int INPUT_ENCODER_CLK_GPIO = 21;
 constexpr int INPUT_ENCODER_DT_GPIO = 47;
 constexpr int INPUT_ENCODER_BUTTON_GPIO = 48;
@@ -81,6 +81,7 @@ constexpr bool CAMERA_USB_KEEP_SEQUENCE = true;
 constexpr int CAMERA_USB_CAPTURE_INTERVAL_MS = 250;
 constexpr int CAMERA_USB_DEFAULT_PIXEL_FORMAT = 3; // 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG
 constexpr int CAMERA_USB_DEFAULT_FRAME_SIZE = 3;   // 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA
+
 
 
 

@@ -77,6 +77,88 @@ static void send_frame_to_pc(const CameraFrame &frame) {
     usb_cdc_printf("---END_IMAGE---\n");
 }
 
+
+static esp_err_t send_file_to_pc(const char *requested_name) {
+    usb_msc_mount_to_app();
+    vTaskDelay(pdMS_TO_TICKS(50));
+
+    char path[128] = "/usb/latest.raw";
+    if (requested_name != nullptr && requested_name[0] != '\0') {
+        while (*requested_name == ' ' || *requested_name == '\t') {
+            ++requested_name;
+        }
+        if (requested_name[0] != '\0') {
+            if (strncmp(requested_name, "/usb/", 5) == 0) {
+                snprintf(path, sizeof(path), "%s", requested_name);
+            } else if (requested_name[0] == '/') {
+                snprintf(path, sizeof(path), "/usb%s", requested_name);
+            } else {
+                snprintf(path, sizeof(path), "/usb/%s", requested_name);
+            }
+        }
+    }
+
+    FILE *file = fopen(path, "rb");
+    if (file == nullptr) {
+        dual_printf("ERROR: File %s not found\n", path);
+        return ESP_ERR_NOT_FOUND;
+    }
+
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        dual_printf("ERROR: Failed to seek %s\n", path);
+        return ESP_FAIL;
+    }
+    const long file_size_long = ftell(file);
+    if (file_size_long < 0) {
+        fclose(file);
+        dual_printf("ERROR: Failed to measure %s\n", path);
+        return ESP_FAIL;
+    }
+    rewind(file);
+
+    const size_t file_size = (size_t)file_size_long;
+    uint8_t *buffer = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (buffer == nullptr) {
+        buffer = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
+    if (buffer == nullptr) {
+        fclose(file);
+        dual_printf("ERROR: Not enough memory to send %s (%u bytes)\n", path, (unsigned)file_size);
+        return ESP_ERR_NO_MEM;
+    }
+
+    const size_t read = fread(buffer, 1, file_size, file);
+    fclose(file);
+    if (read != file_size) {
+        heap_caps_free(buffer);
+        dual_printf("ERROR: Failed to read %s\n", path);
+        return ESP_FAIL;
+    }
+
+    int format = 3;
+    int width = 0;
+    int height = 0;
+    StoredPhotoMetadata metadata = {};
+    FILE *meta = fopen("/usb/latest.meta", "rb");
+    if (meta != nullptr) {
+        if (fread(&metadata, 1, sizeof(metadata), meta) == sizeof(metadata)) {
+            format = metadata.format;
+            width = metadata.width;
+            height = metadata.height;
+        }
+        fclose(meta);
+    }
+
+    const char *name = strrchr(path, '/');
+    name = (name != nullptr) ? name + 1 : path;
+    usb_cdc_printf("---START_FILE:%d:%d:%d:%u:%s---\n", format, width, height, (unsigned)file_size, name);
+    usb_cdc_write_base64(buffer, file_size);
+    usb_cdc_printf("---END_FILE---\n");
+    heap_caps_free(buffer);
+    return ESP_OK;
+}
+
 static void usb_list_files() {
     usb_cdc_printf("\n--- LOCAL FLASH FILE LIST ---\n");
     usb_msc_mount_to_app();
@@ -245,6 +327,8 @@ static void usb_cdc_command_task(void *pvParameters) {
                     case 'w':
                     case 'W': {
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            usb_msc_mount_to_app();
+                            vTaskDelay(pdMS_TO_TICKS(50));
                             CameraFrame frame = {};
                             esp_err_t err = camera_capture_frame(&frame);
                             if (err == ESP_OK) {
@@ -258,6 +342,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                             }
                             xSemaphoreGive(camera_mutex);
                         }
+                        break;
+                    }
+                    case 'r':
+                    case 'R': {
+                        send_file_to_pc(argStr);
                         break;
                     }
                     case 'l':
@@ -1225,6 +1314,8 @@ static void camera_flash_task(void *pvParameters) {
             continue;
         }
 
+        usb_msc_mount_to_app();
+        vTaskDelay(pdMS_TO_TICKS(50));
         err = photo_storage_write_latest(frame);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Photo storage write failed: %s", esp_err_to_name(err));
@@ -1328,6 +1419,7 @@ extern "C" void app_main() {
                             &g_camera_flash_task_handle,
                             1);
 }
+
 
 
 

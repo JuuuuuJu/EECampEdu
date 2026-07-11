@@ -20,7 +20,7 @@ except ImportError:
 
 # Configure the serial port parameters
 # Update COM_PORT to match your ESP32-S3 port (e.g., 'COM3' on Windows or '/dev/ttyACM0' on Linux)
-COM_PORT = 'COM11'
+COM_PORT = 'COM6'
 BAUD_RATE = 2000000  # Set to 2,000,000 baud for high frame-rate streaming
 OUTPUT_DIR = './captured_images'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
