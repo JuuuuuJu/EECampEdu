@@ -1,6 +1,8 @@
 import argparse
 import json
 import os
+import tempfile
+import zipfile
 from pathlib import Path
 
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "-1")
@@ -12,11 +14,12 @@ from PIL import Image
 
 FIRMWARE_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = FIRMWARE_ROOT.parent
-DEFAULT_MODEL_SOURCE_DIR = PROJECT_ROOT / "model_finetune" / "models"
+DEFAULT_MODEL_SOURCE_DIR = PROJECT_ROOT / "model_finetune" / "models" / "tf"
 DEFAULT_CALIBRATION_DIR = PROJECT_ROOT / "model_finetune" / "dataset" / "train"
 DEFAULT_OUTPUT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "models"
 DEFAULT_REPORT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "reports"
 CLASS_NAMES = ["up", "down", "right", "left", "null"]
+FOUR_CLASS_NAMES = ["up", "down", "right", "left"]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 
 
@@ -112,11 +115,109 @@ def inspect_tflite(tf, model_path):
     }
 
 
+def build_mini_resnet_keras_model(tf, image_size, num_classes):
+    width, height = image_size
+    base_input = tf.keras.Input(shape=(height, width, 1), name="input_3")
+    x = tf.keras.layers.GaussianNoise(0.05, name="gaussian_noise_1")(base_input)
+
+    x1 = tf.keras.layers.Conv2D(16, (3, 3), padding="same", activation="relu", name="conv1_1")(x)
+    shortcut1 = x1
+    x1 = tf.keras.layers.Conv2D(16, (3, 3), padding="same", activation="relu", name="conv1_2")(x1)
+    x1 = tf.keras.layers.Conv2D(16, (3, 3), padding="same", name="conv1_3")(x1)
+    x1 = tf.keras.layers.add([x1, shortcut1], name="add_2")
+    x1 = tf.keras.layers.Activation("relu", name="activation_2")(x1)
+    x1 = tf.keras.layers.MaxPooling2D(2, 2, name="max_pooling2d_2")(x1)
+
+    x2 = tf.keras.layers.Conv2D(32, (3, 3), padding="same", activation="relu", name="conv2_1")(x1)
+    x2 = tf.keras.layers.Conv2D(32, (3, 3), padding="same", name="conv2_2")(x2)
+    shortcut2 = tf.keras.layers.Conv2D(32, (1, 1), padding="same", name="shortcut_conv2")(x1)
+    x2 = tf.keras.layers.add([x2, shortcut2], name="add_3")
+    x2 = tf.keras.layers.Activation("relu", name="activation_3")(x2)
+    x2 = tf.keras.layers.MaxPooling2D(2, 2, name="max_pooling2d_3")(x2)
+    x2 = tf.keras.layers.Flatten(name="flatten_1")(x2)
+
+    base_model = tf.keras.Model(base_input, x2, name="resnet_base")
+    inputs = tf.keras.Input(shape=(height, width, 1), name="input_6")
+    x = base_model(inputs)
+    x = tf.keras.layers.Dropout(0.5, name="dropout_2")(x)
+    outputs = tf.keras.layers.Dense(num_classes, activation="softmax", name="dense_2")(x)
+    return tf.keras.Model(inputs, outputs)
+
+
+def is_keras_archive(model_path):
+    if not zipfile.is_zipfile(model_path):
+        return False
+    with zipfile.ZipFile(model_path) as archive:
+        names = set(archive.namelist())
+    return {"metadata.json", "config.json", "model.weights.h5"}.issubset(names)
+
+
+def load_mini_resnet_archive(tf, model_path, image_size):
+    import h5py
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with zipfile.ZipFile(model_path) as archive:
+            archive.extract("model.weights.h5", temp_dir)
+        weights_path = Path(temp_dir) / "model.weights.h5"
+
+        with h5py.File(weights_path, "r") as weights:
+            dense_kernel = weights["layers/dense/vars/0"]
+            num_classes = int(dense_kernel.shape[-1])
+            model = build_mini_resnet_keras_model(tf, image_size, num_classes)
+            base = model.get_layer("resnet_base")
+            conv_mapping = [
+                ("conv1_1", "layers/functional/layers/conv2d/vars"),
+                ("conv1_2", "layers/functional/layers/conv2d_1/vars"),
+                ("conv1_3", "layers/functional/layers/conv2d_2/vars"),
+                ("conv2_1", "layers/functional/layers/conv2d_3/vars"),
+                ("conv2_2", "layers/functional/layers/conv2d_4/vars"),
+                ("shortcut_conv2", "layers/functional/layers/conv2d_5/vars"),
+            ]
+            for layer_name, group_path in conv_mapping:
+                base.get_layer(layer_name).set_weights([
+                    np.asarray(weights[f"{group_path}/0"]),
+                    np.asarray(weights[f"{group_path}/1"]),
+                ])
+            model.get_layer("dense_2").set_weights([
+                np.asarray(weights["layers/dense/vars/0"]),
+                np.asarray(weights["layers/dense/vars/1"]),
+            ])
+    return model
+
+
+def load_source_model(tf, model_path, image_size):
+    try:
+        return tf.keras.models.load_model(model_path, compile=False)
+    except OSError as exc:
+        if not is_keras_archive(model_path):
+            raise
+        print("[INFO] Detected newer .keras archive. Rebuilding Mini ResNet for TensorFlow 2.10 compatibility.")
+        try:
+            return load_mini_resnet_archive(tf, model_path, image_size)
+        except Exception as fallback_exc:
+            raise RuntimeError(
+                "Failed to load newer .keras archive with the TensorFlow 2.10 compatibility loader."
+            ) from fallback_exc
+
+
+def class_names_for_output(output_shape):
+    classes = int(output_shape[-1]) if output_shape else len(CLASS_NAMES)
+    if classes == len(FOUR_CLASS_NAMES):
+        return FOUR_CLASS_NAMES
+    if classes == len(CLASS_NAMES):
+        return CLASS_NAMES
+    return [f"class_{index}" for index in range(classes)]
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Quantize a .keras gesture model into an ESP deploy int8 TFLite model."
     )
-    parser.add_argument("--model-name", default="Separable_CNN", help="Model basename under --model-source-dir.")
+    parser.add_argument(
+        "--model-name",
+        default="Mini_ResNet_finetuned_96",
+        help="Model basename under --model-source-dir.",
+    )
     parser.add_argument("--keras", help="Explicit .keras source model path. Overrides --model-name.")
     parser.add_argument(
         "--model-source-dir",
@@ -159,7 +260,7 @@ def main():
     print(f"Calibration images  : {calibration_dir} ({len(image_paths)} samples)")
     print(f"Preprocess          : {args.preprocess_mode}, {image_size[0]}x{image_size[1]}, grayscale / 255.0")
 
-    model = tf.keras.models.load_model(model_path, compile=False)
+    model = load_source_model(tf, model_path, image_size)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = representative_dataset(
@@ -197,7 +298,7 @@ def main():
         "calibration_samples": len(image_paths),
         "preprocess_mode": args.preprocess_mode,
         "image_size": [image_size[0], image_size[1]],
-        "class_order": CLASS_NAMES,
+        "class_order": class_names_for_output(info["output_shape"]),
         "input": {
             "shape": info["input_shape"],
             "dtype": "int8",

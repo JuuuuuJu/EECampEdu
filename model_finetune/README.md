@@ -16,7 +16,9 @@ model_finetune/
     train/          Training images
     validation/     Validation images used by model/deploy checks
     sign_mnist/     Reference dataset
-  models/           Source models and exported training artifacts
+  models/           Source model artifacts; subfolders are created only when artifacts are generated
+    tf/             TensorFlow/Keras training outputs
+    pytorch/        PyTorch training outputs and optional Keras handoff
   pytorch/          PyTorch training and ONNX webcam demo
 ```
 
@@ -43,10 +45,9 @@ Run from this folder:
 ```powershell
 cd model_finetune
 python pytorch\train_96.py
-python pytorch\train_128.py
 ```
 
-The PyTorch scripts train/fine-tune gesture models and export artifacts under `models/`, including `.pth`, `.onnx`, and deploy-compatible `.keras` handoff files when supported by the script.
+The PyTorch `train_96.py` script trains/fine-tunes gesture models and exports artifacts under `models/pytorch/`, including `.pth`, `.onnx`, and deploy-compatible `.keras` handoff files when supported by the script. The folder is created only when an artifact is saved.
 
 ## TensorFlow Training Flow
 
@@ -55,10 +56,9 @@ Run from this folder:
 ```powershell
 cd model_finetune
 python train_96.py
-python train_128.py
 ```
 
-The TensorFlow scripts train/fine-tune gesture models and save `.keras` source models under `models/`.
+The TensorFlow `train_96.py` script trains/fine-tunes gesture models and saves `.keras` and `.onnx` source artifacts under `models/tf/`. The folder is created only when an artifact is saved.
 
 ## Webcam Demo
 
@@ -82,7 +82,7 @@ python webcam_demo.py
 The model team should place source models under:
 
 ```text
-model_finetune/models/
+model_finetune/models/tf/ or model_finetune/models/pytorch/
 ```
 
 Deploy consumes the agreed source artifact and generates ESP32 deploy artifacts under:

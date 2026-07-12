@@ -23,6 +23,15 @@ PRETRAIN_BATCH_SIZE = 256
 PRETRAIN_TRAIN_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_train/sign_mnist_train.csv"
 PRETRAIN_TEST_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_test.csv"
 
+MODELS_ROOT_DIR = "models"
+TF_MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "tf")
+
+
+def ensure_parent_dir(file_path):
+    parent = os.path.dirname(file_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+
 # ==========================================
 # 1. DATASET DOWNLOAD UTILITIES
 # ==========================================
@@ -143,10 +152,15 @@ x = resnet_base(pre_inputs, training=True)
 x = tf.keras.layers.Dropout(0.5)(x)
 pre_outputs = tf.keras.layers.Dense(24, activation='softmax')(x)
 
-os.makedirs("models", exist_ok=True)
-pretrain_weights_path = f"models/mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5"
-
-has_pretrained = os.path.exists("models/mini_resnet_pretrained_weights_96.h5") or os.path.exists("models/mini_resnet_pretrained_weights.h5")
+pretrain_weights_path = os.path.join(TF_MODELS_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5")
+pretrain_weight_candidates = [
+    pretrain_weights_path,
+    os.path.join(TF_MODELS_DIR, "mini_resnet_pretrained_weights.h5"),
+    os.path.join(MODELS_ROOT_DIR, "mini_resnet_pretrained_weights_96.h5"),
+    os.path.join(MODELS_ROOT_DIR, "mini_resnet_pretrained_weights.h5"),
+]
+existing_pretrain_weights_path = next((path for path in pretrain_weight_candidates if os.path.exists(path)), None)
+has_pretrained = existing_pretrain_weights_path is not None
 
 if has_pretrained:
     print("\n[INFO] Found existing pre-trained weights. Skipping Sign Language MNIST loading and training entirely!")
@@ -193,6 +207,7 @@ else:
     print(f"  Val Loss:   {pre_val_loss:.4f} | Val Acc:   {pre_val_acc * 100:.2f}%")
     print(f"  Test Loss:  {pre_test_loss:.4f} | Test Acc:  {pre_test_acc * 100:.2f}%")
 
+    ensure_parent_dir(pretrain_weights_path)
     pretrain_model.save_weights(pretrain_weights_path)
     print(f"Pre-trained base weights saved to {pretrain_weights_path}")
 
@@ -285,9 +300,17 @@ temp_outputs_96 = tf.keras.layers.Dense(24, activation='softmax')(temp_x_96)
 temp_model_96 = tf.keras.Model(temp_inputs_96, temp_outputs_96)
 
 # Locate weights path
-src_weights_path = "models/mini_resnet_pretrained_weights_96.h5"
-if not os.path.exists(src_weights_path):
-    src_weights_path = "models/mini_resnet_pretrained_weights.h5"
+src_weights_candidates = [
+    pretrain_weights_path,
+    existing_pretrain_weights_path,
+    os.path.join(TF_MODELS_DIR, "mini_resnet_pretrained_weights_96.h5"),
+    os.path.join(TF_MODELS_DIR, "mini_resnet_pretrained_weights.h5"),
+    os.path.join(MODELS_ROOT_DIR, "mini_resnet_pretrained_weights_96.h5"),
+    os.path.join(MODELS_ROOT_DIR, "mini_resnet_pretrained_weights.h5"),
+]
+src_weights_path = next((path for path in src_weights_candidates if path and os.path.exists(path)), None)
+if src_weights_path is None:
+    raise FileNotFoundError("No pre-trained Mini ResNet weights found for fine-tuning.")
 
 temp_model_96.load_weights(src_weights_path)
 print(f"Successfully loaded pre-trained weights from {src_weights_path}")
@@ -369,11 +392,12 @@ else:
     ft_test_loss, ft_test_acc = -1.0, -1.0
 
 # Save final fine-tuned model
-ft_model_path = "models/Mini_ResNet_finetuned_96.keras"
-ft_onnx_path = "models/Mini_ResNet_finetuned_96.onnx"
+ft_model_path = os.path.join(TF_MODELS_DIR, "Mini_ResNet_finetuned_96.keras")
+ft_onnx_path = os.path.join(TF_MODELS_DIR, "Mini_ResNet_finetuned_96.onnx")
 
 print(f"Saving Keras model to {ft_model_path}...")
 try:
+    ensure_parent_dir(ft_model_path)
     ft_model.save(ft_model_path)
     print(f"Fine-tuned Mini ResNet model saved to {ft_model_path}")
 except Exception as e:
@@ -383,6 +407,7 @@ print(f"Converting and saving ONNX model to {ft_onnx_path}...")
 try:
     import tf2onnx
     spec = (tf.TensorSpec(ft_model.inputs[0].shape, ft_model.inputs[0].dtype, name="input"),)
+    ensure_parent_dir(ft_onnx_path)
     model_proto, _ = tf2onnx.convert.from_keras(ft_model, input_signature=spec, opset=13, output_path=ft_onnx_path)
     print(f"ONNX model saved successfully at {ft_onnx_path}")
 except Exception as e:

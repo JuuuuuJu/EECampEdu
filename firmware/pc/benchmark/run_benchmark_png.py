@@ -1,5 +1,6 @@
 import argparse
 import glob
+import json
 import os
 import time
 import warnings
@@ -22,14 +23,15 @@ DEFAULT_DATA_DIR = CNN_DIR / "dataset" / "test" / "tflite"
 READY_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_READY_TIMEOUT_SEC", "30"))
 READY_RETRY_LIMIT = int(os.environ.get("BENCHMARK_READY_RETRY_LIMIT", "2"))
 RESULT_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_RESULT_TIMEOUT_SEC", "20"))
-DEFAULT_TFLITE_MODEL_PATH = CNN_DIR.parent / "esp" / "main" / "Separable_CNN_int8.tflite"
+DEFAULT_TFLITE_MODEL_PATH = CNN_DIR / "artifacts" / "models" / "Mini_ResNet_finetuned_96_int8.tflite"
 ENABLE_OUTPUT_COMPARE = os.environ.get("BENCHMARK_COMPARE_OUTPUT", "1") != "0"
 
 MODEL_INPUT_WIDTH = 96
 MODEL_INPUT_HEIGHT = 96
 DEFAULT_FRAME_WIDTH = int(os.environ.get("BENCHMARK_FRAME_WIDTH", "160"))
 DEFAULT_FRAME_HEIGHT = int(os.environ.get("BENCHMARK_FRAME_HEIGHT", "160"))
-CLASS_NAMES = ["up", "down", "right", "left", "null"]
+DEFAULT_CLASS_NAMES = ["up", "down", "right", "left", "null"]
+CLASS_NAMES = list(DEFAULT_CLASS_NAMES)
 PREPROCESS_MODE = os.environ.get("BENCHMARK_PREPROCESS_MODE", "resize").lower()
 HAND_CROP_MARGIN_PERCENT = int(os.environ.get("BENCHMARK_HAND_CROP_MARGIN_PERCENT", "18"))
 HAND_CROP_MIN_AREA_PERCENT = int(os.environ.get("BENCHMARK_HAND_CROP_MIN_AREA_PERCENT", "1"))
@@ -51,6 +53,29 @@ def resolve_project_path(path_text):
         return path
     return CNN_DIR / path
 
+
+
+def load_class_names_for_model(model_path):
+    stem = Path(model_path).stem
+    report_dir = CNN_DIR / "artifacts" / "reports"
+    report_names = [f"{stem}_quantization_report.json"]
+    if stem.endswith("_int8"):
+        report_names.append(f"{stem[:-5]}_quantization_report.json")
+
+    for report_name in report_names:
+        report_path = report_dir / report_name
+        if not report_path.exists():
+            continue
+        try:
+            with open(report_path, "r", encoding="utf-8") as file:
+                report = json.load(file)
+            class_order = report.get("class_order")
+            if isinstance(class_order, list) and class_order and all(isinstance(name, str) for name in class_order):
+                return class_order
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[WARN] Failed to read class map from {report_path}: {exc}")
+
+    return list(DEFAULT_CLASS_NAMES)
 
 def parse_frame_size(size_text):
     text = size_text.lower().replace(" ", "")
@@ -115,6 +140,7 @@ def parse_args():
 ARGS = parse_args()
 DATA_DIR = resolve_data_dir(ARGS.data_dir)
 TFLITE_MODEL_PATH = resolve_project_path(ARGS.model)
+CLASS_NAMES = load_class_names_for_model(TFLITE_MODEL_PATH)
 FRAME_WIDTH, FRAME_HEIGHT = parse_frame_size(ARGS.frame_size)
 PORT = ARGS.port
 BAUDRATE = ARGS.baudrate
@@ -550,22 +576,19 @@ def run_benchmark():
                     roundtrip_us = (time.perf_counter_ns() - roundtrip_start_ns) / 1000.0
                     try:
                         parts = line.split(",")
-                        if len(parts) < 3 + len(CLASS_NAMES):
+                        if len(parts) < 6:
                             raise ValueError("RESULT line has too few fields")
 
                         pred_idx = int(parts[1])
                         model_latency_us = int(parts[2])
-                        if len(parts) >= 5 + len(CLASS_NAMES):
-                            preprocess_us = int(parts[3])
-                            device_compute_us = int(parts[4])
-                            score_start = 5
-                            extended_timing_count += 1
-                        else:
-                            preprocess_us = None
-                            device_compute_us = model_latency_us
-                            score_start = 3
+                        preprocess_us = int(parts[3])
+                        device_compute_us = int(parts[4])
+                        score_start = 5
+                        extended_timing_count += 1
 
-                        scores = [int(x) for x in parts[score_start:score_start + len(CLASS_NAMES)]]
+                        scores = [int(x) for x in parts[score_start:]]
+                        if not scores:
+                            raise ValueError("RESULT line has no output scores")
                         uart_io_overhead_us = max(0.0, roundtrip_us - device_compute_us)
                         total_model_latency_us += model_latency_us
                         total_roundtrip_us += roundtrip_us
@@ -688,3 +711,5 @@ def run_benchmark():
 
 if __name__ == "__main__":
     run_benchmark()
+
+

@@ -24,7 +24,7 @@ All paths are relative to this repository root. Do not hardcode local drive lett
 ```text
 Model team
   -> train / fine-tune in PyTorch or TensorFlow
-  -> hand off .pth/.onnx/.keras source artifacts under model_finetune/models/
+  -> hand off TensorFlow artifacts under model_finetune/models/tf/ and PyTorch artifacts under model_finetune/models/pytorch/
 
 Deploy team
   -> normalize source handoff into int8 TFLite
@@ -105,6 +105,40 @@ storage  remaining FAT storage for camera/USB files
 ```
 
 The model partition is intentionally independent from the firmware app, so the deploy model can be reflashed without rebuilding firmware.
+
+## Deploy Quantization And Flash
+
+Default source model:
+
+```text
+model_finetune/models/tf/Mini_ResNet_finetuned_96.keras
+```
+
+Quantize the source model with representative calibration images from `model_finetune/dataset/train/`:
+
+```powershell
+python firmware\pc\tools\quantize_keras_model.py
+```
+
+Generated deploy artifacts:
+
+```text
+firmware/pc/artifacts/models/Mini_ResNet_finetuned_96_int8.tflite
+firmware/pc/artifacts/reports/Mini_ResNet_finetuned_96_quantization_report.json
+```
+
+Flash the generated int8 TFLite model:
+
+```powershell
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" -p COM6
+```
+
+Then run benchmark in `RuntimeMode::kTestUartFrame`:
+
+```powershell
+cd firmware\pc
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+```
 
 ## Unit Tests
 

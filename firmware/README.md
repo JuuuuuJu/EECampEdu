@@ -49,10 +49,38 @@ Important settings:
 
 ## Deploy Model
 
-Generate or receive a deployable int8 TFLite model, then flash only the model partition:
+Default source model:
+
+```text
+model_finetune/models/tf/Mini_ResNet_finetuned_96.keras
+```
+
+Quantize the source model into the ESP deploy target:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Separable_CNN_int8.tflite" -p COM6
+python firmware\pc\tools\quantize_keras_model.py
+```
+
+The quantization script:
+
+- loads the `.keras` source model from `model_finetune/models/tf/ or model_finetune/models/pytorch/`
+- reads calibration images from `model_finetune/dataset/train/`
+- converts images to grayscale float `[0.0, 1.0]`
+- runs TensorFlow Lite representative calibration
+- exports a full int8 input/output TFLite model
+- writes a quantization report with input/output shape, dtype, scale, and zero point
+
+Generated files:
+
+```text
+firmware/pc/artifacts/models/Mini_ResNet_finetuned_96_int8.tflite
+firmware/pc/artifacts/reports/Mini_ResNet_finetuned_96_quantization_report.json
+```
+
+Flash only the model partition:
+
+```powershell
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" -p COM6
 ```
 
 The model partition is independent from the firmware app partition.
@@ -81,7 +109,7 @@ Run:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Separable_CNN_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
 Primary deploy metrics:
