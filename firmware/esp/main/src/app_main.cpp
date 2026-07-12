@@ -1,6 +1,5 @@
 #include <math.h>
 #include <stdint.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +20,6 @@
 
 #include "camera_capture.hpp"
 #include "input_controls.hpp"
-#include "output_controls.hpp"
 #include "model_config.hpp"
 #include "photo_storage.hpp"
 #include "usb_composite.hpp"
@@ -31,6 +29,7 @@
 #include "esp_vfs_fat.h"
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/statvfs.h>
 #include <unistd.h>
 
 static const char *TAG = "TFLM_GESTURE";
@@ -38,25 +37,51 @@ static const char *TAG = "TFLM_GESTURE";
 static uint8_t *g_raw_frame = nullptr;
 static uint8_t *g_model_frame = nullptr;
 static uint8_t *g_tensor_arena = nullptr;
-static bool g_tflite_ready = false;
 
 // Forward declarations for functions defined further down in app_main.cpp
 static bool allocate_frame_buffers();
 static void resize_grayscale_to_runtime_frame(const uint8_t *src, int src_width, int src_height, uint8_t *dst);
-static esp_err_t capture_grayscale_inference_frame();
 static bool run_inference_on_grayscale_frame(const uint8_t *g_raw_frame);
+static void dual_printf(const char *format, ...);
 
-static bool streaming_mode = (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) ? CAMERA_USB_CONTINUOUS_CAPTURE : false;
+
+static bool streaming_mode = false;
 static SemaphoreHandle_t camera_mutex = NULL;
-static pixformat_t g_current_format = PIXFORMAT_JPEG;
-static framesize_t g_current_size = FRAMESIZE_VGA;
-static TaskHandle_t g_input_controls_task_handle = nullptr;
-static TaskHandle_t g_uart_test_task_handle = nullptr;
-static TaskHandle_t g_camera_stream_task_handle = nullptr;
-static TaskHandle_t g_usb_cdc_command_task_handle = nullptr;
-static TaskHandle_t g_photo_flash_task_handle = nullptr;
-static TaskHandle_t g_camera_flash_task_handle = nullptr;
-static TaskHandle_t g_output_controls_task_handle = nullptr;
+static pixformat_t g_current_format = PIXFORMAT_GRAYSCALE;
+static framesize_t g_current_size = FRAMESIZE_96X96;
+
+
+/**
+ * @brief High-Fidelity JPEG to Grayscale Decoder
+ * Prevents banding and shadow-crushing by using bit-expansion and rounded integer math.
+ */
+static bool decode_jpeg_to_high_fidelity_grayscale(const uint8_t *jpg_buf, size_t jpg_size, int w, int h, uint8_t *out_gray_buf) {
+    uint8_t *rgb_buf = (uint8_t*)malloc(w * h * 2);
+    if (!rgb_buf) return false;
+
+    if (!jpg2rgb565(jpg_buf, jpg_size, rgb_buf, JPG_SCALE_NONE)) {
+        free(rgb_buf);
+        return false;
+    }
+
+    for (int i = 0; i < (w * h); i++) {
+        // FIX: Read as Little-Endian!
+        uint16_t p = rgb_buf[i * 2] | (rgb_buf[i * 2 + 1] << 8);
+
+        uint8_t r5 = (p >> 11) & 0x1F;
+        uint8_t g6 = (p >> 5) & 0x3F;
+        uint8_t b5 = (p & 0x1F);
+
+        uint16_t r8 = (r5 << 3) | (r5 >> 2);
+        uint16_t g8 = (g6 << 2) | (g6 >> 4);
+        uint16_t b8 = (b5 << 3) | (b5 >> 2);
+
+        out_gray_buf[i] = (uint8_t)((r8 * 77 + g8 * 150 + b8 * 29 + 128) >> 8);
+    }
+
+    free(rgb_buf);
+    return true;
+}
 
 static void dual_printf(const char *format, ...) {
     char buffer[256];
@@ -72,91 +97,16 @@ static void dual_printf(const char *format, ...) {
 }
 
 static void send_frame_to_pc(const CameraFrame &frame) {
-    usb_cdc_printf("---START_IMAGE:%d:%d:%d:%d---\n", (int)frame.format, frame.width, frame.height, (int)frame.size);
+    // Map the internal CameraFrameFormat explicitly to what the Python script expects:
+    // Python expects: 0=RGB565, 1=YUV422, 3=GRAYSCALE, 4=JPEG
+    int py_fmt = 4; // Default to JPEG to be safe
+    if (frame.format == CameraFrameFormat::kGrayscale) py_fmt = 3;
+    else if (frame.format == CameraFrameFormat::kRgb565) py_fmt = 0;
+    else if (frame.format == CameraFrameFormat::kYuv422) py_fmt = 1;
+    
+    usb_cdc_printf("---START_IMAGE:%d:%d:%d:%d---\n", py_fmt, frame.width, frame.height, (int)frame.size);
     usb_cdc_write_base64(frame.data, frame.size);
     usb_cdc_printf("---END_IMAGE---\n");
-}
-
-
-static esp_err_t send_file_to_pc(const char *requested_name) {
-    usb_msc_mount_to_app();
-    vTaskDelay(pdMS_TO_TICKS(50));
-
-    char path[128] = "/usb/latest.raw";
-    if (requested_name != nullptr && requested_name[0] != '\0') {
-        while (*requested_name == ' ' || *requested_name == '\t') {
-            ++requested_name;
-        }
-        if (requested_name[0] != '\0') {
-            if (strncmp(requested_name, "/usb/", 5) == 0) {
-                snprintf(path, sizeof(path), "%s", requested_name);
-            } else if (requested_name[0] == '/') {
-                snprintf(path, sizeof(path), "/usb%s", requested_name);
-            } else {
-                snprintf(path, sizeof(path), "/usb/%s", requested_name);
-            }
-        }
-    }
-
-    FILE *file = fopen(path, "rb");
-    if (file == nullptr) {
-        dual_printf("ERROR: File %s not found\n", path);
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    if (fseek(file, 0, SEEK_END) != 0) {
-        fclose(file);
-        dual_printf("ERROR: Failed to seek %s\n", path);
-        return ESP_FAIL;
-    }
-    const long file_size_long = ftell(file);
-    if (file_size_long < 0) {
-        fclose(file);
-        dual_printf("ERROR: Failed to measure %s\n", path);
-        return ESP_FAIL;
-    }
-    rewind(file);
-
-    const size_t file_size = (size_t)file_size_long;
-    uint8_t *buffer = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (buffer == nullptr) {
-        buffer = (uint8_t *)heap_caps_malloc(file_size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    }
-    if (buffer == nullptr) {
-        fclose(file);
-        dual_printf("ERROR: Not enough memory to send %s (%u bytes)\n", path, (unsigned)file_size);
-        return ESP_ERR_NO_MEM;
-    }
-
-    const size_t read = fread(buffer, 1, file_size, file);
-    fclose(file);
-    if (read != file_size) {
-        heap_caps_free(buffer);
-        dual_printf("ERROR: Failed to read %s\n", path);
-        return ESP_FAIL;
-    }
-
-    int format = 3;
-    int width = 0;
-    int height = 0;
-    StoredPhotoMetadata metadata = {};
-    FILE *meta = fopen("/usb/latest.meta", "rb");
-    if (meta != nullptr) {
-        if (fread(&metadata, 1, sizeof(metadata), meta) == sizeof(metadata)) {
-            format = metadata.format;
-            width = metadata.width;
-            height = metadata.height;
-        }
-        fclose(meta);
-    }
-
-    const char *name = strrchr(path, '/');
-    name = (name != nullptr) ? name + 1 : path;
-    usb_cdc_printf("---START_FILE:%d:%d:%d:%u:%s---\n", format, width, height, (unsigned)file_size, name);
-    usb_cdc_write_base64(buffer, file_size);
-    usb_cdc_printf("---END_FILE---\n");
-    heap_caps_free(buffer);
-    return ESP_OK;
 }
 
 static void usb_list_files() {
@@ -188,15 +138,11 @@ static void usb_list_files() {
     }
     closedir(dir);
     
-    const esp_partition_t *storage = esp_partition_find_first(
-        ESP_PARTITION_TYPE_DATA,
-        ESP_PARTITION_SUBTYPE_ANY,
-        "storage");
-    if (storage != nullptr) {
-        usb_cdc_printf("Total: %d files, used space: %d bytes (storage partition: %llu bytes)\n",
-                       count,
-                       (int)total_size,
-                       (unsigned long long)storage->size);
+    struct statvfs s;
+    if (statvfs("/usb", &s) == 0) {
+        uint64_t free_bytes = ((uint64_t)s.f_bfree * s.f_frsize);
+        usb_cdc_printf("Total: %d files, used space: %d bytes (Free: %llu bytes)\n", 
+                       count, (int)total_size, (unsigned long long)free_bytes);
     } else {
         usb_cdc_printf("Total: %d files, used space: %d bytes\n", count, (int)total_size);
     }
@@ -208,20 +154,12 @@ static void camera_stream_task(void *pvParameters) {
     ESP_LOGI(TAG, "Camera stream task started.");
     
     while (true) {
-        if (streaming_mode && usb_cdc_is_connected()) {
+        if (streaming_mode) {
             if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
                 CameraFrame frame = {};
                 esp_err_t err = camera_capture_frame(&frame);
                 if (err == ESP_OK) {
                     send_frame_to_pc(frame);
-                    
-                    // Also run inference if it's grayscale
-                    if (g_tflite_ready && frame.format == CameraFrameFormat::kGrayscale) {
-                        if (allocate_frame_buffers()) {
-                            resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
-                            run_inference_on_grayscale_frame(g_raw_frame);
-                        }
-                    }
                     camera_capture_release(&frame);
                 }
                 xSemaphoreGive(camera_mutex);
@@ -256,33 +194,67 @@ static void usb_cdc_command_task(void *pvParameters) {
                 
                 // Parse command
                 if (strcasecmp(cmd_buf, "format") == 0) {
-                    dual_printf("Formatting storage partition... please wait...\n");
+                    // 1. Pause the camera stream FIRST to prevent Base64 text collisions!
+                    bool was_streaming = streaming_mode;
+                    if (was_streaming) {
+                        if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                            streaming_mode = false;
+                            xSemaphoreGive(camera_mutex);
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera stream task exit its loop
+                    }
+
+                    // NOW it is safe to print to the serial port
+                    dual_printf("[System] Formatting storage partition (4MB)... please wait (~10-20 seconds)...\n");
+
+                    // 2. Shut down the camera hardware temporarily
                     if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                         esp_camera_deinit();
-                        xSemaphoreGive(camera_mutex);
                     }
-                    vTaskDelay(pdMS_TO_TICKS(50));
                     
+                    // 3. Take back the USB drive and WAIT for the transition!
                     usb_msc_mount_to_app();
-                    esp_err_t err = esp_vfs_fat_spiflash_format_rw_wl("/usb", "storage");
-                    if (err == ESP_OK) {
-                        dual_printf("FATFS partition formatted successfully! Rebooting device to sync...\n");
-                        vTaskDelay(pdMS_TO_TICKS(500));
-                        esp_restart();
+                    vTaskDelay(pdMS_TO_TICKS(500));
+                    
+                    // 4. Forcefully erase the raw flash partition
+                    const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, NULL);
+                    if (part != nullptr) {
+                        esp_err_t err = esp_partition_erase_range(part, 0, part->size);
+                        if (err == ESP_OK) {
+                            dual_printf("[System] FATFS partition erased successfully! Rebooting device to rebuild FAT table...\n");
+                            vTaskDelay(pdMS_TO_TICKS(500));
+                            esp_restart();
+                        } else {
+                            dual_printf("ERROR: Partition erase failed: %s\n", esp_err_to_name(err));
+                        }
                     } else {
-                        dual_printf("ERROR: FATFS partition formatting failed.\n");
+                        dual_printf("ERROR: Could not find FAT partition in partition table!\n");
                     }
-                    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                        camera_capture_init();
-                        xSemaphoreGive(camera_mutex);
+                    
+                    // 5. Recover state if format failed
+                    camera_capture_init();
+                    xSemaphoreGive(camera_mutex); // Give mutex back
+                    
+                    if (was_streaming) {
+                        streaming_mode = true;
                     }
                     continue;
                 }
                 
-                if (strcasecmp(cmd_buf, "usb") == 0) {
-                    streaming_mode = false;
+               if (strcasecmp(cmd_buf, "usb") == 0) {
+                    // 1. Pause the stream safely FIRST to avoid text collision in the JPEG!
+                    bool was_streaming = streaming_mode;
+                    if (was_streaming) {
+                        if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                            streaming_mode = false;
+                            xSemaphoreGive(camera_mutex);
+                        }
+                        vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera stream task exit its loop
+                    }
+
+                    // 2. NOW it is safe to print text to the serial port
                     dual_printf("[System] Streaming: DISABLED (USB Mode)\n");
-                    dual_printf("Exposing storage partition to host PC as USB drive...\n");
+                    dual_printf("[System] Exposing storage partition to host PC as USB drive...\n");
                     usb_msc_mount_to_pc();
                     continue;
                 }
@@ -297,24 +269,122 @@ static void usb_cdc_command_task(void *pvParameters) {
                 switch (action) {
                     case 'c':
                     case 'C': {
-                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(5000)) == pdTRUE) {
-                            CameraFrame frame = {};
-                            esp_err_t err = camera_capture_frame(&frame);
-                            if (err == ESP_OK) {
-                                send_frame_to_pc(frame);
-                                camera_capture_release(&frame);
-                            } else {
-                                dual_printf("ERROR: Capture failed: %s\n", esp_err_to_name(err));
+                        // 1. Pause stream to prevent serial collision
+                        bool was_streaming = streaming_mode;
+                        if (was_streaming) {
+                            if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                                streaming_mode = false;
+                                xSemaphoreGive(camera_mutex);
                             }
+                            vTaskDelay(pdMS_TO_TICKS(100)); 
+                        }
 
-                            // Camera-controller unit test uses c/Space. Keep preview as VGA JPEG,
-                            // but run model inference from a temporary grayscale capture path.
-                            if (g_tflite_ready) {
-                                capture_grayscale_inference_frame();
+                        // 2. Prepare USB drive
+                        usb_msc_mount_to_app();
+                        vTaskDelay(pdMS_TO_TICKS(500));
+
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            
+                            // Flush one stale buffer
+                            camera_fb_t *dummy = esp_camera_fb_get();
+                            if (dummy) esp_camera_fb_return(dummy);
+                            
+                            // Capture the real, clean frame
+                            camera_fb_t *fb = esp_camera_fb_get();
+                            if (!fb) {
+                                dual_printf("ERROR: Failed to acquire camera frame buffer.\n");
+                                xSemaphoreGive(camera_mutex);
+                            } else {
+                                size_t data_len = fb->len;
+                                uint8_t *temp_buf = (uint8_t*)malloc(data_len);
+                                
+                                if (!temp_buf) {
+                                    dual_printf("ERROR: Failed to allocate %d bytes for capture.\n", (int)data_len);
+                                    esp_camera_fb_return(fb);
+                                    xSemaphoreGive(camera_mutex);
+                                } else {
+                                    // Copy data safely out of camera DMA space
+                                    memcpy(temp_buf, fb->buf, data_len);
+                                    
+                                    int fmt = fb->format;
+                                    int w = fb->width;
+                                    int h = fb->height;
+                                    
+                                    // CRITICAL FIX: Release hardware lock BEFORE doing heavy file I/O or Inference!
+                                    esp_camera_fb_return(fb);
+                                    xSemaphoreGive(camera_mutex); 
+
+                                    // --- PART A: Save Original Image (Like 'w' command) ---
+                                    const char *ext = "bin";
+                                    if (fmt == PIXFORMAT_JPEG) ext = "jpg";
+                                    else if (fmt == PIXFORMAT_GRAYSCALE) ext = "gray";
+                                    else if (fmt == PIXFORMAT_RGB565) ext = "rgb565";
+                                    
+                                    // argStr contains the timestamp from Python
+                                    const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
+                                    
+                                    char filepath[1024];
+                                    snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
+                                                ts, (int)fb->format, fb->width, fb->height, ext);
+
+                                    FILE *f = fopen(filepath, "wb");
+                                    if (f) {
+                                        fwrite(temp_buf, 1, data_len, f);
+                                        fclose(f);
+                                        dual_printf("[System] Image saved to flash! File: %s\n", filepath);
+                                    }
+
+                                    // --- PART B: Prepare & Run Inference (Like 'i' command) ---
+                                    if (allocate_frame_buffers()) {
+                                        bool success = false;
+                                        uint8_t *full_gray_buf = (uint8_t*)malloc(w * h);
+                                        
+                                        if (full_gray_buf) {
+                                            if (fmt == PIXFORMAT_JPEG) {
+                                                // Convert JPEG directly to Full Grayscale
+                                                success = decode_jpeg_to_high_fidelity_grayscale(temp_buf, data_len, w, h, full_gray_buf);
+                                            } else if (fmt == PIXFORMAT_GRAYSCALE) {
+                                                memcpy(full_gray_buf, temp_buf, data_len);
+                                                success = true;
+                                            }
+
+                                            if (success) {
+                                                // Downscale full grayscale to 96x96 TFLite Input Tensor
+                                                resize_grayscale_to_runtime_frame(full_gray_buf, w, h, g_raw_frame);
+
+                                                // Construct virtual frame and save Ghost Files using our unified wrapper!
+                                                CameraFrame inf_frame = {};
+                                                inf_frame.data = g_raw_frame;
+                                                inf_frame.size = FRAME_WIDTH * FRAME_HEIGHT;
+                                                inf_frame.width = FRAME_WIDTH;
+                                                inf_frame.height = FRAME_HEIGHT;
+                                                inf_frame.format = CameraFrameFormat::kGrayscale;
+                                                inf_frame.handle = nullptr;
+
+                                                photo_storage_write_latest(inf_frame);
+
+                                                dual_printf("[System] Inference started on live capture.\n");
+                                                run_inference_on_grayscale_frame(g_raw_frame);
+                                            } else {
+                                                dual_printf("ERROR: Failed to prepare capture for inference.\n");
+                                            }
+                                            free(full_gray_buf);
+                                        }
+                                    }
+                                    free(temp_buf);
+                                }
                             }
-                            xSemaphoreGive(camera_mutex);
                         } else {
-                            dual_printf("ERROR: Camera busy; capture skipped.\n");
+                            dual_printf("ERROR: Camera busy, could not acquire mutex.\n");
+                        }
+
+                        // 3. Give the USB drive back to the PC
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                        usb_msc_mount_to_pc();
+
+                        // 4. Resume stream
+                        if (was_streaming) {
+                            streaming_mode = true;
                         }
                         break;
                     }
@@ -326,32 +396,115 @@ static void usb_cdc_command_task(void *pvParameters) {
                     }
                     case 'w':
                     case 'W': {
-                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                            usb_msc_mount_to_app();
-                            vTaskDelay(pdMS_TO_TICKS(50));
-                            CameraFrame frame = {};
-                            esp_err_t err = camera_capture_frame(&frame);
-                            if (err == ESP_OK) {
-                                err = photo_storage_write_latest(frame);
-                                if (err == ESP_OK) {
-                                    dual_printf("[System] Saved frame to flash successfully.\n");
-                                } else {
-                                    dual_printf("ERROR: Save failed: %s\n", esp_err_to_name(err));
-                                }
-                                camera_capture_release(&frame);
+                        // 1. Pause streaming to free up DMA resources
+                        bool was_streaming = streaming_mode;
+                        if (was_streaming) {
+                            if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                                streaming_mode = false;
+                                xSemaphoreGive(camera_mutex);
                             }
-                            xSemaphoreGive(camera_mutex);
+                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera stream task exit
                         }
-                        break;
-                    }
-                    case 'r':
-                    case 'R': {
-                        send_file_to_pc(argStr);
+
+                        // 2. Take control of the USB drive from the PC
+                        dual_printf("[System] Preparing flash drive...\n");
+                        usb_msc_mount_to_app();
+                        vTaskDelay(pdMS_TO_TICKS(500)); // CRITICAL: Wait for VFS to transition!
+
+                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            
+                            // Flush one stale buffer left behind by the DMA stream
+                            camera_fb_t *dummy = esp_camera_fb_get();
+                            if (dummy) esp_camera_fb_return(dummy);
+                            
+                            // Capture the real, clean frame
+                            camera_fb_t *fb = esp_camera_fb_get();
+                            if (!fb) {
+                                dual_printf("ERROR: Failed to acquire camera frame buffer.\n");
+                                xSemaphoreGive(camera_mutex);
+                            } else {
+                                size_t data_len = fb->len;
+                                uint8_t *temp_buf = (uint8_t*)malloc(data_len);
+                                
+                                if (!temp_buf) {
+                                    dual_printf("ERROR: Failed to allocate %d bytes for flash write.\n", (int)data_len);
+                                    esp_camera_fb_return(fb);
+                                    xSemaphoreGive(camera_mutex);
+                                } else {
+                                    // Copy data safely out of camera DMA space
+                                    memcpy(temp_buf, fb->buf, data_len);
+                                    
+                                    // Determine correct file extension
+                                    const char *ext = "bin";
+                                    if (fb->format == PIXFORMAT_JPEG) ext = "jpg";
+                                    else if (fb->format == PIXFORMAT_GRAYSCALE) ext = "gray";
+                                    else if (fb->format == PIXFORMAT_RGB565) ext = "rgb565";
+                                    
+                                    // argStr contains the timestamp from Python
+                                    const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
+                                    
+                                    char filepath[1024];
+                                    snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
+                                                ts, (int)fb->format, fb->width, fb->height, ext);
+
+                                    // CRITICAL FIX: Release camera hardware lock BEFORE writing to slow flash!
+                                    esp_camera_fb_return(fb);
+                                    xSemaphoreGive(camera_mutex); 
+
+                                    // 3. Write to Flash
+                                    FILE *f = fopen(filepath, "wb");
+                                    if (!f) {
+                                        dual_printf("ERROR: Failed to open %s for writing.\n", filepath);
+                                    } else {
+                                        size_t written = fwrite(temp_buf, 1, data_len, f);
+                                        fclose(f);
+                                        if (written == data_len) {
+                                            dual_printf("[System] Image saved to flash! File: %s (%d bytes)\n", filepath, (int)written);
+                                        } else {
+                                            dual_printf("ERROR: Incomplete file write. Only wrote %d of %d bytes.\n", (int)written, (int)data_len);
+                                        }
+                                    }
+                                    free(temp_buf);
+                                }
+                            }
+                        } else {
+                            dual_printf("ERROR: Camera busy, could not acquire mutex.\n");
+                        }
+
+                        // 4. Give the USB drive back to the PC so you can see the file immediately!
+                        vTaskDelay(pdMS_TO_TICKS(100)); // Let the file system settle
+                        usb_msc_mount_to_pc();
+
+                        // 5. Resume stream if it was running
+                        if (was_streaming) {
+                            streaming_mode = true;
+                            dual_printf("[System] Streaming: RESUMED\n");
+                        }
                         break;
                     }
                     case 'l':
                     case 'L': {
+                        // 1. Pause the stream safely FIRST to avoid text collision in the image data!
+                        bool was_streaming = streaming_mode;
+                        if (was_streaming) {
+                            if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                                streaming_mode = false;
+                                xSemaphoreGive(camera_mutex);
+                            }
+                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera stream task finish sending the current frame
+                        }
+
+                        // 2. NOW it is safe to interact with the file system and print to the serial port
+                        usb_msc_mount_to_app();
+                        vTaskDelay(pdMS_TO_TICKS(500)); // Give VFS time to transition locks
+                        
                         usb_list_files();
+
+                        // 3. Resume the stream if it was running
+                        if (was_streaming) {
+                            streaming_mode = true;
+                        }
+                        usb_msc_mount_to_pc();
                         break;
                     }
                     case 'k':
@@ -362,16 +515,163 @@ static void usb_cdc_command_task(void *pvParameters) {
                         unlink("/usb/latest.meta");
                         unlink("/usb/latest.bmp");
                         dual_printf("[System] Cleared files in storage partition.\n");
+                        usb_msc_mount_to_pc();
                         break;
                     }
                     case 'i':
                     case 'I': {
-                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(4000)) == pdTRUE) {
-                            capture_grayscale_inference_frame();
-                            xSemaphoreGive(camera_mutex);
-                        } else {
-                            dual_printf("ERROR: Camera busy; inference capture skipped.\n");
+                        bool was_streaming = streaming_mode;
+                        if (was_streaming) {
+                            if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                                streaming_mode = false;
+                                xSemaphoreGive(camera_mutex);
+                            }
+                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera stream task finish sending the current frame
                         }
+
+                        usb_msc_mount_to_app();
+                        vTaskDelay(pdMS_TO_TICKS(500)); // Give VFS time to transition locks
+
+                        char input_buf[256];
+                        strncpy(input_buf, argStr, sizeof(input_buf));
+                        input_buf[sizeof(input_buf)-1] = '\0';
+                        
+                        // Strip trailing spaces/newlines
+                        int len = strlen(input_buf);
+                        while (len > 0 && (input_buf[len-1] <= ' ')) { input_buf[--len] = '\0'; }
+                        
+                        if (len == 0) {
+                            dual_printf("ERROR: Usage: i <filename> OR i <index>\n");
+                            break;
+                        }
+
+                        // 1. Resolve to full path
+                        char target_path[512] = {0};
+                        bool is_index = true;
+                        for(int j=0; j<len; j++) { if(!isdigit(input_buf[j])) is_index = false; }
+
+                        if (is_index) {
+                            int target_idx = atoi(input_buf);
+                            bool was_streaming = streaming_mode;
+                            if (was_streaming) {
+                                if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) { streaming_mode = false; xSemaphoreGive(camera_mutex); }
+                            }
+                            usb_msc_mount_to_app();
+                            vTaskDelay(pdMS_TO_TICKS(500));
+                            
+                            DIR *dir = opendir("/usb");
+                            if (dir) {
+                                struct dirent *entry;
+                                int count = 0;
+                                while ((entry = readdir(dir)) != NULL) {
+                                    if (entry->d_name[0] != '.') { 
+                                        if (count == target_idx) {
+                                            snprintf(target_path, sizeof(target_path), "/usb/%s", entry->d_name);
+                                            break;
+                                        }
+                                        count++;
+                                    }
+                                }
+                                closedir(dir);
+                            }
+                            if (strlen(target_path) == 0) {
+                                dual_printf("ERROR: Index %d not found.\n", target_idx);
+                                if (was_streaming) streaming_mode = true;
+                                break;
+                            }
+                        } else {
+                            if (input_buf[0] == '/') snprintf(target_path, sizeof(target_path), "%s", input_buf);
+                            else snprintf(target_path, sizeof(target_path), "/usb/%s", input_buf);
+                        }
+
+                        // 2. Perform Inference
+
+                        FILE *f = fopen(target_path, "rb");
+                        if (!f) { dual_printf("ERROR: Could not open %s\n", target_path); if (was_streaming) streaming_mode = true; break; }
+
+                        fseek(f, 0, SEEK_END); size_t fsize = ftell(f); fseek(f, 0, SEEK_SET);
+                        uint8_t *file_buf = (uint8_t*)malloc(fsize);
+                        if (!file_buf) { fclose(f); if (was_streaming) streaming_mode = true; break; }
+                        fread(file_buf, 1, fsize, f); fclose(f);
+
+                        // Parse w/h
+                        int w = 640, h = 480;
+                        char *w_ptr = strstr(target_path, "_w");
+                        char *h_ptr = strstr(target_path, "_h");
+                        if (w_ptr && h_ptr) { 
+                            w = atoi(w_ptr + 2); 
+                            h = atoi(h_ptr + 2); 
+                        } else {
+                            // Default fallback sizes for latest raw and bmp files
+                            if (strstr(target_path, "latest.raw") != nullptr || strstr(target_path, "latest.bmp") != nullptr) {
+                                w = 160;
+                                h = 160;
+                            }
+                        }
+
+                        if (allocate_frame_buffers()) {
+                            bool success = false;
+                            
+                            // Only allocate the final full-size grayscale buffer
+                            uint8_t *full_gray_buf = (uint8_t*)malloc(w * h);
+                            
+                            if (full_gray_buf) {
+                                char lower_path[512];
+                                strncpy(lower_path, target_path, sizeof(lower_path));
+                                lower_path[sizeof(lower_path)-1] = '\0';
+                                for (int k = 0; lower_path[k]; k++) {
+                                    lower_path[k] = tolower((unsigned char)lower_path[k]);
+                                }
+
+                                if (strstr(lower_path, ".jpg") != nullptr || strstr(lower_path, ".jpeg") != nullptr) {
+                                    // Decode JPEG using software decoder
+                                    success = decode_jpeg_to_high_fidelity_grayscale(file_buf, fsize, w, h, full_gray_buf);
+                                } else if (strstr(lower_path, ".raw") != nullptr || strstr(lower_path, ".gray") != nullptr) {
+                                    // Direct load of raw grayscale image data
+                                    if (fsize >= (size_t)(w * h)) {
+                                        memcpy(full_gray_buf, file_buf, w * h);
+                                        success = true;
+                                    }
+                                } else if (strstr(lower_path, ".bmp") != nullptr) {
+                                    // Direct load of 8-bit grayscale BMP image data, skipping the 1078-byte BMP header/palette
+                                    if (fsize >= (size_t)(1078 + w * h)) {
+                                        memcpy(full_gray_buf, file_buf + 1078, w * h);
+                                        success = true;
+                                    }
+                                }
+                                
+                                if (success) {
+                                    // Use the official resize function to downscale to 96x96
+                                    resize_grayscale_to_runtime_frame(full_gray_buf, w, h, g_raw_frame);
+                                }
+                                free(full_gray_buf); // Free it immediately when done
+                            }
+                            
+                            if (success) {
+                                dual_printf("[System] Image decoded and resized to %dx%d Grayscale.\n", FRAME_WIDTH, FRAME_HEIGHT);
+
+                                // Construct a CameraFrame to utilize the storage wrapper
+                                CameraFrame inf_frame = {};
+                                inf_frame.data = g_raw_frame;
+                                inf_frame.size = FRAME_WIDTH * FRAME_HEIGHT;
+                                inf_frame.width = FRAME_WIDTH;
+                                inf_frame.height = FRAME_HEIGHT;
+                                inf_frame.format = CameraFrameFormat::kGrayscale;
+                                inf_frame.handle = nullptr; // Not a hardware frame
+
+                                // Automatically saves .raw, .meta, and .bmp!
+                                photo_storage_write_latest(inf_frame);
+
+                                dual_printf("[System] Inference started on %s.\n", target_path);
+                                run_inference_on_grayscale_frame(g_raw_frame);
+                            } else {
+                                dual_printf("ERROR: High-fidelity decode failed.\n");
+                            }
+                        }
+                        free(file_buf);
+                        if (was_streaming) streaming_mode = true;
+
+                        usb_msc_mount_to_pc();
                         break;
                     }
                     case 'f':
@@ -382,6 +682,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         else if (val == 3) format_val = PIXFORMAT_JPEG;
                         
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera hardware breathe before re-init
                             esp_err_t err = camera_capture_reinit(format_val, (int)g_current_size);
                             if (err == ESP_OK) {
                                 g_current_format = (pixformat_t)format_val;
@@ -403,6 +704,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         else if (val == 5) size_val = FRAMESIZE_UXGA;
                         
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera hardware breathe before re-init
                             esp_err_t err = camera_capture_reinit((int)g_current_format, size_val);
                             if (err == ESP_OK) {
                                 g_current_size = (framesize_t)size_val;
@@ -502,8 +804,8 @@ static void usb_cdc_command_task(void *pvParameters) {
 }
 static constexpr int kExpectedTfliteSchemaVersion = 3;
 
-static constexpr int kMaxClassCount = 5;
-static constexpr const char *kClassNames[kMaxClassCount] = {
+static constexpr int kClassCount = 5;
+static constexpr const char *kClassNames[kClassCount] = {
     "up",
     "down",
     "right",
@@ -516,7 +818,6 @@ static int g_tensor_arena_size = 0;
 static tflite::MicroInterpreter *g_interpreter = nullptr;
 static TfLiteTensor *g_input = nullptr;
 static TfLiteTensor *g_output = nullptr;
-static int g_class_count = 0;
 static const void *g_mapped_model = nullptr;
 static esp_partition_mmap_handle_t g_model_mmap_handle = 0;
 
@@ -552,50 +853,27 @@ static void maybe_start_input_controls() {
         return;
     }
 
-    const BaseType_t created = xTaskCreatePinnedToCore(input_controls_monitor_task,
-                                                       "input_controls_monitor",
-                                                       4 * 1024,
-                                                       NULL,
-                                                       3,
-                                                       &g_input_controls_task_handle,
-                                                       0);
-    if (created != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create input_controls_monitor task.");
-        g_input_controls_task_handle = nullptr;
-    }
-}
-
-static void maybe_start_output_controls() {
-    if (!ENABLE_ROBOT_ARM_OUTPUT) {
-        ESP_LOGI(TAG, "Robot arm output disabled.");
-        return;
-    }
-
-    const BaseType_t created = xTaskCreatePinnedToCore(output_controls_task,
-                                                       "output_controls_task",
-                                                       4 * 1024,
-                                                       NULL,
-                                                       3,
-                                                       &g_output_controls_task_handle,
-                                                       0);
-    if (created != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create output_controls_task.");
-        g_output_controls_task_handle = nullptr;
-    }
+    xTaskCreatePinnedToCore(input_controls_monitor_task,
+                            "input_controls_monitor",
+                            4 * 1024,
+                            NULL,
+                            3,
+                            NULL,
+                            0);
 }
 
 static const char *runtime_mode_name() {
     switch (RUNTIME_MODE) {
+        case RuntimeMode::kInputOutputSelfTest:
+            return "INPUT_OUTPUT_SELF_TEST";
         case RuntimeMode::kTestUartFrame:
             return "TEST_MODE_UART_FRAME";
         case RuntimeMode::kPhotoFlashTest:
             return "PHOTO_FLASH_TEST_MODE";
         case RuntimeMode::kCameraFlash:
             return "CAMERA_FLASH_MODE";
-        case RuntimeMode::kInputOutputSelfTest:
-            return "INPUT_OUTPUT_SELF_TEST";
         case RuntimeMode::kCameraUsbMsc:
-            return "CAMERA_USB_MSC_MODE";
+            return "USB_INTERACTIVE_MODE";
     }
     return "UNKNOWN";
 }
@@ -661,41 +939,8 @@ static void dump_frame(const char *name, const uint8_t *frame, int width, int he
            (unsigned long long)sum);
 }
 
-struct CropCandidate {
-    int area;
-    int x0;
-    int y0;
-    int x1;
-    int y1;
-    int threshold;
-    bool bright_foreground;
-};
-
-static CropCandidate find_foreground_candidate(const uint8_t *frame, int threshold, bool bright_foreground) {
-    CropCandidate candidate = {};
-    candidate.area = 0;
-    candidate.x0 = FRAME_WIDTH - 1;
-    candidate.y0 = FRAME_HEIGHT - 1;
-    candidate.x1 = 0;
-    candidate.y1 = 0;
-    candidate.threshold = threshold;
-    candidate.bright_foreground = bright_foreground;
-
-    for (int y = 0; y < FRAME_HEIGHT; ++y) {
-        for (int x = 0; x < FRAME_WIDTH; ++x) {
-            const uint8_t pixel = frame[y * FRAME_WIDTH + x];
-            const bool is_foreground = bright_foreground ? (pixel > threshold) : (pixel < threshold);
-            if (!is_foreground) {
-                continue;
-            }
-            ++candidate.area;
-            if (x < candidate.x0) candidate.x0 = x;
-            if (x > candidate.x1) candidate.x1 = x;
-            if (y < candidate.y0) candidate.y0 = y;
-            if (y > candidate.y1) candidate.y1 = y;
-        }
-    }
-    return candidate;
+static bool is_foreground_pixel(uint8_t pixel, int threshold) {
+    return pixel < threshold;
 }
 
 static bool find_hand_crop_box(const uint8_t *frame,
@@ -712,54 +957,57 @@ static bool find_hand_crop_box(const uint8_t *frame,
     }
 
     const int mean = (int)(sum / total);
-    const int dark_threshold = clamp_int(mean - HAND_CROP_DARK_DELTA,
-                                         HAND_CROP_MIN_THRESHOLD,
-                                         HAND_CROP_MAX_THRESHOLD);
-    const int bright_threshold = clamp_int(mean + HAND_CROP_DARK_DELTA,
-                                           HAND_CROP_MIN_THRESHOLD,
-                                           HAND_CROP_MAX_THRESHOLD);
+    const int threshold = clamp_int(mean - HAND_CROP_DARK_DELTA,
+                                    HAND_CROP_MIN_THRESHOLD,
+                                    HAND_CROP_MAX_THRESHOLD);
 
-    CropCandidate dark = find_foreground_candidate(frame, dark_threshold, false);
-    CropCandidate bright = find_foreground_candidate(frame, bright_threshold, true);
+    int area = 0;
+    int x0 = FRAME_WIDTH - 1;
+    int y0 = FRAME_HEIGHT - 1;
+    int x1 = 0;
+    int y1 = 0;
+
+    for (int y = 0; y < FRAME_HEIGHT; ++y) {
+        for (int x = 0; x < FRAME_WIDTH; ++x) {
+            if (!is_foreground_pixel(frame[y * FRAME_WIDTH + x], threshold)) {
+                continue;
+            }
+            ++area;
+            if (x < x0) {
+                x0 = x;
+            }
+            if (x > x1) {
+                x1 = x;
+            }
+            if (y < y0) {
+                y0 = y;
+            }
+            if (y > y1) {
+                y1 = y;
+            }
+        }
+    }
 
     const int min_area = total * HAND_CROP_MIN_AREA_PERCENT / 100;
-    const bool dark_ok = dark.area >= min_area;
-    const bool bright_ok = bright.area >= min_area;
-
-    CropCandidate chosen = dark;
-    bool found = false;
-    if (dark_ok && bright_ok) {
-        // Choose the smaller foreground region; it is usually the hand rather than the background.
-        chosen = (dark.area <= bright.area) ? dark : bright;
-        found = true;
-    } else if (dark_ok) {
-        chosen = dark;
-        found = true;
-    } else if (bright_ok) {
-        chosen = bright;
-        found = true;
-    }
-
+    const bool found = area >= min_area;
     if (!found) {
-        chosen.area = total;
-        chosen.x0 = 0;
-        chosen.y0 = 0;
-        chosen.x1 = FRAME_WIDTH - 1;
-        chosen.y1 = FRAME_HEIGHT - 1;
-        chosen.threshold = mean;
+        x0 = 0;
+        y0 = 0;
+        x1 = FRAME_WIDTH - 1;
+        y1 = FRAME_HEIGHT - 1;
     }
 
-    const int crop_w = chosen.x1 - chosen.x0 + 1;
-    const int crop_h = chosen.y1 - chosen.y0 + 1;
+    const int crop_w = x1 - x0 + 1;
+    const int crop_h = y1 - y0 + 1;
     const int margin_x = crop_w * HAND_CROP_MARGIN_PERCENT / 100;
     const int margin_y = crop_h * HAND_CROP_MARGIN_PERCENT / 100;
 
-    *crop_x0 = clamp_int(chosen.x0 - margin_x, 0, FRAME_WIDTH - 1);
-    *crop_y0 = clamp_int(chosen.y0 - margin_y, 0, FRAME_HEIGHT - 1);
-    *crop_x1 = clamp_int(chosen.x1 + margin_x, 0, FRAME_WIDTH - 1);
-    *crop_y1 = clamp_int(chosen.y1 + margin_y, 0, FRAME_HEIGHT - 1);
-    *best_area_out = chosen.area;
-    *threshold_out = chosen.bright_foreground ? bright_threshold : dark_threshold;
+    *crop_x0 = clamp_int(x0 - margin_x, 0, FRAME_WIDTH - 1);
+    *crop_y0 = clamp_int(y0 - margin_y, 0, FRAME_HEIGHT - 1);
+    *crop_x1 = clamp_int(x1 + margin_x, 0, FRAME_WIDTH - 1);
+    *crop_y1 = clamp_int(y1 + margin_y, 0, FRAME_HEIGHT - 1);
+    *best_area_out = area;
+    *threshold_out = threshold;
     return found;
 }
 
@@ -864,16 +1112,15 @@ static bool fill_input_tensor_from_raw_frame(const uint8_t *frame) {
 
 static bool read_output_scores(int *scores, int *pred_index) {
     const int output_elements = tensor_element_count(g_output);
-    const int score_count = g_class_count;
-    if (output_elements < score_count || score_count <= 0) {
-        ESP_LOGE(TAG, "Invalid output size. Output elements=%d class_count=%d.",
-                 output_elements, score_count);
+    if (output_elements < kClassCount) {
+        ESP_LOGE(TAG, "Output has only %d elements, expected at least %d.",
+                 output_elements, kClassCount);
         return false;
     }
 
     int best_score = INT32_MIN;
     int best_index = 0;
-    for (int i = 0; i < score_count; ++i) {
+    for (int i = 0; i < kClassCount; ++i) {
         int score = 0;
         if (g_output->type == kTfLiteInt8) {
             score = g_output->data.int8[i];
@@ -1017,19 +1264,8 @@ static bool init_tflite_micro() {
     print_tensor_info("INPUT_TENSOR", g_input);
     print_tensor_info("OUTPUT_TENSOR", g_output);
 
-    const int output_elements = tensor_element_count(g_output);
-    g_class_count = output_elements < kMaxClassCount ? output_elements : kMaxClassCount;
-    if (g_class_count <= 0) {
-        ESP_LOGE(TAG, "Output tensor has no class scores.");
-        return false;
-    }
-
-    printf("CLASS_MAP");
-    for (int i = 0; i < g_class_count; ++i) {
-        printf(",%d=%s", i, kClassNames[i]);
-    }
-    printf("\n");
-    g_tflite_ready = true;
+    printf("CLASS_MAP,0=%s,1=%s,2=%s,3=%s,4=%s\n",
+           kClassNames[0], kClassNames[1], kClassNames[2], kClassNames[3], kClassNames[4]);
     return true;
 }
 
@@ -1063,10 +1299,6 @@ static bool allocate_frame_buffers() {
 }
 
 static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
-    if (!g_tflite_ready || g_interpreter == nullptr || g_input == nullptr || g_output == nullptr) {
-        dual_printf("ERROR,TFLITE_NOT_READY\n");
-        return false;
-    }
     dump_frame("DEVICE_FRAME_DUMP", frame, FRAME_WIDTH, FRAME_HEIGHT);
     const int64_t preprocess_start_time = esp_timer_get_time();
     if (!preprocess_frame_to_model_input(frame, g_model_frame)) {
@@ -1091,7 +1323,7 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
         return false;
     }
 
-    int scores[kMaxClassCount] = {0};
+    int scores[kClassCount] = {0};
     int pred_index = 0;
     if (!read_output_scores(scores, &pred_index)) {
         printf("ERROR,output_read_failed\n");
@@ -1107,11 +1339,10 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
            (long long)invoke_us,
            (long long)preprocess_us,
            (long long)device_compute_us);
-    for (int i = 0; i < g_class_count; ++i) {
+    for (int i = 0; i < kClassCount; ++i) {
         dual_printf(",%d", scores[i]);
     }
     dual_printf("\n");
-    output_controls_enqueue(static_cast<OutputGestureAction>(pred_index));
     return true;
 }
 
@@ -1119,97 +1350,15 @@ static void resize_grayscale_to_runtime_frame(const uint8_t *src,
                                               int src_width,
                                               int src_height,
                                               uint8_t *dst) {
-    const int side = (src_width < src_height) ? src_width : src_height;
-    const int crop_x0 = (src_width - side) / 2;
-    const int crop_y0 = (src_height - side) / 2;
-
     for (int y = 0; y < FRAME_HEIGHT; ++y) {
-        const int src_y = crop_y0 + ((FRAME_HEIGHT == 1) ? 0 : (y * (side - 1)) / (FRAME_HEIGHT - 1));
+        const int src_y = (FRAME_HEIGHT == 1) ? 0 : (y * (src_height - 1)) / (FRAME_HEIGHT - 1);
         for (int x = 0; x < FRAME_WIDTH; ++x) {
-            const int src_x = crop_x0 + ((FRAME_WIDTH == 1) ? 0 : (x * (side - 1)) / (FRAME_WIDTH - 1));
+            const int src_x = (FRAME_WIDTH == 1) ? 0 : (x * (src_width - 1)) / (FRAME_WIDTH - 1);
             dst[y * FRAME_WIDTH + x] = src[src_y * src_width + src_x];
         }
     }
 }
-static esp_err_t capture_grayscale_inference_frame() {
-    if (!g_tflite_ready) {
-        dual_printf("ERROR,TFLITE_NOT_READY\n");
-        return ESP_ERR_INVALID_STATE;
-    }
-    if (!allocate_frame_buffers()) {
-        return ESP_ERR_NO_MEM;
-    }
 
-    const pixformat_t previous_format = g_current_format;
-    const framesize_t previous_size = g_current_size;
-    const bool previous_streaming_mode = streaming_mode;
-    streaming_mode = false;
-
-    esp_err_t err = camera_capture_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA);
-    if (err != ESP_OK) {
-        streaming_mode = previous_streaming_mode;
-        dual_printf("ERROR: Failed to switch camera to grayscale inference mode: %s\n", esp_err_to_name(err));
-        return err;
-    }
-    g_current_format = PIXFORMAT_GRAYSCALE;
-    g_current_size = FRAMESIZE_QVGA;
-
-    CameraFrame frame = {};
-    err = camera_capture_frame(&frame);
-    if (err == ESP_OK) {
-        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
-        run_inference_on_grayscale_frame(g_raw_frame);
-        camera_capture_release(&frame);
-    } else {
-        dual_printf("ERROR: Grayscale inference capture failed: %s\n", esp_err_to_name(err));
-    }
-
-    esp_err_t restore_err = camera_capture_reinit((int)previous_format, (int)previous_size);
-    if (restore_err == ESP_OK) {
-        g_current_format = previous_format;
-        g_current_size = previous_size;
-    } else {
-        dual_printf("ERROR: Failed to restore camera preview mode: %s\n", esp_err_to_name(restore_err));
-    }
-    streaming_mode = previous_streaming_mode;
-    return err;
-}
-
-static void input_output_self_test_task(void *pvParameters) {
-    (void)pvParameters;
-    ESP_LOGI(TAG, "Input/output self-test task started.");
-
-    const OutputGestureAction sequence[] = {
-        OutputGestureAction::kUp,
-        OutputGestureAction::kDown,
-        OutputGestureAction::kRight,
-        OutputGestureAction::kLeft,
-        OutputGestureAction::kNull,
-    };
-    int index = 0;
-
-    while (true) {
-        if (ENABLE_INPUT_CONTROLS) {
-            const InputControlsSnapshot snapshot = input_controls_get_snapshot();
-            dual_printf("SELFTEST_INPUT,pos=%ld,enc_btn=%lu,btn2=%lu,enc_level=%d,btn2_level=%d\n",
-                        (long)snapshot.encoder_position,
-                        (unsigned long)snapshot.encoder_button_presses,
-                        (unsigned long)snapshot.button2_presses,
-                        snapshot.encoder_button_level,
-                        snapshot.button2_level);
-        } else {
-            dual_printf("SELFTEST_INPUT,disabled\n");
-        }
-
-        const OutputGestureAction action = sequence[index];
-        dual_printf("SELFTEST_OUTPUT,action=%d,enabled=%d\n",
-                    (int)action,
-                    ENABLE_ROBOT_ARM_OUTPUT ? 1 : 0);
-        output_controls_enqueue(action);
-        index = (index + 1) % (int)(sizeof(sequence) / sizeof(sequence[0]));
-        vTaskDelay(pdMS_TO_TICKS(IO_SELF_TEST_INTERVAL_MS));
-    }
-}
 static void uart_test_inference_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in TEST_MODE_UART_FRAME.");
@@ -1249,7 +1398,7 @@ static void uart_test_inference_task(void *pvParameters) {
 static void photo_flash_test_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in PHOTO_FLASH_TEST_MODE.");
-    ESP_LOGI(TAG, "Reading one preloaded grayscale photo from USB FAT storage.");
+    ESP_LOGI(TAG, "Reading one preloaded grayscale photo from the '%s' partition.", PHOTOS_PARTITION_LABEL);
 
     if (!allocate_frame_buffers()) {
         vTaskDelete(NULL);
@@ -1269,7 +1418,7 @@ static void photo_flash_test_task(void *pvParameters) {
                                     &metadata);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Photo read failed: %s", esp_err_to_name(err));
-        ESP_LOGE(TAG, "Use esp/flash_photo.py or camera_usb W command to preload latest.raw/latest.meta in /usb FAT storage.");
+        ESP_LOGE(TAG, "Use esp/flash_photo.py to preload a test image into the photos partition.");
         vTaskDelete(NULL);
         return;
     }
@@ -1298,8 +1447,12 @@ static void photo_flash_test_task(void *pvParameters) {
 
 static void camera_flash_task(void *pvParameters) {
     (void)pvParameters;
+
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in CAMERA_FLASH_MODE.");
     ESP_LOGI(TAG, "Camera mode uses OV2640 capture, photo flash storage, grayscale resize, and TFLite inference.");
+
+    // Give the USB Composite task 500ms to mount the FATFS drive
+    vTaskDelay(pdMS_TO_TICKS(500));
 
     esp_err_t err = photo_storage_init();
     if (err != ESP_OK) {
@@ -1308,7 +1461,7 @@ static void camera_flash_task(void *pvParameters) {
         return;
     }
 
-    err = camera_capture_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA);
+    err = camera_capture_init();
     if (err != ESP_OK) {
         ESP_LOGE(TAG,
                  "Camera init failed: %s. Switch RUNTIME_MODE to kTestUartFrame when testing without OV2640.",
@@ -1316,41 +1469,35 @@ static void camera_flash_task(void *pvParameters) {
         vTaskDelete(NULL);
         return;
     }
-    g_current_format = PIXFORMAT_GRAYSCALE;
-    g_current_size = FRAMESIZE_QVGA;
 
     while (true) {
         CameraFrame frame = {};
-        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
-            ESP_LOGW(TAG, "Camera mutex timeout in CAMERA_FLASH_MODE.");
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
         err = camera_capture_frame(&frame);
         if (err != ESP_OK) {
-            xSemaphoreGive(camera_mutex);
             ESP_LOGE(TAG, "Camera capture failed: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
 
-        usb_msc_mount_to_app();
-        vTaskDelay(pdMS_TO_TICKS(50));
         err = photo_storage_write_latest(frame);
         if (err != ESP_OK) {
             ESP_LOGE(TAG, "Photo storage write failed: %s", esp_err_to_name(err));
         }
 
-        if (!allocate_frame_buffers()) {
-            camera_capture_release(&frame);
-            xSemaphoreGive(camera_mutex);
-            vTaskDelete(NULL);
-            return;
+        if (frame.format == CameraFrameFormat::kGrayscale) {
+            if (!allocate_frame_buffers()) {
+                camera_capture_release(&frame);
+                vTaskDelete(NULL);
+                return;
+            }
+            resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+            run_inference_on_grayscale_frame(g_raw_frame);
+        } else {
+            ESP_LOGW(TAG,
+                     "Captured format is not grayscale. Stored photo only; inference waits for grayscale/JPEG decode support.");
         }
-        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+
         camera_capture_release(&frame);
-        xSemaphoreGive(camera_mutex);
-        run_inference_on_grayscale_frame(g_raw_frame);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -1360,89 +1507,52 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "Runtime mode: %s", runtime_mode_name());
     log_memory_status();
     maybe_start_input_controls();
-    maybe_start_output_controls();
-
-    if (RUNTIME_MODE == RuntimeMode::kInputOutputSelfTest) {
-        xTaskCreatePinnedToCore(input_output_self_test_task,
-                                "input_output_self_test_task",
-                                4 * 1024,
-                                NULL,
-                                4,
-                                NULL,
-                                0);
-        return;
-    }
-
-    const bool model_ready = init_tflite_micro();
-    if (!model_ready && RUNTIME_MODE != RuntimeMode::kCameraUsbMsc) {
+    
+    if (!init_tflite_micro()) {
         ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
         return;
     }
-    if (!model_ready) {
-        ESP_LOGW(TAG, "TFLite Micro unavailable; continuing camera/USB test without inference.");
-    }
 
     if (RUNTIME_MODE == RuntimeMode::kTestUartFrame) {
-        xTaskCreatePinnedToCore(uart_test_inference_task,
-                                "uart_test_inference_task",
-                                16 * 1024,
-                                NULL,
-                                5,
-                                &g_uart_test_task_handle,
-                                1);
+        xTaskCreatePinnedToCore(uart_test_inference_task, "uart_test_inference_task", 16 * 1024, NULL, 5, NULL, 1);
         return;
     }
-
-    // Initialize USB Composite CDC + MSC interfaces
-    usb_composite_init();
-    camera_mutex = xSemaphoreCreateMutex();
-    configASSERT(camera_mutex);
-
-    if (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
-        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-            esp_err_t camera_err = camera_capture_reinit(CAMERA_USB_DEFAULT_PIXEL_FORMAT, CAMERA_USB_DEFAULT_FRAME_SIZE);
-            if (camera_err != ESP_OK) {
-                ESP_LOGE(TAG, "Camera init failed for CDC preview: %s", esp_err_to_name(camera_err));
-            }
-            xSemaphoreGive(camera_mutex);
-        }
-    }
-
-    // Create USB command parsing task in all camera/storage modes. Start the
-    // live camera stream task only in the CDC/MSC integration mode; otherwise
-    // CAMERA_FLASH_MODE owns the camera for grayscale inference.
-    if (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
-        xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, &g_camera_stream_task_handle, 1);
-    }
-    xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, &g_usb_cdc_command_task_handle, 0);
 
     if (RUNTIME_MODE == RuntimeMode::kPhotoFlashTest) {
-        xTaskCreatePinnedToCore(photo_flash_test_task,
-                                "photo_flash_test_task",
-                                16 * 1024,
-                                NULL,
-                                5,
-                                &g_photo_flash_task_handle,
-                                1);
+        xTaskCreatePinnedToCore(photo_flash_test_task, "photo_flash_test_task", 16 * 1024, NULL, 5, NULL, 1);
         return;
+    }
+
+    // --- BOTH of the remaining modes need the USB drive! ---
+    if (RUNTIME_MODE == RuntimeMode::kCameraFlash || RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
+        usb_composite_init();
+        camera_mutex = xSemaphoreCreateMutex();
+        configASSERT(camera_mutex);
+    }
+
+    if (RUNTIME_MODE == RuntimeMode::kCameraFlash) {
+        xTaskCreatePinnedToCore(camera_flash_task, "camera_flash_task", 16 * 1024, NULL, 5, NULL, 1);
+        return; // Added missing return!
     }
 
     if (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
+        // 1. Give the USB Composite task 500ms to mount the FATFS drive
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        // 2. Initialize the file system and camera hardware
+        esp_err_t err = photo_storage_init();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Photo storage init failed: %s", esp_err_to_name(err));
+        }
+
+        err = camera_capture_init();
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Camera init failed: %s", esp_err_to_name(err));
+        }
+
+        // 3. Create camera streaming and command parsing tasks
+        xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, NULL, 1);
+        xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, NULL, 0);
         return;
     }
-
-    xTaskCreatePinnedToCore(camera_flash_task,
-                            "camera_flash_task",
-                            16 * 1024,
-                            NULL,
-                            5,
-                            &g_camera_flash_task_handle,
-                            1);
 }
-
-
-
-
-
-
-

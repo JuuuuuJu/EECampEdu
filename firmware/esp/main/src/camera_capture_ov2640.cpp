@@ -98,25 +98,15 @@ esp_err_t camera_capture_init() {
     config.jpeg_quality = kJpegQuality;
     config.grab_mode = CAMERA_GRAB_LATEST;
     config.fb_count = 1;
-#if CONFIG_SPIRAM
-    const bool prefer_psram_fb = (g_current_format == PIXFORMAT_JPEG) || (g_current_size >= FRAMESIZE_QVGA);
-    if (prefer_psram_fb) {
-        config.fb_location = CAMERA_FB_IN_PSRAM;
-        config.fb_count = 2;
-    } else {
-        config.fb_location = CAMERA_FB_IN_DRAM;
-    }
-#else
-    config.fb_location = CAMERA_FB_IN_DRAM;
-#endif
+    config.fb_location = CAMERA_FB_IN_PSRAM;
+    config.fb_count = 1;
 
     ESP_LOGI(TAG,
-             "Initializing OV2640: format=%s frame_size=%d xclk=%d Hz fb_count=%d location=%s",
+             "Initializing OV2640: format=%s frame_size=%d xclk=%d Hz fb_count=%d location=PSRAM",
              format_name(g_current_format),
              (int)g_current_size,
              kXclkFrequencyHz,
-             config.fb_count,
-             config.fb_location == CAMERA_FB_IN_PSRAM ? "PSRAM" : "DRAM"
+             config.fb_count
     );
 
     esp_err_t err = esp_camera_init(&config);
@@ -148,10 +138,10 @@ esp_err_t camera_capture_reinit(int format_val, int framesize_val) {
     pixformat_t format = (pixformat_t)format_val;
     framesize_t size = (framesize_t)framesize_val;
 
-    if (size >= FRAMESIZE_VGA && format != PIXFORMAT_JPEG) {
-        ESP_LOGE(TAG, "ERROR: Raw formats at VGA and higher resolutions are disabled to prevent DRAM overflow crashes.");
-        return ESP_ERR_INVALID_ARG;
-    }
+    // if (size >= FRAMESIZE_VGA && format != PIXFORMAT_JPEG) {
+    //     ESP_LOGE(TAG, "ERROR: Raw formats at VGA and higher resolutions are disabled to prevent DRAM overflow crashes.");
+    //     return ESP_ERR_INVALID_ARG;
+    // }
 
     if (g_camera_initialized && g_current_format == format && g_current_size == size) {
         return ESP_OK; // Re-configuration already active; bypass.

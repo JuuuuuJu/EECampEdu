@@ -20,7 +20,7 @@ except ImportError:
 
 # Configure the serial port parameters
 # Update COM_PORT to match your ESP32-S3 port (e.g., 'COM3' on Windows or '/dev/ttyACM0' on Linux)
-COM_PORT = 'COM6'
+COM_PORT = 'COM11'
 BAUD_RATE = 2000000  # Set to 2,000,000 baud for high frame-rate streaming
 OUTPUT_DIR = './captured_images'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -104,13 +104,13 @@ camera_state = {
 def save_frame(img_bytes, metadata, fmt_id):
     # Decide extension based on firmware CameraFrameFormat enum:
     # Firmware CameraFrameFormat: 0=GRAYSCALE, 1=RGB565, 2=YUV422, 3=JPEG
-    if fmt_id == 3:
+    if fmt_id == 4:
         ext = "jpg"
-    elif fmt_id == 0:
+    elif fmt_id == 3:
         ext = "gray"
-    elif fmt_id == 1:
+    elif fmt_id == 0:
         ext = "rgb565"
-    elif fmt_id == 2:
+    elif fmt_id == 1:
         ext = "yuv422"
     else:
         ext = "bin"
@@ -125,7 +125,7 @@ def save_frame(img_bytes, metadata, fmt_id):
             
         print(f"Image decoded and saved successfully to: {filepath}")
         
-        if fmt_id == 3:
+        if fmt_id == 4:
             print("File is a valid JPEG, you can open it directly in any viewer.")
     except Exception as ex:
         print(f"❌ Failed to save image: {ex}")
@@ -160,6 +160,10 @@ def read_serial_thread():
             if not line:
                 continue
                 
+            if "Rebooting device" in line:
+                print("[Python UI] ESP32 is rebooting. Shutting down controller...")
+                os._exit(0)
+                
             if line.startswith("---START_FILE:"):
                 # Header format: ---START_FILE:format:width:height:size:filename---
                 parts = line.split(":")
@@ -188,13 +192,13 @@ def read_serial_thread():
                         orig_ext = file_metadata["filename"].split(".")[-1].lower()
                         if orig_ext == "bmp":
                             ext = "bmp"
-                        elif fmt_id == 3:
+                        elif fmt_id == 4:
                             ext = "jpg"
-                        elif fmt_id == 0:
+                        elif fmt_id == 3:
                             ext = "gray"
-                        elif fmt_id == 1:
+                        elif fmt_id == 0:
                             ext = "rgb565"
-                        elif fmt_id == 2:
+                        elif fmt_id == 1:
                             ext = "yuv422"
                         else:
                             ext = "bin"
@@ -339,13 +343,13 @@ def print_help_menu():
     print("-"*60)
     print("📁 General and Storage commands:")
     print("  h                   - Display this Help menu")
-    print("  c / Space           - Capture preview frame and run ESP32 model inference")
+    print("  c                   - Trigger image acquisition (saved to PC & CV processed on ESP32)")
     print("  d1 / d0             - Start/Stop Continuous live camera stream (GUI preview)")
     print("  w                   - Capture image and save locally to ESP32 Flash storage")
     print("  l                   - List all files stored in ESP32 Flash storage (displays index numbers)")
     print("  r <idx/file> [cv]   - Retrieve file from ESP32 Flash (r 0 to retrieve all files). Append 'cv' for CV copy")
     print("  k <idx/file>        - Delete/Kill a file from ESP32 Flash (k 0 to delete all files)")
-    print("  i <idx/file>        - Legacy stored-file inference command; use c/Space for live camera model test")
+    print("  i <idx/file>        - Feed a stored file to local CV model task (i 0 to infer on all files)")
     print("  format              - Format ESP32 Flash partition")
     print("  usb                 - Expose ESP32 storage to PC as USB drive")
     print("\n🎨 Pixel Format (f <0-3>):")
@@ -408,10 +412,9 @@ def handle_command(cmd_str):
         return False
         
     if action == 'c':
-        print("[Python UI] Triggering capture workflow...")
-        with saving_next_frame_lock:
-            saving_next_frame = True
-        ser.write(b"c\n")
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        print(f"[Python UI] Triggering capture workflow with timestamp {ts}...")
+        ser.write(f"c{ts}\n".encode('utf-8'))
         return True
         
     if action == 'w':
@@ -714,14 +717,14 @@ def run_gui():
             
             img_bgr = None
             try:
-                if fmt_id == 3:  # JPEG
+                if fmt_id == 4:  # JPEG
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                elif fmt_id == 0:  # Grayscale
+                elif fmt_id == 3:  # Grayscale
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     img_gray = nparr.reshape((metadata['height'], metadata['width']))
                     img_bgr = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
-                elif fmt_id == 1:  # RGB565
+                elif fmt_id == 0:  # RGB565
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     pixels = nparr.view(dtype=np.uint16).byteswap().reshape((metadata['height'], metadata['width']))
                     
@@ -733,7 +736,7 @@ def run_gui():
                     img_bgr[..., 2] = r  # OpenCV uses BGR
                     img_bgr[..., 1] = g
                     img_bgr[..., 0] = b
-                elif fmt_id == 2:  # YUV422
+                elif fmt_id == 1:  # YUV422
                     nparr = np.frombuffer(img_bytes, np.uint8)
                     yuv = nparr.reshape((metadata['height'], metadata['width'], 2))
                     img_bgr = cv2.cvtColor(yuv, cv2.COLOR_YUV2BGR_YUY2)
@@ -784,10 +787,9 @@ def run_gui():
         if key == ord('q') or key == 27:  # 'q' or Esc to quit
             break
         elif key == ord('c') or key == ord(' '):  # 'c' or Space to capture
-            print("[Python UI] GUI requested frame capture. Triggering workflow on ESP32...")
-            with saving_next_frame_lock:
-                saving_next_frame = True
-            ser.write(b"c\n")
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            print(f"[Python UI] GUI requested frame capture with timestamp {ts}...")
+            ser.write(f"c{ts}\n".encode('utf-8'))
                     
     # Clean up stream
     print("[Python UI] Stopping live stream...")

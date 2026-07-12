@@ -15,7 +15,7 @@ enum class RuntimeMode {
 
 // Integration default: run OV2640 + USB CDC/MSC so the ImGui app can show live preview.
 // Switch to kTestUartFrame for deploy benchmark without OV2640.
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kTestUartFrame;
+constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
 
 constexpr int INPUT_HEIGHT = 96;
 constexpr int INPUT_WIDTH = 96;
@@ -71,6 +71,7 @@ constexpr int TENSOR_ARENA_SIZE = 800 * 1024;
 constexpr int FALLBACK_TENSOR_ARENA_SIZE = 256 * 1024;
 constexpr const char *MODEL_PARTITION_LABEL = "model";
 constexpr const char *STORAGE_PARTITION_LABEL = "storage";
+constexpr const char *PHOTOS_PARTITION_LABEL = "storage";
 constexpr const char *USB_MSC_MOUNT_PATH = "/usb";
 
 // Camera + USB CDC/MSC integration mode. CDC can stream base64 frames to the

@@ -22,7 +22,7 @@ static QueueHandle_t usb_cdc_queue = NULL;
 static tinyusb_msc_storage_handle_t storage_hdl = NULL;
 static wl_handle_t global_wl_handle = WL_INVALID_HANDLE;
 static SemaphoreHandle_t usb_cdc_write_mutex = NULL;
-static bool is_cdc_connected = false;
+static bool is_cdc_connected = true;
 
 static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -31,7 +31,7 @@ static esp_err_t storage_init_spiflash(wl_handle_t *wl_handle) {
     const esp_partition_t *data_partition = esp_partition_find_first(
         ESP_PARTITION_TYPE_DATA,
         ESP_PARTITION_SUBTYPE_DATA_FAT,
-        STORAGE_PARTITION_LABEL);
+        NULL);
     if (data_partition == NULL) {
         ESP_LOGE(TAG, "Failed to find FATFS partition.");
         return ESP_ERR_NOT_FOUND;
