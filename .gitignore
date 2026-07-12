@@ -27,3 +27,9 @@ model_finetune/models/*_saved_model/
 
 # Local PC app builds
 apps/*/build/
+
+# esp firmware output
+esp/build/
+esp/managed_components/
+esp/sdkconfig.old
+esp/sdkconfig

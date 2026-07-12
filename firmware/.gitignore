@@ -2,6 +2,7 @@
 esp/build/
 esp/managed_components/
 esp/sdkconfig.old
+esp/sdkconfig
 
 # Python caches and local environments
 __pycache__/

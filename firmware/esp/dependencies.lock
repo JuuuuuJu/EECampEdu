@@ -86,7 +86,7 @@ dependencies:
   idf:
     source:
       type: idf
-    version: 5.4.2
+    version: 6.0.0
 direct_dependencies:
 - espressif/esp-tflite-micro
 - espressif/esp32-camera
@@ -94,4 +94,4 @@ direct_dependencies:
 - idf
 manifest_hash: 35e72688bb220a41d5cf4c538e79e3a98a926f6131ad146856e31512816afb8e
 target: esp32s3
-version: 2.0.0
+version: 3.0.0
