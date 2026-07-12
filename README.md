@@ -1,37 +1,60 @@
 # EECampEdu
 
-This repository is split into three integration areas:
+EECampEdu is the integrated workspace for the gesture-controlled robotic arm system. The project is split by team ownership but keeps one deployable ESP32-S3 firmware path.
+
+Core deploy contract:
+
+```text
+Source framework can be PyTorch or TensorFlow.
+Deploy target is unified as int8 TFLite for ESP32-S3 TFLite Micro.
+```
 
 ```text
 EECampEdu/
-  model_finetune/   Training, fine-tuning, datasets, and source `.keras` models.
-  firmware/         ESP32-S3 firmware, deploy quantization, flashing, and benchmark tools.
-  apps/             PC desktop UI and integration demos.
+  model_finetune/   Model training, fine-tuning, datasets, and source model handoff.
+  firmware/         ESP32-S3 firmware, deploy quantization, flashing, benchmark, camera, USB, input, output.
+  apps/             Windows PC UI prototypes and integration tools.
+  docs/unit_tests/  Unit-test guides for the six teams.
 ```
 
-All paths are relative to the repository root. Do not hardcode local drive letters.
+All paths are relative to this repository root. Do not hardcode local drive letters.
 
-## Workflow
+## System Flow
 
 ```text
-model_finetune/models/*.keras
-  -> deploy-side int8 quantization with representative calibration images
-  -> firmware/pc/artifacts/models/*_int8.tflite
+Model team
+  -> train / fine-tune in PyTorch or TensorFlow
+  -> hand off .pth/.onnx/.keras source artifacts under model_finetune/models/
+
+Deploy team
+  -> normalize source handoff into int8 TFLite
   -> flash ESP32-S3 model partition
-  -> run UART benchmark or camera/USB integration mode
-  -> optionally control camera/input through apps/esp32_cam_input_app
+  -> benchmark accuracy, latency, throughput, output similarity
+
+ESP32-S3
+  -> OV2640 capture
+  -> grayscale / crop / resize / scale
+  -> on-device inference
+  -> gesture result
+  -> robotic arm output
+
+PC App
+  -> USB CDC live preview / commands
+  -> UI controls for capture, zoom, exposure, ISO, and integration debugging
 ```
 
-## Team Integration
+## Team Responsibilities
 
-- `model_finetune/`: trains or fine-tunes gesture models and hands off `.keras` files.
-- `firmware/pc/tools/quantize_keras_model.py`: performs deploy-side calibration and int8 TFLite export.
-- `firmware/esp`: builds/flashes ESP32-S3 firmware, runs inference, captures OV2640 frames, exposes USB MSC storage, and sends output actions.
-- `apps/esp32_cam_input_app`: PC-side Dear ImGui + SDL3 demo for input controls, camera commands, USB CDC monitoring, and ImGui component prototyping.
+| Team | Main folder | Main responsibility |
+| --- | --- | --- |
+| Model | `model_finetune/` | Train/fine-tune gesture models and provide source models. |
+| Deploy | `firmware/` | Convert PyTorch/TensorFlow model handoff into int8 TFLite deploy artifacts, flash, benchmark, and validate output similarity. |
+| Camera | `firmware/esp/main/src/camera_capture_ov2640.cpp` | OV2640 capture and frame format/resolution control. |
+| USB | `firmware/esp/main/src/usb_composite.cpp` | USB CDC command stream and USB MSC storage exposure. |
+| Input | `apps/`, `firmware/esp/main/src/input_controls.cpp` | PC UI, rotary encoder, button controls, camera parameters. |
+| Output | `firmware/esp/main/src/output_controls.cpp` | Robotic arm servo command mapping and movement. |
 
-Camera USB mode stores captured frames on the ESP32-S3 storage partition and can expose that partition as USB MSC. The PC UI can also use CDC commands for capture/stream/control. This is frame-by-frame refresh, not true UVC video streaming.
-
-## Windows PC Setup
+## Windows Environment
 
 Use PowerShell with conda:
 
@@ -41,31 +64,11 @@ python scripts\setup_env.py
 conda activate eecampedu
 ```
 
-The setup script installs the Python deploy stack plus native desktop-app build packages (`cmake`, `ninja`, `sdl3`). Dear ImGui is not bundled; the desktop app fetches it during CMake configure.
+The setup script creates the `eecampedu` conda environment, installs Python deploy dependencies, and installs native packages needed by the ImGui/SDL3 PC app.
 
-## Quantize A Keras Model
+ESP-IDF is still installed separately. Use ESP-IDF v5.x with ESP32-S3 support.
 
-Default inputs:
-
-```text
-model_finetune/models/<model_name>.keras
-model_finetune/dataset/train/
-```
-
-Command:
-
-```powershell
-python firmware\pc\tools\quantize_keras_model.py --model-name Separable_CNN
-```
-
-Generated deploy artifacts:
-
-```text
-firmware/pc/artifacts/models/Separable_CNN_int8.tflite
-firmware/pc/artifacts/reports/Separable_CNN_quantization_report.json
-```
-
-## Build Firmware
+## Firmware Build
 
 ```powershell
 cd firmware\esp
@@ -75,37 +78,45 @@ idf.py build
 idf.py -p COM6 flash monitor
 ```
 
-## Flash Model Only
+The firmware expects an ESP32-S3 board with 16 MB flash and PSRAM. Runtime mode is selected in:
 
-From repository root:
-
-```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Separable_CNN_int8.tflite" -p COM6
+```text
+firmware/esp/main/include/model_config.hpp
 ```
 
-## Benchmark
+## Runtime Modes
 
-Firmware must run `RuntimeMode::kTestUartFrame`.
+| Mode | Purpose | Hardware |
+| --- | --- | --- |
+| `RuntimeMode::kTestUartFrame` | Deploy benchmark from PC dataset over UART. | ESP32-S3 only |
+| `RuntimeMode::kPhotoFlashTest` | Preloaded-photo flash test without camera. | ESP32-S3 only |
+| `RuntimeMode::kCameraFlash` | OV2640 capture, store to flash, grayscale preprocess, inference. | OV2640 |
+| `RuntimeMode::kInputOutputSelfTest` | Input state logging and output servo cycle. | optional input/output hardware |
+| `RuntimeMode::kCameraUsbMsc` | USB CDC live preview, USB MSC storage, camera/control integration. | OV2640 + USB |
 
-```powershell
-cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Separable_CNN_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+## Flash Layout
+
+```text
+nvs      24K
+phy_init 4K
+factory  3M
+model    1M      int8 TFLite model partition
+storage  remaining FAT storage for camera/USB files
 ```
 
-## ImGui Input Demo
+The model partition is intentionally independent from the firmware app, so the deploy model can be reflashed without rebuilding firmware.
 
-Firmware should run `RuntimeMode::kCameraUsbMsc` for CDC/MSC testing.
+## Unit Tests
 
-Build the PC UI from the repository root:
+Each team has a dedicated guide under `docs/unit_tests/`:
 
-```powershell
-conda activate eecampedu
-python scripts\build_input_app.py --clean
-apps\esp32_cam_input_app\build\eecampedu_input_demo.exe
+```text
+docs/unit_tests/model_unit_test.md
+docs/unit_tests/deploy_unit_test.md
+docs/unit_tests/camera_unit_test.md
+docs/unit_tests/usb_unit_test.md
+docs/unit_tests/input_unit_test.md
+docs/unit_tests/output_unit_test.md
 ```
 
-The input demo must be built with a 64-bit Windows C++ compiler. The build script finds Visual Studio / Build Tools `vcvars64.bat` and prevents CMake from accidentally using old `C:\MinGW\bin\c++.exe`. This matters because the conda `SDL3` package is 64-bit; using the old MinGW compiler can make `find_package(SDL3)` fail with an incompatible 64-bit package message.
-
-If the script cannot find a compiler, install Visual Studio Build Tools with `Desktop development with C++`.
-
-See `firmware/docs/test_plan.md` for unit-test and full-integration procedures.
+Use one mode at a time for unit tests. Use `RuntimeMode::kCameraUsbMsc` only for full camera + USB + UI integration.

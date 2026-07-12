@@ -46,7 +46,7 @@ static void resize_grayscale_to_runtime_frame(const uint8_t *src, int src_width,
 static esp_err_t capture_grayscale_inference_frame();
 static bool run_inference_on_grayscale_frame(const uint8_t *g_raw_frame);
 
-static bool streaming_mode = CAMERA_USB_CONTINUOUS_CAPTURE;
+static bool streaming_mode = (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) ? CAMERA_USB_CONTINUOUS_CAPTURE : false;
 static SemaphoreHandle_t camera_mutex = NULL;
 static pixformat_t g_current_format = PIXFORMAT_JPEG;
 static framesize_t g_current_size = FRAMESIZE_VGA;
@@ -1296,7 +1296,7 @@ static void camera_flash_task(void *pvParameters) {
         return;
     }
 
-    err = camera_capture_init();
+    err = camera_capture_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA);
     if (err != ESP_OK) {
         ESP_LOGE(TAG,
                  "Camera init failed: %s. Switch RUNTIME_MODE to kTestUartFrame when testing without OV2640.",
@@ -1304,11 +1304,19 @@ static void camera_flash_task(void *pvParameters) {
         vTaskDelete(NULL);
         return;
     }
+    g_current_format = PIXFORMAT_GRAYSCALE;
+    g_current_size = FRAMESIZE_QVGA;
 
     while (true) {
         CameraFrame frame = {};
+        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+            ESP_LOGW(TAG, "Camera mutex timeout in CAMERA_FLASH_MODE.");
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
+        }
         err = camera_capture_frame(&frame);
         if (err != ESP_OK) {
+            xSemaphoreGive(camera_mutex);
             ESP_LOGE(TAG, "Camera capture failed: %s", esp_err_to_name(err));
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
@@ -1321,20 +1329,16 @@ static void camera_flash_task(void *pvParameters) {
             ESP_LOGE(TAG, "Photo storage write failed: %s", esp_err_to_name(err));
         }
 
-        if (frame.format == CameraFrameFormat::kGrayscale) {
-            if (!allocate_frame_buffers()) {
-                camera_capture_release(&frame);
-                vTaskDelete(NULL);
-                return;
-            }
-            resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
-            run_inference_on_grayscale_frame(g_raw_frame);
-        } else {
-            ESP_LOGW(TAG,
-                     "Captured format is not grayscale. Stored photo only; inference waits for grayscale/JPEG decode support.");
+        if (!allocate_frame_buffers()) {
+            camera_capture_release(&frame);
+            xSemaphoreGive(camera_mutex);
+            vTaskDelete(NULL);
+            return;
         }
-
+        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
         camera_capture_release(&frame);
+        xSemaphoreGive(camera_mutex);
+        run_inference_on_grayscale_frame(g_raw_frame);
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -1392,8 +1396,12 @@ extern "C" void app_main() {
         }
     }
 
-    // Create camera streaming and command parsing tasks
-    xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, &g_camera_stream_task_handle, 1);
+    // Create USB command parsing task in all camera/storage modes. Start the
+    // live camera stream task only in the CDC/MSC integration mode; otherwise
+    // CAMERA_FLASH_MODE owns the camera for grayscale inference.
+    if (RUNTIME_MODE == RuntimeMode::kCameraUsbMsc) {
+        xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, &g_camera_stream_task_handle, 1);
+    }
     xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, &g_usb_cdc_command_task_handle, 0);
 
     if (RUNTIME_MODE == RuntimeMode::kPhotoFlashTest) {

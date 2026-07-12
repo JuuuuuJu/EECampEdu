@@ -14,6 +14,21 @@ static const char *TAG = "PHOTO_STORAGE";
 #define FILE_PATH_META "/usb/latest.meta"
 #define FILE_PATH_BMP  "/usb/latest.bmp"
 
+
+static FILE *open_write_with_retry(const char *path) {
+    FILE *file = fopen(path, "wb");
+    if (file != nullptr) {
+        return file;
+    }
+
+    ESP_LOGW(TAG, "Failed to open '%s' for writing. Removing stale file and retrying once.", path);
+    unlink(path);
+    file = fopen(path, "wb");
+    if (file == nullptr) {
+        ESP_LOGE(TAG, "Failed to open '%s' for writing.", path);
+    }
+    return file;
+}
 esp_err_t photo_storage_init() {
     // Simply check if /usb directory can be resolved (VFS mount check)
     struct stat st;
@@ -30,9 +45,8 @@ esp_err_t photo_storage_write_latest(const CameraFrame &frame) {
     }
 
     // 1. Write the raw image bytes
-    FILE *f_raw = fopen(FILE_PATH_RAW, "wb");
+    FILE *f_raw = open_write_with_retry(FILE_PATH_RAW);
     if (f_raw == nullptr) {
-        ESP_LOGE(TAG, "Failed to open '%s' for writing.", FILE_PATH_RAW);
         return ESP_FAIL;
     }
     size_t written = fwrite(frame.data, 1, frame.size, f_raw);
@@ -54,9 +68,8 @@ esp_err_t photo_storage_write_latest(const CameraFrame &frame) {
         case CameraFrameFormat::kJpeg:      metadata.format = 3; break;
     }
 
-    FILE *f_meta = fopen(FILE_PATH_META, "wb");
+    FILE *f_meta = open_write_with_retry(FILE_PATH_META);
     if (f_meta == nullptr) {
-        ESP_LOGE(TAG, "Failed to open '%s' for writing.", FILE_PATH_META);
         return ESP_FAIL;
     }
     size_t meta_written = fwrite(&metadata, 1, sizeof(metadata), f_meta);
@@ -66,23 +79,10 @@ esp_err_t photo_storage_write_latest(const CameraFrame &frame) {
         return ESP_FAIL;
     }
 
-    // 3. Optional: Write a BMP copy if format is raw and we have a valid camera handle
-    if (frame.format != CameraFrameFormat::kJpeg && frame.handle != nullptr) {
-        camera_fb_t *fb = (camera_fb_t *)frame.handle;
-        uint8_t *bmp_buf = nullptr;
-        size_t bmp_len = 0;
-        if (frame2bmp(fb, &bmp_buf, &bmp_len)) {
-            FILE *f_bmp = fopen(FILE_PATH_BMP, "wb");
-            if (f_bmp) {
-                fwrite(bmp_buf, 1, bmp_len, f_bmp);
-                fclose(f_bmp);
-            }
-            free(bmp_buf);
-        }
-    } else {
-        // If JPEG or no handle, remove any stale BMP copy
-        unlink(FILE_PATH_BMP);
-    }
+    // Keep storage writes deterministic and lightweight. The raw payload plus
+    // metadata are enough for firmware tests; CDC handles PC-visible JPEG
+    // preview frames. Remove stale BMP files to avoid wasting FAT entries.
+    unlink(FILE_PATH_BMP);
 
     ESP_LOGI(TAG, "Stored latest photo: %d bytes, %dx%d, format=%d.", 
              (int)frame.size, frame.width, frame.height, (int)metadata.format);

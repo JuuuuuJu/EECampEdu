@@ -1,9 +1,19 @@
-# Single Windows/conda PC environment for deploy integration.
-# Use Python 3.10. TensorFlow 2.10.1 is the stable native-Windows TFLite
-# reference backend used by the benchmark output comparison path.
-numpy>=1.23,<2
-Pillow>=9,<11
-pyserial>=3.5,<4
-esptool>=4.7,<6
-packaging>=23,<26
+# Single Windows/conda PC environment for PyTorch + TensorFlow source models
+# and the unified int8 TFLite deploy target.
+#
+# TensorFlow 2.10.1 is the last stable native-Windows TensorFlow package used by
+# the PC TFLite reference path. It requires protobuf < 3.20, so ONNX is pinned to
+# a compatible version instead of using newer ONNX releases.
+numpy==1.23.5
+protobuf==3.19.6
+Pillow==10.4.0
+pyserial==3.5
+esptool==5.3.1
+packaging==25.0
 tensorflow==2.10.1
+pandas==2.0.3
+matplotlib==3.8.4
+opencv-python==4.9.0.80
+torch==2.2.2
+torchvision==0.17.2
+onnx==1.12.0
