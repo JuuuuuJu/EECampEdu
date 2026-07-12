@@ -42,9 +42,9 @@ static void IRAM_ATTR encoder_rotate_isr(void *arg) {
     portENTER_CRITICAL_ISR(&g_input_mux);
     if (g_prev_clk != cur_clk) {
         if (cur_clk == cur_dt) {
-            --g_encoder_position;
+            g_encoder_position = g_encoder_position - 1;
         } else {
-            ++g_encoder_position;
+            g_encoder_position = g_encoder_position + 1;
         }
         g_prev_clk = cur_clk;
     }
@@ -55,7 +55,7 @@ static void IRAM_ATTR encoder_button_isr(void *arg) {
     (void)arg;
     portENTER_CRITICAL_ISR(&g_input_mux);
     if (debounce_from_isr(&g_last_encoder_button_tick)) {
-        ++g_encoder_button_presses;
+        g_encoder_button_presses = g_encoder_button_presses + 1;
     }
     portEXIT_CRITICAL_ISR(&g_input_mux);
 }
@@ -64,7 +64,7 @@ static void IRAM_ATTR button2_isr(void *arg) {
     (void)arg;
     portENTER_CRITICAL_ISR(&g_input_mux);
     if (debounce_from_isr(&g_last_button2_tick)) {
-        ++g_button2_presses;
+        g_button2_presses = g_button2_presses + 1;
     }
     portEXIT_CRITICAL_ISR(&g_input_mux);
 }
