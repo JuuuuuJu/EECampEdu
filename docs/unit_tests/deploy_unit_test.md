@@ -22,6 +22,26 @@ ESP deploy target -> *_int8.tflite
 
 Current firmware maps a `.tflite` model from flash and runs it with TFLite Micro.
 
+Default source model:
+
+```text
+model_finetune/models/tf/Mini_ResNet_finetuned_96.keras
+```
+
+Quantize before flashing:
+
+```powershell
+cd EECampEdu
+python firmware\pc\tools\quantize_keras_model.py
+```
+
+Expected output:
+
+```text
+firmware/pc/artifacts/models/Mini_ResNet_finetuned_96_int8.tflite
+firmware/pc/artifacts/reports/Mini_ResNet_finetuned_96_quantization_report.json
+```
+
 ## Firmware Mode
 
 Edit:
@@ -50,14 +70,14 @@ idf.py -p COM6 flash monitor
 
 ```powershell
 cd EECampEdu
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Separable_CNN_int8.tflite" -p COM6
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" -p COM6
 ```
 
 ## Run Benchmark
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Separable_CNN_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
 ## Metrics

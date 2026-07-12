@@ -16,8 +16,8 @@ class_names = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
 
 # Model mappings (using Keras models)
 MODELS = {
-    '1': ('models/Mini_ResNet_finetuned_96.keras', 'Mini ResNet FT (96x96)'),
-    '2': ('models/Mini_ResNet_finetuned_128.keras', 'Mini ResNet FT (128x128)')
+    '1': ('models/tf/Mini_ResNet_finetuned_96.keras', 'Mini ResNet FT (96x96)'),
+    '2': ('models/tf/Mini_ResNet_finetuned_128.keras', 'Mini ResNet FT (128x128)')
 }
 
 current_key = '2'

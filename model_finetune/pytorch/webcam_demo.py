@@ -9,7 +9,7 @@ class_names = ['UP', 'DOWN', 'RIGHT', 'LEFT']
 expected_channels = 1
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models"))
+MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models/pytorch"))
 
 # Model mappings (using ONNX models)
 MODELS = {

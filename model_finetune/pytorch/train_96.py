@@ -21,7 +21,15 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SIGN_MINIST_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../dataset/sign_mnist"))
 DATASET_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../dataset/train"))
 REAL_LIFE_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../new_test_data"))
-MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models"))
+MODELS_ROOT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models"))
+MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "pytorch")
+TF_MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "tf")
+
+
+def ensure_parent_dir(file_path):
+    parent = os.path.dirname(file_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 PRETRAIN_TRAIN_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_train/sign_mnist_train.csv"
 PRETRAIN_TEST_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_test.csv"
@@ -352,6 +360,7 @@ def save_pytorch_as_keras(pytorch_model, keras_save_path, img_size):
                 w_keras = np.transpose(w_pt, (1, 0))
                 layer.set_weights([w_keras, b_pt])
                 
+        ensure_parent_dir(keras_save_path)
         keras_model.save(keras_save_path)
         print(f"Successfully converted and saved Keras model to {keras_save_path}")
     except Exception as e:
@@ -364,7 +373,6 @@ def main():
     print("=== Step 1: Preparing Sign Language MNIST Dataset ===")
     train_csv, test_csv = prepare_sign_language_mnist()
     
-    os.makedirs(MODELS_DIR, exist_ok=True)
     pretrain_weights_path = os.path.join(MODELS_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.pth")
     
     # Instantiate Base Model
@@ -375,10 +383,17 @@ def main():
     if not has_pretrained:
         # Check if there is an h5 file from the Keras version we can convert
         h5_path = pretrain_weights_path.replace(".pth", ".h5")
-        if not os.path.exists(h5_path):
-            h5_path = os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights.h5")
+        h5_candidates = [
+            h5_path,
+            os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights.h5"),
+            os.path.join(TF_MODELS_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5"),
+            os.path.join(TF_MODELS_DIR, "mini_resnet_pretrained_weights.h5"),
+            os.path.join(MODELS_ROOT_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5"),
+            os.path.join(MODELS_ROOT_DIR, "mini_resnet_pretrained_weights.h5"),
+        ]
+        h5_path = next((path for path in h5_candidates if os.path.exists(path)), None)
             
-        if os.path.exists(h5_path):
+        if h5_path:
             print(f"Found existing Keras pre-trained weights: {h5_path}. Converting to PyTorch...")
             try:
                 import tensorflow as tf
@@ -411,6 +426,7 @@ def main():
                     new_state_dict[b_key] = torch.tensor(b_keras)
                     
                 resnet_base.load_state_dict(new_state_dict)
+                ensure_parent_dir(pretrain_weights_path)
                 torch.save(resnet_base.state_dict(), pretrain_weights_path)
                 print(f"Pre-trained weights successfully converted and saved to {pretrain_weights_path}")
                 has_pretrained = True
@@ -497,6 +513,7 @@ def main():
         print(f"  Val Acc:   {pre_val_acc * 100:.2f}%")
         print(f"  Test Loss:  {pre_test_loss:.4f} | Test Acc:  {pre_test_acc * 100:.2f}%")
 
+        ensure_parent_dir(pretrain_weights_path)
         torch.save(resnet_base.state_dict(), pretrain_weights_path)
         print(f"Pre-trained base weights saved to {pretrain_weights_path}")
 
@@ -643,6 +660,7 @@ def main():
     ft_keras_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned_96.keras")
 
     print(f"Saving PyTorch state dict to {ft_model_path}...")
+    ensure_parent_dir(ft_model_path)
     torch.save(ft_model.state_dict(), ft_model_path)
     print(f"Fine-tuned Mini ResNet model weights saved to {ft_model_path}")
 
@@ -651,6 +669,7 @@ def main():
     try:
         ft_model.eval()
         dummy_input = torch.zeros(1, 1, IMG_SIZE[0], IMG_SIZE[1]).to(DEVICE)
+        ensure_parent_dir(ft_onnx_path)
         torch.onnx.export(
             ft_model,
             dummy_input,
