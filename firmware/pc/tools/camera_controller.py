@@ -157,6 +157,7 @@ camera_state = {
     "saturation": 0,  # -2 to 2
     "mirror": 0,      # 0 = Disabled, 1 = Enabled
     "flip": 0,        # 0 = Disabled, 1 = Enabled
+    "awb": 1,         # 1 = Auto, 0 = Manual
     "streaming": False # True = Continuous stream active
 }
 
@@ -434,6 +435,7 @@ def print_help_menu():
     print("  v <0-1200>- Manual Exposure index (Only active when AEC is disabled)")
     print("  g1 / g0  - Enable/Disable Auto Gain Control (AGC)")
     print("  a <0-30> - Manual Gain index (Only active when AGC is disabled)")
+    print("  y1 / y0  - Enable/Disable Auto White Balance (AWB)")
     print("  b <value>- Set Brightness (-2 to 2)")
     print("  t <value>- Set Contrast (-2 to 2)")
     print("  x <value>- Set Saturation (-2 to 2)")
@@ -443,6 +445,7 @@ def print_help_menu():
     print(f"Current State: Format = {camera_state['format']} | Resolution = {camera_state['resolution']}")
     print(f"               AEC = {'AUTO' if camera_state['aec'] else 'MANUAL'} | Exposure = {camera_state['exposure']}")
     print(f"               AGC = {'AUTO' if camera_state['agc'] else 'MANUAL'} | Gain = {camera_state['gain']}")
+    print(f"               AWB = {'AUTO' if camera_state['awb'] else 'MANUAL'}")
     print(f"               Brightness = {camera_state['brightness']} | Contrast = {camera_state['contrast']} | Saturation = {camera_state['saturation']}")
     print(f"               Mirror = {'ENABLED' if camera_state['mirror'] else 'DISABLED'} | Flip = {'ENABLED' if camera_state['flip'] else 'DISABLED'}")
     print(f"               Streaming = {'ENABLED' if camera_state['streaming'] else 'DISABLED'}")
@@ -711,6 +714,15 @@ def handle_command(cmd_str):
         camera_state["flip"] = val
         print(f"[Python UI] Vertical Flip set to {'ENABLED' if val else 'DISABLED'}")
         ser.write(f"p{val}\n".encode('utf-8'))
+        return True
+        
+    elif action == 'y':
+        if val not in [0, 1]:
+            print("❌ Error: AWB value must be 0 (Disable) or 1 (Enable)")
+            return False
+        camera_state["awb"] = val
+        print(f"[Python UI] Auto White Balance (AWB) set to {'AUTO' if val else 'MANUAL'}")
+        ser.write(f"y{val}\n".encode('utf-8'))
         return True
         
     elif action == 'd':

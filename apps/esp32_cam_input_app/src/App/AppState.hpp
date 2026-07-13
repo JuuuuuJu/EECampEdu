@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "Usb/UsbCdcClient.hpp"
 
@@ -21,10 +21,17 @@ public:
     void SendOutputGesture(int gesture, const std::string& name);
 
     float camera_focus = 0.0f;
-    int exposure = 0;
-    int gain = 0;
+    bool aec_enabled = true;
+    int aec_value = 300;
+    bool agc_enabled = true;
+    int agc_value = 0;
+    bool awb_enabled = true;
+    int brightness = 0;
+    int contrast = 0;
+    int saturation = 0;
+    bool horizontal_mirror = false;
     int frame_size = 3;      // Firmware protocol: 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA, 4=SVGA, 5=UXGA.
-    int pixel_format = 3;   // Camera command protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG. Frame header protocol: 0=RGB565, 1=YUV422, 3=GRAYSCALE, 4=JPEG.
+    int pixel_format = 3;   // Camera command protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG.
     bool stream_enabled = false;
     bool vertical_flip = false;
     bool show_imgui_demo = true;

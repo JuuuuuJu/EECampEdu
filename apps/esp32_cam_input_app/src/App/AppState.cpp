@@ -1,4 +1,4 @@
-﻿#include "AppState.hpp"
+#include "AppState.hpp"
 #include "Image/JpegDecoder.hpp"
 
 #include <algorithm>
@@ -80,6 +80,17 @@ void AppState::Init() {
     latest_frame_height = 0;
     latest_frame_format = -1;
     latest_frame_dirty = false;
+    
+    aec_enabled = true;
+    aec_value = 300;
+    agc_enabled = true;
+    agc_value = 0;
+    awb_enabled = true;
+    brightness = 0;
+    contrast = 0;
+    saturation = 0;
+    horizontal_mirror = false;
+    vertical_flip = false;
 }
 
 bool AppState::ConnectUsb() {

@@ -1,4 +1,4 @@
-﻿#include <math.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -791,6 +791,15 @@ static void usb_cdc_command_task(void *pvParameters) {
                         if (s) {
                             s->set_vflip(s, val);
                             dual_printf("[System] Vertical Flip updated to %d.\n", val);
+                        }
+                        break;
+                    }
+                    case 'y':
+                    case 'Y': {
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_whitebal(s, val);
+                            dual_printf("[System] Auto White Balance updated to %d.\n", val);
                         }
                         break;
                     }
