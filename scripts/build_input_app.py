@@ -82,10 +82,14 @@ def main():
         print("Do not use C:/MinGW here: conda SDL3 is 64-bit and the old MinGW on PATH is incompatible.", file=sys.stderr)
         return 2
 
+    conda_prefix = os.environ.get("CONDA_PREFIX") or sys.exec_prefix
+    cmake_prefix = Path(conda_prefix) / "Library"
+
     configure = (
         f'call "{vcvars64}" && '
         f'cmake -S "{APP_DIR}" -B "{BUILD_DIR}" -G Ninja '
-        f'-DCMAKE_BUILD_TYPE={args.config}'
+        f'-DCMAKE_BUILD_TYPE={args.config} '
+        f'-DCMAKE_PREFIX_PATH="{cmake_prefix}"'
     )
     build = (
         f'call "{vcvars64}" && '
@@ -94,6 +98,13 @@ def main():
 
     run(f'cmd /s /c "{configure}"', shell=True)
     run(f'cmd /s /c "{build}"', shell=True)
+    
+    # Copy SDL3.dll to the build directory so the executable can run standalone
+    sdl_dll_src = cmake_prefix / "bin" / "SDL3.dll"
+    if sdl_dll_src.exists():
+        shutil.copy(sdl_dll_src, BUILD_DIR / "SDL3.dll")
+        print("Copied SDL3.dll to build directory.")
+        
     print(f"Built: {BUILD_DIR / 'eecampedu_input_demo.exe'}")
     return 0
 
