@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Usb/UsbCdcClient.hpp"
 
@@ -14,6 +14,11 @@ public:
     void DisconnectUsb();
     void SendUsbCommand(const std::string& command, const std::string& label);
     bool IsUsbConnected() const;
+
+    bool ConnectOutput();
+    void DisconnectOutput();
+    bool IsOutputConnected() const;
+    void SendOutputGesture(int gesture, const std::string& name);
 
     float camera_focus = 0.0f;
     int exposure = 0;
@@ -32,6 +37,12 @@ public:
     std::string last_frame_header;
     int received_image_count = 0;
 
+    char output_port[64] = "COM7";
+    int output_baud_rate = 115200;
+    bool auto_forward_output = true;
+    std::string output_status;
+    std::string last_output_command;
+
     std::vector<uint8_t> latest_frame_rgba;
     int latest_frame_width = 0;
     int latest_frame_height = 0;
@@ -40,10 +51,15 @@ public:
 
 private:
     UsbCdcClient usb_client;
+    UsbCdcClient output_client;
     std::string cdc_parse_buffer;
+    std::string cdc_text_buffer;
     bool cdc_receiving_image_frame = false;
 
     void AppendUsbLog(const std::string& text);
+    void ProcessCdcText(const std::string& text);
+    void ForwardResultLineToOutput(const std::string& line);
     void ParseCdcFrames();
     void StoreDecodedFrame(int format, int width, int height, const std::vector<uint8_t>& payload);
 };
+

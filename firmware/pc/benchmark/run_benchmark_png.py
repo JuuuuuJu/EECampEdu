@@ -1,4 +1,4 @@
-import argparse
+﻿import argparse
 import glob
 import json
 import os
@@ -19,6 +19,9 @@ CNN_DIR = SCRIPT_DIR.parent
 
 PORT = os.environ.get("BENCHMARK_PORT", "COM6")
 BAUDRATE = int(os.environ.get("BENCHMARK_BAUDRATE", "115200"))
+ESP2_PORT = os.environ.get("OUTPUT_ESP2_PORT", os.environ.get("ESP2_PORT", ""))
+ESP2_BAUDRATE = int(os.environ.get("OUTPUT_ESP2_BAUDRATE", os.environ.get("ESP2_BAUDRATE", "115200")))
+ESP2_TIMEOUT_SEC = float(os.environ.get("OUTPUT_ESP2_TIMEOUT_SEC", os.environ.get("ESP2_TIMEOUT_SEC", "0.3")))
 DEFAULT_DATA_DIR = CNN_DIR / "dataset" / "test" / "tflite"
 READY_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_READY_TIMEOUT_SEC", "30"))
 READY_RETRY_LIMIT = int(os.environ.get("BENCHMARK_READY_RETRY_LIMIT", "2"))
@@ -125,6 +128,24 @@ def parse_args():
         help="Serial baudrate. Default: BENCHMARK_BAUDRATE or 115200.",
     )
     parser.add_argument(
+        "--esp2-port",
+        default=os.environ.get("OUTPUT_ESP2_PORT", os.environ.get("ESP2_PORT", ESP2_PORT)),
+        help="Optional serial port connected to ESP2 servo controller. If omitted, servo forwarding is disabled.",
+    )
+    parser.add_argument(
+        "--esp2-baudrate",
+        "--esp2-baud",
+        type=int,
+        default=int(os.environ.get("OUTPUT_ESP2_BAUDRATE", os.environ.get("ESP2_BAUDRATE", str(ESP2_BAUDRATE)))),
+        help="ESP2 servo-controller serial baudrate. Default: 115200.",
+    )
+    parser.add_argument(
+        "--esp2-timeout",
+        type=float,
+        default=float(os.environ.get("OUTPUT_ESP2_TIMEOUT_SEC", os.environ.get("ESP2_TIMEOUT_SEC", str(ESP2_TIMEOUT_SEC)))),
+        help="ESP2 ACK read timeout in seconds. Default: 0.3.",
+    )
+    parser.add_argument(
         "--frame-size",
         default=f"{DEFAULT_FRAME_WIDTH}x{DEFAULT_FRAME_HEIGHT}",
         help="Raw grayscale frame size sent to ESP32 before on-device crop. Default: 160x160.",
@@ -144,6 +165,9 @@ CLASS_NAMES = load_class_names_for_model(TFLITE_MODEL_PATH)
 FRAME_WIDTH, FRAME_HEIGHT = parse_frame_size(ARGS.frame_size)
 PORT = ARGS.port
 BAUDRATE = ARGS.baudrate
+ESP2_PORT = ARGS.esp2_port
+ESP2_BAUDRATE = ARGS.esp2_baudrate
+ESP2_TIMEOUT_SEC = ARGS.esp2_timeout
 ENABLE_LABELS = (not ARGS.no_label) and ARGS.label == "1"
 ENABLE_PC_CROP = not ARGS.no_crop
 
@@ -225,6 +249,37 @@ def print_label_mapping_warnings(image_files):
         for folder in unmapped:
             print(f"  {folder}")
 
+
+
+def open_esp2_serial():
+    if not ESP2_PORT:
+        print("ESP2 output: disabled (pass --esp2-port COMx to forward predictions to the servo controller)")
+        return None
+    try:
+        esp2 = serial.Serial(ESP2_PORT, ESP2_BAUDRATE, timeout=ESP2_TIMEOUT_SEC, write_timeout=ESP2_TIMEOUT_SEC)
+        time.sleep(2.0)
+        esp2.reset_input_buffer()
+        print(f"ESP2 output: {ESP2_PORT} @ {ESP2_BAUDRATE}")
+        return esp2
+    except Exception as exc:
+        print(f"[WARN] Failed to open ESP2 output port {ESP2_PORT}: {exc}")
+        print("       Benchmark will continue without servo forwarding.")
+        return None
+
+
+def forward_prediction_to_esp2(esp2, pred_idx, pred_name):
+    if esp2 is None:
+        return ""
+    command = f"GESTURE,{pred_idx},{pred_name}\n"
+    try:
+        esp2.write(command.encode("ascii"))
+        esp2.flush()
+        ack = esp2.readline().decode("utf-8", errors="ignore").strip()
+        if ack:
+            return f" | ESP2: {ack}"
+        return " | ESP2: sent(no ack)"
+    except Exception as exc:
+        return f" | ESP2: ERROR({exc})"
 
 def cosine_similarity(a, b):
     a = np.asarray(a, dtype=np.float64)
@@ -485,6 +540,7 @@ def run_benchmark():
     print(f"Frame size: {FRAME_WIDTH}x{FRAME_HEIGHT}; model input: {MODEL_INPUT_WIDTH}x{MODEL_INPUT_HEIGHT}; crop: {int(ENABLE_PC_CROP)}")
     print(f"TFLite model: {TFLITE_MODEL_PATH}")
     print(f"Serial: {PORT} @ {BAUDRATE}")
+    print(f"ESP2 output port: {ESP2_PORT if ESP2_PORT else 'disabled'}")
     if ENABLE_LABELS:
         print_label_mapping_warnings(image_files)
     else:
@@ -496,6 +552,7 @@ def run_benchmark():
         print(f"Failed to open port {PORT}: {e}")
         return
 
+    esp2_ser = open_esp2_serial()
     total_model_latency_us = 0
     total_preprocess_us = 0
     total_device_compute_us = 0
@@ -518,8 +575,9 @@ def run_benchmark():
     print("Awaiting ESP32 sync signal...")
     if not wait_for_ready(ser):
         ser.close()
+        if esp2_ser is not None:
+            esp2_ser.close()
         return
-
     pc_reference, pc_reference_enabled = setup_pc_reference_after_serial_ready()
     ser.reset_input_buffer()
     need_ready = False
@@ -599,6 +657,7 @@ def run_benchmark():
                         success_count += 1
 
                         pred_name = CLASS_NAMES[pred_idx] if 0 <= pred_idx < len(CLASS_NAMES) else "unknown"
+                        esp2_text = forward_prediction_to_esp2(esp2_ser, pred_idx, pred_name)
                         label_text = ""
                         if expected_label is not None:
                             is_correct = pred_idx == expected_label
@@ -651,7 +710,7 @@ def run_benchmark():
                             f"{'' if preprocess_us is None else f' | Preprocess: {preprocess_us} us'}"
                             f" | Roundtrip: {roundtrip_us:.0f} us"
                             f" | UART/IO: {uart_io_overhead_us:.0f} us"
-                            f"{label_text}{compare_text} | Scores: {scores}"
+                            f"{label_text}{compare_text}{esp2_text} | Scores: {scores}"
                         )
                     except ValueError as e:
                         print(f"Error parsing response for {filename}: {e}: {line}")
@@ -665,7 +724,8 @@ def run_benchmark():
                 need_ready = True
     finally:
         ser.close()
-
+        if esp2_ser is not None:
+            esp2_ser.close()
     if success_count > 0:
         avg_model_latency_ms = total_model_latency_us / success_count / 1000.0
         avg_device_compute_ms = total_device_compute_us / success_count / 1000.0
@@ -711,5 +771,8 @@ def run_benchmark():
 
 if __name__ == "__main__":
     run_benchmark()
+
+
+
 
 

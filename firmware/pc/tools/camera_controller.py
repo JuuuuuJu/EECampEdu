@@ -19,9 +19,11 @@ except ImportError:
     HAS_CV2 = False
 
 # Configure the serial port parameters
-# Update COM_PORT to match your ESP32-S3 port (e.g., 'COM3' on Windows or '/dev/ttyACM0' on Linux)
-COM_PORT = 'COM11'
-BAUD_RATE = 2000000  # Set to 2,000,000 baud for high frame-rate streaming
+COM_PORT = os.environ.get('ESP1_PORT', os.environ.get('CAMERA_CONTROLLER_PORT', 'COM6'))
+BAUD_RATE = int(os.environ.get('ESP1_BAUD_RATE', os.environ.get('CAMERA_CONTROLLER_BAUD_RATE', '2000000')))
+ESP2_PORT = os.environ.get('OUTPUT_ESP2_PORT', os.environ.get('ESP2_PORT', ''))
+ESP2_BAUD_RATE = int(os.environ.get('OUTPUT_ESP2_BAUD_RATE', os.environ.get('ESP2_BAUD_RATE', '115200')))
+CLASS_NAMES = ['up', 'down', 'right', 'left', 'null']
 OUTPUT_DIR = './captured_images'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 receiving_file = False
@@ -36,7 +38,7 @@ try:
         print(f"[Warning] Failed to set serial buffer size: {buf_ex}")
     ser.dtr = True
     ser.rts = True
-    
+
     # Save the original write method and override it with a robust retry wrapper
     _orig_write = ser.write
     def robust_write(data):
@@ -64,12 +66,52 @@ try:
                     print(f"[Python UI] Re-connect attempt {attempt+1}/3 failed: {re_e}")
                     time.sleep(1.5)
             raise e
-            
+
     ser.write = robust_write
 except Exception as e:
     print(f"Error opening serial port: {e}")
-    print("Please make sure the COM port is correct and not occupied by the Arduino Serial Monitor.")
+    print("Please make sure the COM port is correct and not occupied by another serial monitor.")
     exit(1)
+
+esp2_ser = None
+if ESP2_PORT:
+    print(f"Connecting to ESP2 output controller on {ESP2_PORT} at {ESP2_BAUD_RATE} baud...")
+    try:
+        esp2_ser = serial.Serial(ESP2_PORT, ESP2_BAUD_RATE, timeout=0.3, write_timeout=0.3)
+        time.sleep(2.0)
+        esp2_ser.reset_input_buffer()
+        print("[ESP2] Output bridge enabled.")
+    except Exception as e:
+        print(f"[ESP2] Warning: failed to open output port {ESP2_PORT}: {e}")
+        print("[ESP2] Camera controller will continue without servo forwarding.")
+        esp2_ser = None
+else:
+    print("[ESP2] Output bridge disabled. Set OUTPUT_ESP2_PORT=COM7 to enable servo forwarding.")
+
+
+def label_name(label):
+    if 0 <= label < len(CLASS_NAMES):
+        return CLASS_NAMES[label]
+    return "unknown"
+
+
+def forward_result_to_esp2(line):
+    if esp2_ser is None or not line.startswith("RESULT,"):
+        return
+    try:
+        parts = line.split(",")
+        pred_idx = int(parts[1])
+        pred_name = label_name(pred_idx)
+        command = f"GESTURE,{pred_idx},{pred_name}\n"
+        esp2_ser.write(command.encode("ascii"))
+        esp2_ser.flush()
+        ack = esp2_ser.readline().decode("utf-8", errors="ignore").strip()
+        if ack:
+            print(f"[ESP2] {ack}")
+        else:
+            print(f"[ESP2] sent {command.strip()} (no ack)")
+    except Exception as e:
+        print(f"[ESP2] Forwarding failed: {e}")
 
 buffer = []
 receiving = False
@@ -287,6 +329,7 @@ def read_serial_thread():
                 if line.startswith("--- LOCAL FLASH FILE LIST ---"):
                     file_index_cache.clear()
                     print(f"[ESP32] {line}")
+                    forward_result_to_esp2(line)
                 elif line.startswith("- ") and ("bytes)" in line):
                     parts = line.split()
                     if len(parts) >= 2:
@@ -299,9 +342,11 @@ def read_serial_thread():
                         print(f"[ESP32]  [{idx}] {line}")
                     else:
                         print(f"[ESP32] {line}")
+                    forward_result_to_esp2(line)
                 else:
                     # Print standard output lines from ESP32 (logs, statistics, ascii art)
                     print(f"[ESP32] {line}")
+                    forward_result_to_esp2(line)
                     
                     # Handle batch download and inference recoveries
                     if "ERROR: File " in line and "not found" in line:
@@ -827,6 +872,8 @@ finally:
     # Ensure camera stops streaming and serial connection closes
     ser.write(b"d0\n")
     ser.close()
+
+
 
 
 

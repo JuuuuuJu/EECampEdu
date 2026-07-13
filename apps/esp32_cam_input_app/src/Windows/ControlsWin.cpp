@@ -1,4 +1,4 @@
-#include "ControlsWin.hpp"
+﻿#include "ControlsWin.hpp"
 
 #include <cstdio>
 #include <string>
@@ -36,6 +36,31 @@ void ControlsWin::draw(AppState& state) {
         ImGui::TextWrapped("Last command: %s", state.last_command.c_str());
     }
 
+    ImGui::SeparatorText("ESP2 Output");
+    ImGui::InputText("ESP2 Port", state.output_port, sizeof(state.output_port));
+    ImGui::InputInt("ESP2 Baud", &state.output_baud_rate);
+    ImGui::Checkbox("Auto-forward RESULT", &state.auto_forward_output);
+    if (!state.IsOutputConnected()) {
+        if (ImGui::Button("Connect ESP2")) {
+            state.ConnectOutput();
+        }
+    } else {
+        if (ImGui::Button("Disconnect ESP2")) {
+            state.DisconnectOutput();
+        }
+    }
+    ImGui::TextWrapped("Output: %s", state.output_status.c_str());
+    if (!state.last_output_command.empty()) {
+        ImGui::TextWrapped("Last output: %s", state.last_output_command.c_str());
+    }
+    if (ImGui::Button("Output Up")) state.SendOutputGesture(0, "up");
+    ImGui::SameLine();
+    if (ImGui::Button("Output Down")) state.SendOutputGesture(1, "down");
+    if (ImGui::Button("Output Right")) state.SendOutputGesture(2, "right");
+    ImGui::SameLine();
+    if (ImGui::Button("Output Left")) state.SendOutputGesture(3, "left");
+    ImGui::SameLine();
+    if (ImGui::Button("Output Null")) state.SendOutputGesture(4, "null");
     ImGui::SeparatorText("Camera Commands");
     if (ImGui::Button("Capture once")) {
         state.SendUsbCommand("C", "capture once");
@@ -86,3 +111,4 @@ void ControlsWin::draw(AppState& state) {
 
     ImGui::End();
 }
+

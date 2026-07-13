@@ -1,4 +1,4 @@
-#include <math.h>
+﻿#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,6 +82,14 @@ static bool decode_jpeg_to_high_fidelity_grayscale(const uint8_t *jpg_buf, size_
     free(rgb_buf);
     return true;
 }
+static pixformat_t g_current_format = PIXFORMAT_JPEG;
+static framesize_t g_current_size = FRAMESIZE_VGA;
+static TaskHandle_t g_input_controls_task_handle = nullptr;
+static TaskHandle_t g_uart_test_task_handle = nullptr;
+static TaskHandle_t g_camera_stream_task_handle = nullptr;
+static TaskHandle_t g_usb_cdc_command_task_handle = nullptr;
+static TaskHandle_t g_photo_flash_task_handle = nullptr;
+static TaskHandle_t g_camera_flash_task_handle = nullptr;
 
 static void dual_printf(const char *format, ...) {
     char buffer[256];
@@ -860,6 +868,21 @@ static void maybe_start_input_controls() {
                             3,
                             NULL,
                             0);
+    const BaseType_t created = xTaskCreatePinnedToCore(input_controls_monitor_task,
+                                                       "input_controls_monitor",
+                                                       4 * 1024,
+                                                       NULL,
+                                                       3,
+                                                       &g_input_controls_task_handle,
+                                                       0);
+    if (created != pdPASS) {
+        ESP_LOGE(TAG, "Failed to create input_controls_monitor task.");
+        g_input_controls_task_handle = nullptr;
+    }
+}
+
+static void maybe_start_output_controls() {
+    ESP_LOGI(TAG, "Robot arm output is controlled by ESP2 through the PC serial bridge.");
 }
 
 static const char *runtime_mode_name() {
@@ -1359,6 +1382,67 @@ static void resize_grayscale_to_runtime_frame(const uint8_t *src,
     }
 }
 
+    const pixformat_t previous_format = g_current_format;
+    const framesize_t previous_size = g_current_size;
+    const bool previous_streaming_mode = streaming_mode;
+    streaming_mode = false;
+
+    esp_err_t err = camera_capture_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA);
+    if (err != ESP_OK) {
+        streaming_mode = previous_streaming_mode;
+        dual_printf("ERROR: Failed to switch camera to grayscale inference mode: %s\n", esp_err_to_name(err));
+        return err;
+    }
+    g_current_format = PIXFORMAT_GRAYSCALE;
+    g_current_size = FRAMESIZE_QVGA;
+
+    CameraFrame frame = {};
+    err = camera_capture_frame(&frame);
+    if (err == ESP_OK) {
+        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
+        run_inference_on_grayscale_frame(g_raw_frame);
+        camera_capture_release(&frame);
+    } else {
+        dual_printf("ERROR: Grayscale inference capture failed: %s\n", esp_err_to_name(err));
+    }
+
+    esp_err_t restore_err = camera_capture_reinit((int)previous_format, (int)previous_size);
+    if (restore_err == ESP_OK) {
+        g_current_format = previous_format;
+        g_current_size = previous_size;
+    } else {
+        dual_printf("ERROR: Failed to restore camera preview mode: %s\n", esp_err_to_name(restore_err));
+    }
+    streaming_mode = previous_streaming_mode;
+    return err;
+}
+
+static void input_output_self_test_task(void *pvParameters) {
+    (void)pvParameters;
+    ESP_LOGI(TAG, "Input/output self-test task started.");
+
+    const int sequence[] = {0, 1, 2, 3, 4};
+    int index = 0;
+
+    while (true) {
+        if (ENABLE_INPUT_CONTROLS) {
+            const InputControlsSnapshot snapshot = input_controls_get_snapshot();
+            dual_printf("SELFTEST_INPUT,pos=%ld,enc_btn=%lu,btn2=%lu,enc_level=%d,btn2_level=%d\n",
+                        (long)snapshot.encoder_position,
+                        (unsigned long)snapshot.encoder_button_presses,
+                        (unsigned long)snapshot.button2_presses,
+                        snapshot.encoder_button_level,
+                        snapshot.button2_level);
+        } else {
+            dual_printf("SELFTEST_INPUT,disabled\n");
+        }
+
+        const int action = sequence[index];
+        dual_printf("SELFTEST_OUTPUT,action=%d,route=PC_TO_ESP2_REQUIRED\n", action);
+        index = (index + 1) % (int)(sizeof(sequence) / sizeof(sequence[0]));
+        vTaskDelay(pdMS_TO_TICKS(IO_SELF_TEST_INTERVAL_MS));
+    }
+}
 static void uart_test_inference_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "TFLite Micro inference task initialized in TEST_MODE_UART_FRAME.");
@@ -1555,4 +1639,12 @@ extern "C" void app_main() {
         xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, NULL, 0);
         return;
     }
+
+    xTaskCreatePinnedToCore(camera_flash_task,
+                            "camera_flash_task",
+                            16 * 1024,
+                            NULL,
+                            5,
+                            &g_camera_flash_task_handle,
+                            1);
 }
