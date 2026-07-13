@@ -29,7 +29,6 @@
 #include "esp_vfs_fat.h"
 #include <dirent.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <unistd.h>
 
 static const char *TAG = "TFLM_GESTURE";
@@ -47,8 +46,6 @@ static void dual_printf(const char *format, ...);
 
 static bool streaming_mode = false;
 static SemaphoreHandle_t camera_mutex = NULL;
-static pixformat_t g_current_format = PIXFORMAT_GRAYSCALE;
-static framesize_t g_current_size = FRAMESIZE_96X96;
 
 
 /**
@@ -145,15 +142,7 @@ static void usb_list_files() {
         }
     }
     closedir(dir);
-    
-    struct statvfs s;
-    if (statvfs("/usb", &s) == 0) {
-        uint64_t free_bytes = ((uint64_t)s.f_bfree * s.f_frsize);
-        usb_cdc_printf("Total: %d files, used space: %d bytes (Free: %llu bytes)\n", 
-                       count, (int)total_size, (unsigned long long)free_bytes);
-    } else {
-        usb_cdc_printf("Total: %d files, used space: %d bytes\n", count, (int)total_size);
-    }
+    usb_cdc_printf("Total: %d files, listed used space: %d bytes\n", count, (int)total_size);
     usb_cdc_printf("-----------------------------\n\n");
 }
 
@@ -1382,41 +1371,6 @@ static void resize_grayscale_to_runtime_frame(const uint8_t *src,
     }
 }
 
-    const pixformat_t previous_format = g_current_format;
-    const framesize_t previous_size = g_current_size;
-    const bool previous_streaming_mode = streaming_mode;
-    streaming_mode = false;
-
-    esp_err_t err = camera_capture_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA);
-    if (err != ESP_OK) {
-        streaming_mode = previous_streaming_mode;
-        dual_printf("ERROR: Failed to switch camera to grayscale inference mode: %s\n", esp_err_to_name(err));
-        return err;
-    }
-    g_current_format = PIXFORMAT_GRAYSCALE;
-    g_current_size = FRAMESIZE_QVGA;
-
-    CameraFrame frame = {};
-    err = camera_capture_frame(&frame);
-    if (err == ESP_OK) {
-        resize_grayscale_to_runtime_frame(frame.data, frame.width, frame.height, g_raw_frame);
-        run_inference_on_grayscale_frame(g_raw_frame);
-        camera_capture_release(&frame);
-    } else {
-        dual_printf("ERROR: Grayscale inference capture failed: %s\n", esp_err_to_name(err));
-    }
-
-    esp_err_t restore_err = camera_capture_reinit((int)previous_format, (int)previous_size);
-    if (restore_err == ESP_OK) {
-        g_current_format = previous_format;
-        g_current_size = previous_size;
-    } else {
-        dual_printf("ERROR: Failed to restore camera preview mode: %s\n", esp_err_to_name(restore_err));
-    }
-    streaming_mode = previous_streaming_mode;
-    return err;
-}
-
 static void input_output_self_test_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "Input/output self-test task started.");
@@ -1648,3 +1602,6 @@ extern "C" void app_main() {
                             &g_camera_flash_task_handle,
                             1);
 }
+
+
+
