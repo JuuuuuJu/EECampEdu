@@ -1,4 +1,4 @@
-# Model Fine-Tune
+﻿# Model Fine-Tune
 
 `model_finetune/` is owned by the model team. It keeps training scripts, datasets, and source model artifacts.
 
@@ -95,3 +95,7 @@ firmware/pc/artifacts/reports/
 Do not put deploy-only quantization ownership inside `model_finetune/`. Quantization, flashing, and ESP benchmark belong to `firmware/`.
 
 If the source model is PyTorch-only, export ONNX and/or a Keras-compatible handoff first. ESP32-S3 does not run PyTorch directly in this project; it runs the unified int8 TFLite deploy target.
+
+## Boundary With Output
+
+`model_finetune/` does not control ESP2 servo output. The model team owns source model quality and class order; deploy/firmware owns int8 TFLite conversion, ESP1 flashing, benchmark, and PC-to-ESP2 gesture forwarding.

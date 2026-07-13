@@ -1,4 +1,4 @@
-# Apps
+﻿# Apps
 
 `apps/` contains Windows PC applications. UI code stays here, not inside firmware.
 
@@ -6,17 +6,19 @@
 
 ```text
 apps/esp32_cam_input_app/
-  src/App/        Dear ImGui application state and windows
+  src/App/        Dear ImGui application state and integration logic
   src/Image/      JPEG decode helper for live preview
-  src/Usb/        USB CDC serial client
+  src/Usb/        Windows USB CDC serial client
   src/Windows/    Camera preview and control panels
 ```
 
 The app is an integration demo for:
 
-- USB CDC live preview from ESP32-S3.
-- Camera capture / stream / format / resolution commands.
-- Input UI controls for zoom, exposure, ISO, and capture.
+- ESP1 USB CDC live preview.
+- ESP1 camera capture / stream / format / resolution commands.
+- Input UI controls for zoom placeholder, exposure, ISO/gain, and capture.
+- ESP2 output connection and manual servo movement tests.
+- Automatic forwarding from ESP1 `RESULT,...` lines to ESP2 `GESTURE,<index>,<name>` commands.
 - ImGui demo window for rapid component testing.
 
 ## Build
@@ -38,9 +40,21 @@ Use a 64-bit Visual Studio Build Tools environment. The build script avoids the 
 
 ## Firmware Mode
 
-For USB live preview and UI control tests, set firmware to:
+For USB live preview and UI control tests, set ESP1 firmware to:
 
 ```cpp
 constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
 ```
 
+## Serial Connections
+
+The app uses two independent serial connections:
+
+```text
+USB CDC Port      ESP1 ESP32-S3 camera/inference board, for example COM6
+ESP2 Output Port  ESP2 servo output board, for example COM7
+```
+
+With `Auto-forward RESULT` checked, the app forwards every ESP1 `RESULT,...` line to ESP2 as a `GESTURE,<index>,<name>` command.
+
+Manual output buttons are available in the `ESP2 Output` panel for unit testing without camera/model inference.

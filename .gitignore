@@ -6,7 +6,7 @@ venv/
 my_env*/
 
 # ESP-IDF generated files
-firmware/esp/build/
+build/
 firmware/esp/managed_components/
 firmware/esp/sdkconfig.old
 

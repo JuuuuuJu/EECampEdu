@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 // TFLite Micro gesture model configuration.
 // The default Mini ResNet deploy model uses grayscale 96x96x1 tensors. The firmware can
@@ -44,25 +44,8 @@ constexpr int INPUT_DEBOUNCE_MS = 60;
 // Input/output unit-test mode. This mode does not require a flashed TFLite model.
 constexpr int IO_SELF_TEST_INTERVAL_MS = 1000;
 
-// Robot arm output from robotic_arm.ino, ported to ESP-IDF LEDC.
-// PCB allocation: GPIO39/40/41/42 are reserved for output servos.
-// Keep disabled by default so servos do not move unexpectedly during non-output tests.
-constexpr bool ENABLE_ROBOT_ARM_OUTPUT = false;
-constexpr int ROBOT_ARM_BASE_GPIO = 39;
-constexpr int ROBOT_ARM_ARM_GPIO = 40;
-constexpr int ROBOT_ARM_PITCH_GPIO = 41;
-constexpr int ROBOT_ARM_CLAW_GPIO = 42;
-constexpr int ROBOT_ARM_BASE_INITIAL_DEG = 90;
-constexpr int ROBOT_ARM_ARM_INITIAL_DEG = 90;
-constexpr int ROBOT_ARM_PITCH_INITIAL_DEG = 90;
-constexpr int ROBOT_ARM_CLAW_INITIAL_DEG = 30;
-constexpr int ROBOT_ARM_PITCH_MIN_DEG = 30;
-constexpr int ROBOT_ARM_PITCH_MAX_DEG = 125;
-constexpr int ROBOT_ARM_STEP_DEG = 5;
-constexpr int ROBOT_ARM_SERVO_MIN_US = 500;
-constexpr int ROBOT_ARM_SERVO_MAX_US = 2500;
-constexpr int ROBOT_ARM_SERVO_FREQ_HZ = 50;
-constexpr int ROBOT_ARM_SERVO_DUTY_BITS = 16;
+// Robot arm output is now owned by ESP2 over a second USB serial link.
+// ESP1 only reports inference results to the PC; the PC forwards gestures to ESP2.
 
 // Integration default: keep the tensor arena on PSRAM so all supported model
 // candidates use the same memory path. Set true only for small-model speed tests.
@@ -82,5 +65,6 @@ constexpr bool CAMERA_USB_KEEP_SEQUENCE = true;
 constexpr int CAMERA_USB_CAPTURE_INTERVAL_MS = 250;
 constexpr int CAMERA_USB_DEFAULT_PIXEL_FORMAT = 3; // 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG
 constexpr int CAMERA_USB_DEFAULT_FRAME_SIZE = 3;   // 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA
+
 
 

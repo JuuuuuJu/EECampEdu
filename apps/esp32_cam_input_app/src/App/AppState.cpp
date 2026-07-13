@@ -1,4 +1,4 @@
-#include "AppState.hpp"
+﻿#include "AppState.hpp"
 #include "Image/JpegDecoder.hpp"
 
 #include <algorithm>
@@ -49,10 +49,13 @@ static bool ParseFrameHeader(const std::string& header, int* format, int* width,
 
 void AppState::Init() {
     usb_status = "Disconnected";
+    output_status = "Output disconnected";
     last_command.clear();
+    last_output_command.clear();
     usb_rx_log.clear();
     last_frame_header.clear();
     cdc_parse_buffer.clear();
+    cdc_text_buffer.clear();
     cdc_receiving_image_frame = false;
     received_image_count = 0;
     latest_frame_rgba.clear();
@@ -87,6 +90,58 @@ void AppState::DisconnectUsb() {
 
 bool AppState::IsUsbConnected() const {
     return usb_client.IsOpen();
+}
+
+bool AppState::ConnectOutput() {
+    std::string error;
+    if (output_client.Open(output_port, output_baud_rate, &error)) {
+        output_status = "Connected to ESP2 on " + std::string(output_port);
+        AppendUsbLog("[ESP2] " + output_status + "\n");
+        return true;
+    }
+
+    output_status = "ESP2 connect failed: " + error;
+    AppendUsbLog("[ESP2] " + output_status + "\n");
+    return false;
+}
+
+void AppState::DisconnectOutput() {
+    if (output_client.IsOpen()) {
+        output_client.Close();
+        AppendUsbLog("[ESP2] Disconnected\n");
+    }
+    output_status = "Output disconnected";
+}
+
+bool AppState::IsOutputConnected() const {
+    return output_client.IsOpen();
+}
+
+void AppState::SendOutputGesture(int gesture, const std::string& name) {
+    std::ostringstream command;
+    command << "GESTURE," << gesture << "," << name << "\n";
+    last_output_command = command.str();
+
+    if (!output_client.IsOpen()) {
+        output_status = "Output disconnected";
+        return;
+    }
+
+    std::string error;
+    if (!output_client.Write(command.str(), &error)) {
+        output_status = "ESP2 send failed: " + error;
+        AppendUsbLog("[ESP2] " + output_status + "\n");
+        return;
+    }
+
+    std::string ack;
+    if (output_client.ReadAvailable(&ack, &error) && !ack.empty()) {
+        output_status = ack;
+        AppendUsbLog("[ESP2] " + ack);
+    } else {
+        output_status = "Sent " + command.str();
+        AppendUsbLog("[ESP2 TX] " + command.str());
+    }
 }
 
 void AppState::SendUsbCommand(const std::string& command, const std::string& label) {
@@ -129,6 +184,7 @@ void AppState::PollUsb() {
         chunk.find("---END_IMAGE---") != std::string::npos;
     if (!cdc_receiving_image_frame && !chunk_has_image_marker) {
         AppendUsbLog(chunk);
+        ProcessCdcText(chunk);
     }
 
     cdc_parse_buffer += chunk;
@@ -149,6 +205,46 @@ void AppState::AppendUsbLog(const std::string& text) {
     }
 }
 
+void AppState::ProcessCdcText(const std::string& text) {
+    cdc_text_buffer += text;
+    size_t newline = std::string::npos;
+    while ((newline = cdc_text_buffer.find_first_of("\r\n")) != std::string::npos) {
+        std::string line = cdc_text_buffer.substr(0, newline);
+        cdc_text_buffer.erase(0, newline + 1);
+        if (!line.empty()) {
+            ForwardResultLineToOutput(line);
+        }
+    }
+    if (cdc_text_buffer.size() > 1024) {
+        cdc_text_buffer.erase(0, cdc_text_buffer.size() - 1024);
+    }
+}
+
+void AppState::ForwardResultLineToOutput(const std::string& line) {
+    if (!auto_forward_output || !output_client.IsOpen()) {
+        return;
+    }
+    if (line.rfind("RESULT,", 0) != 0) {
+        return;
+    }
+
+    size_t first = line.find(',');
+    size_t second = line.find(',', first + 1);
+    if (first == std::string::npos || second == std::string::npos) {
+        return;
+    }
+
+    int gesture = -1;
+    try {
+        gesture = std::stoi(line.substr(first + 1, second - first - 1));
+    } catch (...) {
+        return;
+    }
+
+    static const char* class_names[] = {"up", "down", "right", "left", "null"};
+    const char* name = (gesture >= 0 && gesture < 5) ? class_names[gesture] : "unknown";
+    SendOutputGesture(gesture, name);
+}
 void AppState::ParseCdcFrames() {
     const std::string start_marker = "---START_IMAGE:";
     const std::string end_marker = "---END_IMAGE---";
@@ -280,3 +376,4 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
 
     latest_frame_rgba.clear();
 }
+
