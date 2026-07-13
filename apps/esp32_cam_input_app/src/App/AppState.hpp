@@ -24,7 +24,7 @@ public:
     int exposure = 0;
     int gain = 0;
     int frame_size = 3;      // Firmware protocol: 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA, 4=SVGA, 5=UXGA.
-    int pixel_format = 3;   // Firmware protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG.
+    int pixel_format = 3;   // Camera command protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG. Frame header protocol: 0=RGB565, 1=YUV422, 3=GRAYSCALE, 4=JPEG.
     bool stream_enabled = false;
     bool vertical_flip = false;
     bool show_imgui_demo = true;
@@ -62,4 +62,5 @@ private:
     void ParseCdcFrames();
     void StoreDecodedFrame(int format, int width, int height, const std::vector<uint8_t>& payload);
 };
+
 

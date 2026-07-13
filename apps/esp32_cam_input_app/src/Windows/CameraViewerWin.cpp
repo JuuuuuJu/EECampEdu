@@ -1,4 +1,4 @@
-#include "CameraViewerWin.hpp"
+﻿#include "CameraViewerWin.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -44,8 +44,8 @@ void CameraViewerWin::draw(AppState& state, SDL_Renderer* renderer) {
         const float available_width = ImGui::GetContentRegionAvail().x;
         const float scale = std::max(1.0f, std::min(available_width / static_cast<float>(texture_width), 4.0f));
         ImGui::Image(reinterpret_cast<ImTextureID>(preview_texture), ImVec2(texture_width * scale, texture_height * scale));
-    } else if (state.latest_frame_format == 3) {
-        ImGui::TextWrapped("JPEG frame received, but no decoded texture is available yet. Check the serial log for JPEG decode errors.");
+    } else if (state.latest_frame_format == 4) {
+        ImGui::TextWrapped("Image frame received, but no decoded texture is available yet. Check the serial log for decode errors.");
     } else {
         ImGui::TextWrapped("Waiting for a CDC image frame.");
     }
@@ -60,3 +60,4 @@ void CameraViewerWin::draw(AppState& state, SDL_Renderer* renderer) {
 
     ImGui::End();
 }
+
