@@ -46,6 +46,23 @@ static std::vector<uint8_t> DecodeBase64(const std::string& input) {
 static bool ParseFrameHeader(const std::string& header, int* format, int* width, int* height, int* bytes) {
     return std::sscanf(header.c_str(), "---START_IMAGE:%d:%d:%d:%d---", format, width, height, bytes) == 4;
 }
+static bool LooksLikeImagePayload(const std::string& text) {
+    if (text.size() < 96) {
+        return false;
+    }
+    size_t useful = 0;
+    size_t base64ish = 0;
+    for (unsigned char c : text) {
+        if (std::isspace(c)) {
+            continue;
+        }
+        ++useful;
+        if (std::isalnum(c) || c == '+' || c == '/' || c == '=') {
+            ++base64ish;
+        }
+    }
+    return useful > 96 && base64ish * 100 / useful > 92;
+}
 
 void AppState::Init() {
     usb_status = "Disconnected";
@@ -182,7 +199,8 @@ void AppState::PollUsb() {
     const bool chunk_has_image_marker =
         chunk.find("---START_IMAGE:") != std::string::npos ||
         chunk.find("---END_IMAGE---") != std::string::npos;
-    if (!cdc_receiving_image_frame && !chunk_has_image_marker) {
+    const bool chunk_looks_like_image_payload = LooksLikeImagePayload(chunk);
+    if (!cdc_receiving_image_frame && !chunk_has_image_marker && !chunk_looks_like_image_payload) {
         AppendUsbLog(chunk);
         ProcessCdcText(chunk);
     }
@@ -252,6 +270,25 @@ void AppState::ParseCdcFrames() {
     while (true) {
         size_t start = cdc_parse_buffer.find(start_marker);
         if (start == std::string::npos) {
+            // If the app connects in the middle of a streaming JPEG frame, the START marker may be missed.
+            // Recover as soon as we see a JPEG base64 magic prefix and the END marker.
+            const size_t jpeg_magic = cdc_parse_buffer.find("/9j/");
+            const size_t recovered_end = cdc_parse_buffer.find(end_marker, jpeg_magic == std::string::npos ? 0 : jpeg_magic);
+            if (jpeg_magic != std::string::npos && recovered_end != std::string::npos) {
+                std::string encoded = cdc_parse_buffer.substr(jpeg_magic, recovered_end - jpeg_magic);
+                std::vector<uint8_t> payload = DecodeBase64(encoded);
+                StoreDecodedFrame(4, 1, 1, payload);
+
+                std::ostringstream oss;
+                oss << "recovered format=4 decoded=" << payload.size();
+                last_frame_header = oss.str();
+                received_image_count += 1;
+                cdc_receiving_image_frame = false;
+                AppendUsbLog("[RX_FRAME] " + last_frame_header + "\n");
+                cdc_parse_buffer.erase(0, recovered_end + end_marker.size());
+                continue;
+            }
+
             cdc_receiving_image_frame = false;
             if (cdc_parse_buffer.size() > 4096) {
                 cdc_parse_buffer.erase(0, cdc_parse_buffer.size() - 4096);
@@ -316,12 +353,21 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
     latest_frame_dirty = false;
 
     if (width <= 0 || height <= 0) {
+        AppendUsbLog("[PC] Invalid frame dimensions.\n");
+        latest_frame_rgba.clear();
         return;
     }
 
-    if (format == 0) {
-        const size_t expected = static_cast<size_t>(width) * static_cast<size_t>(height);
+    const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+
+    // ESP frame header protocol: 0=RGB565, 1=YUV422, 3=GRAYSCALE, 4=JPEG.
+    // The UI command protocol is different: F 3 asks firmware to switch the camera to JPEG.
+    if (format == 3) {
+        const size_t expected = pixels;
         if (payload.size() < expected) {
+            AppendUsbLog("[PC] Grayscale frame too small: decoded=" + std::to_string(payload.size()) +
+                         " expected=" + std::to_string(expected) + "\n");
+            latest_frame_rgba.clear();
             return;
         }
         latest_frame_rgba.resize(expected * 4);
@@ -336,9 +382,11 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
         return;
     }
 
-    if (format == 1) {
-        const size_t pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+    if (format == 0) {
         if (payload.size() < pixels * 2) {
+            AppendUsbLog("[PC] RGB565 frame too small: decoded=" + std::to_string(payload.size()) +
+                         " expected=" + std::to_string(pixels * 2) + "\n");
+            latest_frame_rgba.clear();
             return;
         }
         latest_frame_rgba.resize(pixels * 4);
@@ -357,7 +405,27 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
         return;
     }
 
-    if (format == 3) {
+    if (format == 1) {
+        if (payload.size() < pixels * 2) {
+            AppendUsbLog("[PC] YUV422 frame too small: decoded=" + std::to_string(payload.size()) +
+                         " expected=" + std::to_string(pixels * 2) + "\n");
+            latest_frame_rgba.clear();
+            return;
+        }
+        latest_frame_rgba.resize(pixels * 4);
+        for (size_t i = 0; i < pixels; ++i) {
+            // Show the Y channel as grayscale. Full YUV422 color conversion is not needed for preview diagnostics.
+            uint8_t y = payload[(i / 2) * 4 + ((i % 2) == 0 ? 0 : 2)];
+            latest_frame_rgba[i * 4 + 0] = y;
+            latest_frame_rgba[i * 4 + 1] = y;
+            latest_frame_rgba[i * 4 + 2] = y;
+            latest_frame_rgba[i * 4 + 3] = 255;
+        }
+        latest_frame_dirty = true;
+        return;
+    }
+
+    if (format == 4) {
         std::vector<uint8_t> decoded_rgba;
         int decoded_width = 0;
         int decoded_height = 0;
@@ -375,5 +443,8 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
     }
 
     latest_frame_rgba.clear();
+    AppendUsbLog("[PC] Unsupported image frame format: " + std::to_string(format) + "\n");
 }
+
+
 
