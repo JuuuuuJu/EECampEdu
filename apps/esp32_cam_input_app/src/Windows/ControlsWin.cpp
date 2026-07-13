@@ -1,7 +1,10 @@
-﻿#include "ControlsWin.hpp"
+#include "ControlsWin.hpp"
 
 #include <cstdio>
 #include <string>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
 
 static void HelpMarker(const char* text) {
     ImGui::SameLine();
@@ -12,6 +15,14 @@ static void HelpMarker(const char* text) {
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+}
+
+static std::string GetTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+    std::stringstream ss;
+    ss << std::put_time(std::localtime(&in_time_t), "%Y%m%d_%H%M%S");
+    return ss.str();
 }
 
 void ControlsWin::draw(AppState& state) {
@@ -61,18 +72,19 @@ void ControlsWin::draw(AppState& state) {
     if (ImGui::Button("Output Left")) state.SendOutputGesture(3, "left");
     ImGui::SameLine();
     if (ImGui::Button("Output Null")) state.SendOutputGesture(4, "null");
+
     ImGui::SeparatorText("Camera Commands");
     if (ImGui::Button("Capture once")) {
-        state.SendUsbCommand("C", "capture once");
+        state.SendUsbCommand("c" + GetTimestamp(), "capture once");
     }
     ImGui::SameLine();
     if (ImGui::Button(state.stream_enabled ? "Stop stream" : "Start stream")) {
         state.stream_enabled = !state.stream_enabled;
-        state.SendUsbCommand(state.stream_enabled ? "D 1" : "D 0", state.stream_enabled ? "stream on" : "stream off");
+        state.SendUsbCommand(state.stream_enabled ? "d1" : "d0", state.stream_enabled ? "stream on" : "stream off");
     }
     ImGui::SameLine();
     if (ImGui::Button("Save frame")) {
-        state.SendUsbCommand("W", "save frame to MSC storage");
+        state.SendUsbCommand("w" + GetTimestamp(), "save frame to MSC storage");
     }
 
     if (ImGui::Button("List storage")) {
@@ -87,22 +99,58 @@ void ControlsWin::draw(AppState& state) {
     ImGui::SeparatorText("Sensor Settings");
     const char* formats[] = {"Grayscale", "RGB565", "YUV422", "JPEG"};
     if (ImGui::Combo("Pixel format", &state.pixel_format, formats, IM_ARRAYSIZE(formats))) {
-        state.SendUsbCommand("F " + std::to_string(state.pixel_format), "set pixel format");
+        state.SendUsbCommand("f" + std::to_string(state.pixel_format), "set pixel format");
     }
 
     const char* sizes[] = {"96x96", "QQVGA", "QVGA", "VGA", "SVGA", "UXGA"};
     if (ImGui::Combo("Frame size", &state.frame_size, sizes, IM_ARRAYSIZE(sizes))) {
-        state.SendUsbCommand("S " + std::to_string(state.frame_size), "set frame size");
+        state.SendUsbCommand("s" + std::to_string(state.frame_size), "set frame size");
     }
 
-    if (ImGui::SliderInt("Exposure", &state.exposure, -2, 2)) {
-        state.SendUsbCommand("E " + std::to_string(state.exposure), "set exposure");
+    ImGui::SeparatorText("Exposure & Gain");
+
+    if (ImGui::Checkbox("Auto Exposure (AEC)", &state.aec_enabled)) {
+        state.SendUsbCommand(std::string("e") + (state.aec_enabled ? "1" : "0"), "set auto exposure");
     }
-    if (ImGui::SliderInt("Gain/ISO", &state.gain, 0, 30)) {
-        state.SendUsbCommand("G " + std::to_string(state.gain), "set gain");
+
+    if (!state.aec_enabled) {
+        if (ImGui::SliderInt("Exposure value", &state.aec_value, 0, 1200)) {
+            state.SendUsbCommand("v" + std::to_string(state.aec_value), "set manual exposure");
+        }
     }
+
+    if (ImGui::Checkbox("Auto Gain (AGC)", &state.agc_enabled)) {
+        state.SendUsbCommand(std::string("g") + (state.agc_enabled ? "1" : "0"), "set auto gain");
+    }
+
+    if (!state.agc_enabled) {
+        if (ImGui::SliderInt("Gain value", &state.agc_value, 0, 30)) {
+            state.SendUsbCommand("a" + std::to_string(state.agc_value), "set manual gain");
+        }
+    }
+
+    if (ImGui::Checkbox("Auto White Balance (AWB)", &state.awb_enabled)) {
+        state.SendUsbCommand(std::string("y") + (state.awb_enabled ? "1" : "0"), "set auto white balance");
+    }
+
+    ImGui::SeparatorText("Image Controls");
+
+    if (ImGui::SliderInt("Brightness", &state.brightness, -2, 2)) {
+        state.SendUsbCommand("b" + std::to_string(state.brightness), "set brightness");
+    }
+    if (ImGui::SliderInt("Contrast", &state.contrast, -2, 2)) {
+        state.SendUsbCommand("t" + std::to_string(state.contrast), "set contrast");
+    }
+    if (ImGui::SliderInt("Saturation", &state.saturation, -2, 2)) {
+        state.SendUsbCommand("x" + std::to_string(state.saturation), "set saturation");
+    }
+
+    if (ImGui::Checkbox("Horizontal mirror", &state.horizontal_mirror)) {
+        state.SendUsbCommand(std::string("m") + (state.horizontal_mirror ? "1" : "0"), "set horizontal mirror");
+    }
+    ImGui::SameLine();
     if (ImGui::Checkbox("Vertical flip", &state.vertical_flip)) {
-        state.SendUsbCommand(std::string("V ") + (state.vertical_flip ? "1" : "0"), "set vertical flip");
+        state.SendUsbCommand(std::string("p") + (state.vertical_flip ? "1" : "0"), "set vertical flip");
     }
 
     ImGui::SeparatorText("Input Prototype");
@@ -111,4 +159,3 @@ void ControlsWin::draw(AppState& state) {
 
     ImGui::End();
 }
-
