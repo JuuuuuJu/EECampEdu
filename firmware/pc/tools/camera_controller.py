@@ -1,4 +1,4 @@
-﻿import serial
+import serial
 import base64
 import os
 import threading
@@ -19,7 +19,7 @@ except ImportError:
     HAS_CV2 = False
 
 # Configure the serial port parameters
-COM_PORT = os.environ.get('ESP1_PORT', os.environ.get('CAMERA_CONTROLLER_PORT', 'COM6'))
+COM_PORT = os.environ.get('ESP1_PORT', os.environ.get('CAMERA_CONTROLLER_PORT', 'COM11'))
 BAUD_RATE = int(os.environ.get('ESP1_BAUD_RATE', os.environ.get('CAMERA_CONTROLLER_BAUD_RATE', '2000000')))
 ESP2_PORT = os.environ.get('OUTPUT_ESP2_PORT', os.environ.get('ESP2_PORT', ''))
 ESP2_BAUD_RATE = int(os.environ.get('OUTPUT_ESP2_BAUD_RATE', os.environ.get('ESP2_BAUD_RATE', '115200')))
@@ -347,6 +347,9 @@ def read_serial_thread():
                     # Print standard output lines from ESP32 (logs, statistics, ascii art)
                     print(f"[ESP32] {line}")
                     forward_result_to_esp2(line)
+                    
+                    if "Inference started" in line:
+                        print("[Python UI] ⏳ Running on-device TFLite model inference... Please wait (this can take several seconds for larger models)...")
                     
                     # Handle batch download and inference recoveries
                     if "ERROR: File " in line and "not found" in line:
