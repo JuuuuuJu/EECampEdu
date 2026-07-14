@@ -67,13 +67,25 @@ python firmware\pc\tools\send_esp2_gesture.py --port COM7 left
 python firmware\pc\tools\send_esp2_gesture.py --port COM7 null
 ```
 
+Servo motion diagnostic:
+
+```powershell
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 TEST --timeout 5
+```
+
+`TEST` sweeps all four servo channels through center/low/high/center positions. Use this first because `B90`, `A90`, and `P90` may equal the boot angle and show no visible movement.
+
 Manual angle commands are also supported:
 
 ```powershell
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 B90
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 A90
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 P100
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 C30
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 B60
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 B120
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 A60
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 A140
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 P45
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 P120
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 C0
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 C80
 ```
 
 Expected ACK format:
@@ -147,3 +159,4 @@ null   -> no movement
 - ImGui app forwards `RESULT` when ESP2 Output is connected and `Auto-forward RESULT` is checked.
 - `null` does not move the arm.
 - Servo angle limits prevent unsafe pitch/claw movement.
+

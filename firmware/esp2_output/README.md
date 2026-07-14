@@ -45,13 +45,20 @@ GESTURE,3,left
 GESTURE,4,null
 ```
 
+Motion diagnostic command:
+
+```text
+TEST  sweep all four servo channels through visible test positions
+SWEEP same as TEST
+```
+
 Manual angle commands:
 
 ```text
-B90   set base angle
-A90   set arm angle
-P100  set pitch angle
-C30   set claw angle
+B60 / B120    set base angle/speed command away from the neutral 90 value
+A60 / A140    set arm angle
+P45 / P120    set pitch angle
+C0 / C80      set claw angle
 ```
 
 Expected ACK example:
@@ -67,7 +74,7 @@ From repository root:
 ```powershell
 python firmware\pc\tools\send_esp2_gesture.py --port COM7 up
 python firmware\pc\tools\send_esp2_gesture.py --port COM7 right --repeat 3
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 P100
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 TEST --timeout 5
 ```
 
 ## Full System Paths
@@ -77,3 +84,4 @@ Benchmark path          firmware/pc/benchmark/run_benchmark_png.py --esp2-port C
 Python controller path  OUTPUT_ESP2_PORT=COM7 python firmware/pc/tools/camera_controller.py
 ImGui app path          Connect ESP2 Output panel and enable Auto-forward RESULT
 ```
+
