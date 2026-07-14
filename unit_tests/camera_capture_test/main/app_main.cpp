@@ -1,11 +1,15 @@
+#include <ctype.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "driver/uart.h"
 #include "esp_camera.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 static const char *TAG = "CAMERA_UNIT_TEST";
@@ -28,9 +32,17 @@ static constexpr int VSYNC_GPIO_NUM = 6;
 static constexpr int HREF_GPIO_NUM = 7;
 static constexpr int PCLK_GPIO_NUM = 13;
 
+static constexpr int CONTROLLER_BAUD_RATE = 115200;
+static constexpr int JPEG_QUALITY = 12;
+static constexpr int STREAM_PERIOD_MS = 500;
+
 static bool g_initialized = false;
+static volatile bool g_streaming = false;
 static pixformat_t g_format = PIXFORMAT_JPEG;
-static framesize_t g_size = FRAMESIZE_VGA;
+static framesize_t g_size = FRAMESIZE_QQVGA;
+static SemaphoreHandle_t g_camera_mutex = nullptr;
+
+static const char kB64Table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 static const char *format_name(pixformat_t format) {
     switch (format) {
@@ -40,6 +52,102 @@ static const char *format_name(pixformat_t format) {
         case PIXFORMAT_JPEG: return "JPEG";
         default: return "UNKNOWN";
     }
+}
+
+static int controller_format_id(pixformat_t format) {
+    // camera_controller.py expects: 0=RGB565, 1=YUV422, 3=GRAYSCALE, 4=JPEG.
+    switch (format) {
+        case PIXFORMAT_RGB565: return 0;
+        case PIXFORMAT_YUV422: return 1;
+        case PIXFORMAT_GRAYSCALE: return 3;
+        case PIXFORMAT_JPEG: return 4;
+        default: return 4;
+    }
+}
+
+static pixformat_t map_format_command(int value) {
+    switch (value) {
+        case 0: return PIXFORMAT_RGB565;
+        case 1: return PIXFORMAT_YUV422;
+        case 2: return PIXFORMAT_GRAYSCALE;
+        case 3: return PIXFORMAT_JPEG;
+        default: return PIXFORMAT_JPEG;
+    }
+}
+
+static framesize_t map_size_command(int value) {
+    switch (value) {
+        case 0: return FRAMESIZE_96X96;
+        case 1: return FRAMESIZE_QQVGA;
+        case 2: return FRAMESIZE_QVGA;
+        case 3: return FRAMESIZE_VGA;
+        case 4: return FRAMESIZE_SVGA;
+        case 5: return FRAMESIZE_UXGA;
+        default: return FRAMESIZE_VGA;
+    }
+}
+
+static void write_base64(const uint8_t *data, size_t len) {
+    size_t i = 0;
+    int emitted = 0;
+    while (i + 3 <= len) {
+        const uint32_t v = ((uint32_t)data[i] << 16) | ((uint32_t)data[i + 1] << 8) | data[i + 2];
+        putchar(kB64Table[(v >> 18) & 0x3f]);
+        putchar(kB64Table[(v >> 12) & 0x3f]);
+        putchar(kB64Table[(v >> 6) & 0x3f]);
+        putchar(kB64Table[v & 0x3f]);
+        i += 3;
+        emitted += 4;
+        if (emitted >= 240) {
+            putchar('\n');
+            fflush(stdout);
+            emitted = 0;
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+    }
+
+    if (i < len) {
+        const uint8_t a = data[i++];
+        const uint8_t b = (i < len) ? data[i++] : 0;
+        const uint32_t v = ((uint32_t)a << 16) | ((uint32_t)b << 8);
+        putchar(kB64Table[(v >> 18) & 0x3f]);
+        putchar(kB64Table[(v >> 12) & 0x3f]);
+        if (i <= len && (len % 3) == 2) {
+            putchar(kB64Table[(v >> 6) & 0x3f]);
+            putchar('=');
+        } else {
+            putchar('=');
+            putchar('=');
+        }
+    }
+    putchar('\n');
+    fflush(stdout);
+}
+
+static void send_frame_to_controller(camera_fb_t *fb) {
+    printf("---START_IMAGE:%d:%d:%d:%u---\n",
+           controller_format_id(fb->format),
+           fb->width,
+           fb->height,
+           (unsigned)fb->len);
+    write_base64(fb->buf, fb->len);
+    printf("---END_IMAGE---\n");
+    fflush(stdout);
+}
+
+static void dump_frame(camera_fb_t *fb) {
+    uint32_t sum = 0;
+    const size_t n = fb->len < 64 ? fb->len : 64;
+    for (size_t i = 0; i < n; ++i) {
+        sum += fb->buf[i];
+    }
+    ESP_LOGI(TAG,
+             "CAMERA_FRAME,width=%d,height=%d,format=%s,bytes=%u,sum64=%lu",
+             fb->width,
+             fb->height,
+             format_name(fb->format),
+             (unsigned)fb->len,
+             (unsigned long)sum);
 }
 
 static esp_err_t camera_init_current(void) {
@@ -69,7 +177,7 @@ static esp_err_t camera_init_current(void) {
     cfg.ledc_channel = LEDC_CHANNEL_0;
     cfg.pixel_format = g_format;
     cfg.frame_size = g_size;
-    cfg.jpeg_quality = 12;
+    cfg.jpeg_quality = JPEG_QUALITY;
     cfg.fb_count = 1;
     cfg.fb_location = CAMERA_FB_IN_PSRAM;
     cfg.grab_mode = CAMERA_GRAB_LATEST;
@@ -97,7 +205,7 @@ static esp_err_t camera_init_current(void) {
     return ESP_OK;
 }
 
-static esp_err_t camera_reinit(pixformat_t format, framesize_t size) {
+static esp_err_t camera_reinit_locked(pixformat_t format, framesize_t size) {
     if (g_initialized) {
         esp_camera_deinit();
         g_initialized = false;
@@ -108,54 +216,132 @@ static esp_err_t camera_reinit(pixformat_t format, framesize_t size) {
     return camera_init_current();
 }
 
-static void dump_frame(camera_fb_t *fb) {
-    uint32_t sum = 0;
-    const size_t n = fb->len < 64 ? fb->len : 64;
-    for (size_t i = 0; i < n; ++i) {
-        sum += fb->buf[i];
+static void capture_and_send_once(void) {
+    if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        ESP_LOGW(TAG, "camera busy; skipping frame");
+        return;
     }
-    printf("CAMERA_FRAME,width=%d,height=%d,format=%s,bytes=%u,first10=[",
-           fb->width, fb->height, format_name(fb->format), (unsigned)fb->len);
-    for (int i = 0; i < 10 && i < (int)fb->len; ++i) {
-        printf("%s%u", i ? " " : "", fb->buf[i]);
+
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (fb == nullptr) {
+        ESP_LOGE(TAG, "esp_camera_fb_get failed");
+        xSemaphoreGive(g_camera_mutex);
+        return;
     }
-    printf("],sum64=%lu\n", (unsigned long)sum);
+    dump_frame(fb);
+    send_frame_to_controller(fb);
+    esp_camera_fb_return(fb);
+    xSemaphoreGive(g_camera_mutex);
+}
+
+static void normalize_command(char *line) {
+    size_t len = strlen(line);
+    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r' || line[len - 1] == ' ' || line[len - 1] == '\t')) {
+        line[--len] = '\0';
+    }
+    for (size_t i = 0; line[i] != '\0'; ++i) {
+        line[i] = (char)tolower((unsigned char)line[i]);
+    }
+}
+
+static void handle_command(char *line) {
+    normalize_command(line);
+    if (line[0] == '\0') {
+        return;
+    }
+
+    if (strcmp(line, "d1") == 0) {
+        g_streaming = true;
+        printf("CAMERA_TEST,stream=on\n");
+        fflush(stdout);
+        return;
+    }
+    if (strcmp(line, "d0") == 0) {
+        g_streaming = false;
+        printf("CAMERA_TEST,stream=off\n");
+        fflush(stdout);
+        return;
+    }
+    if (line[0] == 'c') {
+        capture_and_send_once();
+        return;
+    }
+    if (line[0] == 'f' && line[1] != '\0') {
+        const pixformat_t next_format = map_format_command(atoi(line + 1));
+        if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+            ESP_ERROR_CHECK(camera_reinit_locked(next_format, g_size));
+            xSemaphoreGive(g_camera_mutex);
+            printf("CAMERA_TEST,format=%s\n", format_name(g_format));
+            fflush(stdout);
+        }
+        return;
+    }
+    if (line[0] == 's' && line[1] != '\0') {
+        const framesize_t next_size = map_size_command(atoi(line + 1));
+        if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+            ESP_ERROR_CHECK(camera_reinit_locked(g_format, next_size));
+            xSemaphoreGive(g_camera_mutex);
+            printf("CAMERA_TEST,size=%d\n", (int)g_size);
+            fflush(stdout);
+        }
+        return;
+    }
+    if (strcmp(line, "j") == 0) {
+        if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+            ESP_ERROR_CHECK(camera_reinit_locked(PIXFORMAT_JPEG, FRAMESIZE_VGA));
+            xSemaphoreGive(g_camera_mutex);
+        }
+        return;
+    }
+    if (strcmp(line, "g") == 0) {
+        if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+            ESP_ERROR_CHECK(camera_reinit_locked(PIXFORMAT_GRAYSCALE, FRAMESIZE_96X96));
+            xSemaphoreGive(g_camera_mutex);
+        }
+        return;
+    }
+
+    printf("CAMERA_TEST,ignored_command=%s\n", line);
     fflush(stdout);
 }
 
 static void command_task(void *) {
-    char line[16];
+    char line[96];
     while (true) {
         if (fgets(line, sizeof(line), stdin) != NULL) {
-            if (line[0] == 'j') {
-                ESP_ERROR_CHECK(camera_reinit(PIXFORMAT_JPEG, FRAMESIZE_VGA));
-            } else if (line[0] == 'g') {
-                ESP_ERROR_CHECK(camera_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_96X96));
-            } else if (line[0] == 'q') {
-                ESP_ERROR_CHECK(camera_reinit(PIXFORMAT_GRAYSCALE, FRAMESIZE_QVGA));
-            }
+            handle_command(line);
         }
-        vTaskDelay(pdMS_TO_TICKS(20));
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+static void stream_task(void *) {
+    while (true) {
+        if (g_streaming) {
+            capture_and_send_once();
+            vTaskDelay(pdMS_TO_TICKS(STREAM_PERIOD_MS));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
     }
 }
 
 extern "C" void app_main(void) {
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
-    ESP_ERROR_CHECK(camera_init_current());
-    printf("READY,CAMERA_CAPTURE_TEST\n");
-    printf("Commands: j=VGA JPEG, g=96x96 grayscale, q=QVGA grayscale\n");
-    xTaskCreatePinnedToCore(command_task, "camera_command_task", 4096, nullptr, 4, nullptr, 0);
+    uart_set_baudrate(UART_NUM_0, CONTROLLER_BAUD_RATE);
 
-    while (true) {
-        camera_fb_t *fb = esp_camera_fb_get();
-        if (fb == nullptr) {
-            ESP_LOGE(TAG, "esp_camera_fb_get failed");
-            vTaskDelay(pdMS_TO_TICKS(1000));
-            continue;
-        }
-        dump_frame(fb);
-        esp_camera_fb_return(fb);
-        vTaskDelay(pdMS_TO_TICKS(1000));
-    }
+    g_camera_mutex = xSemaphoreCreateMutex();
+    configASSERT(g_camera_mutex != nullptr);
+    ESP_ERROR_CHECK(camera_init_current());
+
+    printf("READY,CAMERA_CAPTURE_TEST\n");
+    printf("Controller commands: d1=start preview, d0=stop preview, c=single frame, f3=JPEG, s1=QQVGA default, s3=VGA\n");
+    fflush(stdout);
+
+    xTaskCreatePinnedToCore(command_task, "camera_command_task", 4096, nullptr, 5, nullptr, 0);
+    xTaskCreatePinnedToCore(stream_task, "camera_stream_task", 8192, nullptr, 4, nullptr, 1);
 }
+
+
+

@@ -2,10 +2,10 @@
 
 Independent ESP-IDF project for the deploy group. It tests only:
 
-1. external TFLite model stored in the `model` flash partition,
+1. external int8 TFLite model stored in the `model` flash partition,
 2. `esp_partition_mmap`,
 3. TFLite Micro `AllocateTensors`,
-4. one synthetic-input `Invoke()`.
+4. model-only `Invoke()` latency and throughput.
 
 It does not use OV2640, USB preview, input controls, or output servos.
 
@@ -33,7 +33,16 @@ Monitor output should include:
 - `READY,DEPLOY_INFERENCE_TEST`
 - `INPUT_TENSOR,...`
 - `OUTPUT_TENSOR,...`
-- `RESULT,pred=<class>,latency_us=<time>`
+- warm-up `RESULT,pred=<class>,latency_us=<time>,warmup=1`
 - `SCORES,...`
+- `--- Deploy Inference Benchmark ---`
+- `Average Latency`, `Min Latency`, `Max Latency`, `Model Throughput`
+- `BENCHMARK_RESULT,iterations=50,avg_us=...,min_us=...,max_us=...,fps=...,pred=...`
 
-This verifies deploy runtime health. It is not an accuracy benchmark because the input is synthetic.
+Example metric meaning:
+
+- `Average Latency`: average TFLite Micro `Invoke()` time across 50 iterations.
+- `Model Throughput`: model-only FPS, computed from average inference latency.
+- `BENCHMARK_RESULT`: machine-readable line for reports or scripts.
+
+This verifies deploy runtime health and inference speed. It is not an accuracy benchmark because the input is synthetic.

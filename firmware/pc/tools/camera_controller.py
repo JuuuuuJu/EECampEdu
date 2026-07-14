@@ -1,4 +1,4 @@
-import serial
+﻿import serial
 import base64
 import os
 import threading
@@ -20,7 +20,9 @@ except ImportError:
 
 # Configure the serial port parameters
 COM_PORT = os.environ.get('ESP1_PORT', os.environ.get('CAMERA_CONTROLLER_PORT', 'COM11'))
-BAUD_RATE = int(os.environ.get('ESP1_BAUD_RATE', os.environ.get('CAMERA_CONTROLLER_BAUD_RATE', '2000000')))
+BAUD_RATE = int(os.environ.get('ESP1_BAUD_RATE', os.environ.get('CAMERA_CONTROLLER_BAUD_RATE', '115200')))
+ESP1_ASSERT_CONTROL_LINES = os.environ.get('ESP1_ASSERT_CONTROL_LINES', '0').lower() in ('1', 'true', 'yes', 'on')
+ESP1_STARTUP_CONFIG = os.environ.get('ESP1_STARTUP_CONFIG', '0').lower() in ('1', 'true', 'yes', 'on')
 ESP2_PORT = os.environ.get('OUTPUT_ESP2_PORT', os.environ.get('ESP2_PORT', ''))
 ESP2_BAUD_RATE = int(os.environ.get('OUTPUT_ESP2_BAUD_RATE', os.environ.get('ESP2_BAUD_RATE', '115200')))
 CLASS_NAMES = ['up', 'down', 'right', 'left', 'null']
@@ -31,41 +33,42 @@ receiving_file = False
 print(f"Connecting to ESP32-S3 on {COM_PORT} at {BAUD_RATE} baud...")
 try:
     # Use a timeout of 2.0s to allow robust transfer of high-resolution images
-    ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=2.0)
+    ser = serial.Serial(COM_PORT, BAUD_RATE, timeout=2.0, write_timeout=1.0, rtscts=False, dsrdtr=False, xonxoff=False)
     try:
         ser.set_buffer_size(rx_size=1048576, tx_size=65536)
     except Exception as buf_ex:
         print(f"[Warning] Failed to set serial buffer size: {buf_ex}")
-    ser.dtr = True
-    ser.rts = True
+    # Keep auto-download/reset control lines deasserted by default. On CH34x/CP210x
+    # ESP32 boards, forcing DTR/RTS active can hold EN/GPIO0 in reset/boot mode,
+    # which makes even tiny command writes time out on Windows.
+    try:
+        ser.dtr = bool(ESP1_ASSERT_CONTROL_LINES)
+        ser.rts = bool(ESP1_ASSERT_CONTROL_LINES)
+        print(f"[Python UI] ESP1 DTR/RTS asserted: {ESP1_ASSERT_CONTROL_LINES}")
+    except Exception as line_ex:
+        print(f"[Python UI] WARNING: Could not configure ESP1 DTR/RTS: {line_ex}")
 
-    # Save the original write method and override it with a robust retry wrapper
+    # Save the original write method and override it with a timeout-safe wrapper.
+    # Without write_timeout, Windows COM writes can block forever if the ESP side
+    # is rebooting, streaming garbage, or not consuming input.
     _orig_write = ser.write
     def robust_write(data):
-        try:
-            return _orig_write(data)
-        except Exception as e:
-            print(f"\n[Python UI] Write failed: {e}. Re-connecting serial port...")
-            for attempt in range(3):
+        for attempt in range(2):
+            try:
+                written = _orig_write(data)
                 try:
-                    try:
-                        ser.close()
-                    except Exception:
-                        pass
-                    ser.is_open = False  # Force pySerial to clear its open flag
-                    time.sleep(1.5)
-                    ser.open()
-                    try:
-                        ser.set_buffer_size(rx_size=1048576, tx_size=65536)
-                    except Exception:
-                        pass
-                    ser.dtr = True
-                    ser.rts = True
-                    return _orig_write(data)
-                except Exception as re_e:
-                    print(f"[Python UI] Re-connect attempt {attempt+1}/3 failed: {re_e}")
-                    time.sleep(1.5)
-            raise e
+                    ser.flush()
+                except Exception:
+                    pass
+                return written
+            except Exception as e:
+                print(f"\n[Python UI] Write failed ({attempt+1}/2): {e}")
+                try:
+                    ser.reset_output_buffer()
+                except Exception:
+                    pass
+                time.sleep(0.2)
+        return 0
 
     ser.write = robust_write
 except Exception as e:
@@ -87,6 +90,20 @@ if ESP2_PORT:
         esp2_ser = None
 else:
     print("[ESP2] Output bridge disabled. Set OUTPUT_ESP2_PORT=COM7 to enable servo forwarding.")
+def send_esp1_command(command, label=None):
+    if isinstance(command, str):
+        command = command.encode("utf-8")
+    shown = label or command.decode("utf-8", errors="ignore").strip()
+    print(f"[Python UI] -> ESP1 {shown}")
+    try:
+        written = ser.write(command)
+        if written != len(command):
+            print(f"[Python UI] WARNING: partial write for {shown}: {written}/{len(command)} bytes")
+            return False
+        return True
+    except Exception as e:
+        print(f"[Python UI] WARNING: failed to send {shown}: {e}")
+        return False
 
 
 def label_name(label):
@@ -130,7 +147,7 @@ saving_next_frame_lock = threading.Lock()
 # Camera settings state tracking (local representation of ESP32 state)
 camera_state = {
     "format": "JPEG",
-    "resolution": "VGA (640x480)",
+    "resolution": "QQVGA (160x120)",
     "aec": 1,         # 1 = Auto, 0 = Manual
     "exposure": 0,    # 0 to 1200
     "agc": 1,         # 1 = Auto, 0 = Manual
@@ -462,7 +479,7 @@ def handle_command(cmd_str):
     if action == 'c':
         ts = time.strftime("%Y%m%d_%H%M%S")
         print(f"[Python UI] Triggering capture workflow with timestamp {ts}...")
-        ser.write(f"c{ts}\n".encode('utf-8'))
+        send_esp1_command(f"c{ts}\n", "capture")
         return True
         
     if action == 'w':
@@ -744,9 +761,14 @@ def run_gui():
             time.sleep(1)
         return
 
-    # Automatically start continuous streaming from ESP32 on launch
+    # Automatically start continuous streaming from ESP32 on launch.
+    # In unit-test mode, force QQVGA before d1 so 115200 baud is not flooded by VGA JPEG frames.
+    if not ESP1_STARTUP_CONFIG:
+        send_esp1_command(b"s1\n", "s1 QQVGA before preview")
+        camera_state["resolution"] = "QQVGA (160x120)"
+        time.sleep(0.2)
     camera_state["streaming"] = True
-    ser.write(b"d1\n")
+    send_esp1_command(b"d1\n", "d1 start preview")
     
     last_displayed_frame = None
     first_frame = True
@@ -837,7 +859,7 @@ def run_gui():
         elif key == ord('c') or key == ord(' '):  # 'c' or Space to capture
             ts = time.strftime("%Y%m%d_%H%M%S")
             print(f"[Python UI] GUI requested frame capture with timestamp {ts}...")
-            ser.write(f"c{ts}\n".encode('utf-8'))
+            send_esp1_command(f"c{ts}\n", "capture")
                     
     # Clean up stream
     print("[Python UI] Stopping live stream...")
@@ -847,12 +869,18 @@ def run_gui():
 
 # Reset state and clear buffer BEFORE starting the serial reader thread
 try:
-    print("[Python UI] Resetting ESP32 camera stream state...")
-    ser.write(b"d0\n")         # Stop streaming while reconfiguring
-    ser.write(b"f3\n")         # Set to JPEG for VGA live preview
-    ser.write(b"s3\n")         # Set to VGA 640x480
-    time.sleep(0.3)            # Wait for ESP32 to receive and process
-    ser.reset_input_buffer()   # Clear all leftover garbage bytes in serial FIFO
+    if ESP1_STARTUP_CONFIG:
+        print("[Python UI] Resetting ESP32 camera stream state...")
+        send_esp1_command(b"d0\n", "d0 stop stream")
+        send_esp1_command(b"f3\n", "f3 JPEG")
+        send_esp1_command(b"s3\n", "s3 VGA")
+        time.sleep(0.3)            # Wait for ESP32 to receive and process
+    else:
+        print("[Python UI] Startup camera config skipped. Unit-test firmware defaults to JPEG VGA. For unit test, set s1 manually if serial preview is slow.")
+    try:
+        ser.reset_input_buffer()   # Clear all leftover garbage bytes in serial FIFO
+    except Exception as reset_ex:
+        print(f"[Python UI] WARNING: Could not clear serial input buffer: {reset_ex}")
 except Exception as e:
     print(f"[Python UI] WARNING: Could not reset camera state: {e}")
 
@@ -875,6 +903,13 @@ finally:
     # Ensure camera stops streaming and serial connection closes
     ser.write(b"d0\n")
     ser.close()
+
+
+
+
+
+
+
 
 
 

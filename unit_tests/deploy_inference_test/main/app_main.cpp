@@ -18,6 +18,7 @@
 static const char *TAG = "DEPLOY_UNIT_TEST";
 static constexpr const char *MODEL_PARTITION_LABEL = "model";
 static constexpr int TENSOR_ARENA_SIZE = 1024 * 1024;
+static constexpr int BENCHMARK_ITERATIONS = 50;
 
 static uint8_t *g_tensor_arena = nullptr;
 static const void *g_mapped_model = nullptr;
@@ -201,13 +202,53 @@ extern "C" void app_main(void) {
         return;
     }
 
-    const int64_t start_us = esp_timer_get_time();
+    // Warm-up run: this catches invoke errors before measuring steady-state latency.
+    int64_t start_us = esp_timer_get_time();
     if (interpreter.Invoke() != kTfLiteOk) {
         printf("ERROR,invoke_failed\n");
         return;
     }
-    const int64_t latency_us = esp_timer_get_time() - start_us;
-    const int pred = output_argmax(output);
-    printf("RESULT,pred=%d,latency_us=%lld\n", pred, (long long)latency_us);
+    int64_t latency_us = esp_timer_get_time() - start_us;
+    int pred = output_argmax(output);
+    printf("RESULT,pred=%d,latency_us=%lld,warmup=1\n", pred, (long long)latency_us);
     print_output_scores(output);
+
+    int64_t total_us = 0;
+    int64_t min_us = INT64_MAX;
+    int64_t max_us = 0;
+    int last_pred = pred;
+
+    for (int i = 0; i < BENCHMARK_ITERATIONS; ++i) {
+        start_us = esp_timer_get_time();
+        if (interpreter.Invoke() != kTfLiteOk) {
+            printf("ERROR,invoke_failed,iteration=%d\n", i);
+            return;
+        }
+        latency_us = esp_timer_get_time() - start_us;
+        if (latency_us < min_us) min_us = latency_us;
+        if (latency_us > max_us) max_us = latency_us;
+        total_us += latency_us;
+        last_pred = output_argmax(output);
+    }
+
+    const double avg_us = (double)total_us / (double)BENCHMARK_ITERATIONS;
+    const double avg_ms = avg_us / 1000.0;
+    const double throughput_fps = 1000000.0 / avg_us;
+
+    printf("\n--- Deploy Inference Benchmark ---\n");
+    printf("Iterations       : %d\n", BENCHMARK_ITERATIONS);
+    printf("Last Prediction  : %d\n", last_pred);
+    printf("Average Latency  : %.2f ms\n", avg_ms);
+    printf("Min Latency      : %.2f ms\n", (double)min_us / 1000.0);
+    printf("Max Latency      : %.2f ms\n", (double)max_us / 1000.0);
+    printf("Model Throughput : %.2f FPS\n", throughput_fps);
+    printf("BENCHMARK_RESULT,iterations=%d,avg_us=%.2f,min_us=%lld,max_us=%lld,fps=%.4f,pred=%d\n",
+           BENCHMARK_ITERATIONS,
+           avg_us,
+           (long long)min_us,
+           (long long)max_us,
+           throughput_fps,
+           last_pred);
+    printf("----------------------------------\n");
 }
+

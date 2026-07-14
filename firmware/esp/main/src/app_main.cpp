@@ -801,8 +801,8 @@ static void usb_cdc_command_task(void *pvParameters) {
 }
 static constexpr int kExpectedTfliteSchemaVersion = 3;
 
-static constexpr int kClassCount = 5;
-static constexpr const char *kClassNames[kClassCount] = {
+static constexpr int kMaxClassCount = 5;
+static constexpr const char *kClassNames[kMaxClassCount] = {
     "up",
     "down",
     "right",
@@ -815,6 +815,7 @@ static int g_tensor_arena_size = 0;
 static tflite::MicroInterpreter *g_interpreter = nullptr;
 static TfLiteTensor *g_input = nullptr;
 static TfLiteTensor *g_output = nullptr;
+static int g_output_class_count = 0;
 static const void *g_mapped_model = nullptr;
 static esp_partition_mmap_handle_t g_model_mmap_handle = 0;
 
@@ -1124,15 +1125,15 @@ static bool fill_input_tensor_from_raw_frame(const uint8_t *frame) {
 
 static bool read_output_scores(int *scores, int *pred_index) {
     const int output_elements = tensor_element_count(g_output);
-    if (output_elements < kClassCount) {
-        ESP_LOGE(TAG, "Output has only %d elements, expected at least %d.",
-                 output_elements, kClassCount);
+    if (output_elements <= 0) {
+        ESP_LOGE(TAG, "Output tensor has no elements.");
         return false;
     }
 
+    const int class_count = output_elements < kMaxClassCount ? output_elements : kMaxClassCount;
     int best_score = INT32_MIN;
     int best_index = 0;
-    for (int i = 0; i < kClassCount; ++i) {
+    for (int i = 0; i < class_count; ++i) {
         int score = 0;
         if (g_output->type == kTfLiteInt8) {
             score = g_output->data.int8[i];
@@ -1153,6 +1154,7 @@ static bool read_output_scores(int *scores, int *pred_index) {
     }
 
     *pred_index = best_index;
+    g_output_class_count = class_count;
     return true;
 }
 
@@ -1276,8 +1278,17 @@ static bool init_tflite_micro() {
     print_tensor_info("INPUT_TENSOR", g_input);
     print_tensor_info("OUTPUT_TENSOR", g_output);
 
-    printf("CLASS_MAP,0=%s,1=%s,2=%s,3=%s,4=%s\n",
-           kClassNames[0], kClassNames[1], kClassNames[2], kClassNames[3], kClassNames[4]);
+    const int output_elements = tensor_element_count(g_output);
+    g_output_class_count = output_elements < kMaxClassCount ? output_elements : kMaxClassCount;
+    if (g_output_class_count <= 0) {
+        ESP_LOGE(TAG, "Invalid output tensor element count: %d", output_elements);
+        return false;
+    }
+    printf("CLASS_MAP");
+    for (int i = 0; i < g_output_class_count; ++i) {
+        printf(",%d=%s", i, kClassNames[i]);
+    }
+    printf("\n");
     return true;
 }
 
@@ -1335,7 +1346,7 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
         return false;
     }
 
-    int scores[kClassCount] = {0};
+    int scores[kMaxClassCount] = {0};
     int pred_index = 0;
     if (!read_output_scores(scores, &pred_index)) {
         printf("ERROR,output_read_failed\n");
@@ -1351,7 +1362,7 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
            (long long)invoke_us,
            (long long)preprocess_us,
            (long long)device_compute_us);
-    for (int i = 0; i < kClassCount; ++i) {
+    for (int i = 0; i < g_output_class_count; ++i) {
         dual_printf(",%d", scores[i]);
     }
     dual_printf("\n");
