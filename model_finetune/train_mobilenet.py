@@ -13,12 +13,19 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
 # CONFIGURATION
-SIGN_MINIST_DIR = "dataset/sign_mnist"
-DATASET_DIR = "dataset/train"
-REAL_LIFE_DIR = "./new_test_data"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SIGN_MINIST_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "dataset/sign_mnist"))
+DATASET_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "dataset/train"))
+REAL_LIFE_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "new_test_data"))
+MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "models/tf"))
 IMG_SIZE = (96, 96)
 BATCH_SIZE = 32
 PRETRAIN_BATCH_SIZE = 256
+
+def ensure_parent_dir(file_path):
+    parent = os.path.dirname(file_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 PRETRAIN_TRAIN_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_train/sign_mnist_train.csv"
 PRETRAIN_TEST_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_test.csv"
@@ -137,8 +144,8 @@ x = mobilenet_base(pre_inputs, training=True)
 x = tf.keras.layers.Dropout(0.5)(x)
 pre_outputs = tf.keras.layers.Dense(24, activation='softmax')(x)
 
-os.makedirs("models", exist_ok=True)
-pretrain_weights_path = "models/mobilenetv2_pretrained_weights.h5"
+pretrain_weights_path = os.path.join(MODELS_DIR, "mobilenetv2_pretrained_weights.h5")
+ensure_parent_dir(pretrain_weights_path)
 
 has_pretrained = os.path.exists(pretrain_weights_path)
 
@@ -355,8 +362,9 @@ else:
     ft_test_loss, ft_test_acc = -1.0, -1.0
 
 # Save final fine-tuned model
-ft_model_path = "models/MobileNetV2_finetuned.keras"
-ft_onnx_path = "models/MobileNetV2_finetuned.onnx"
+ft_model_path = os.path.join(MODELS_DIR, "MobileNetV2_finetuned.keras")
+ft_onnx_path = os.path.join(MODELS_DIR, "MobileNetV2_finetuned.onnx")
+ensure_parent_dir(ft_model_path)
 
 print(f"Saving Keras model to {ft_model_path}...")
 try:

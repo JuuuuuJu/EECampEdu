@@ -11,13 +11,14 @@ import cv2
 import tensorflow as tf
 
 # CONFIGURATION
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 IMG_SIZE = (96, 96)
-class_names = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
+class_names = ['UP', 'OK', 'THUMB', 'PALM', 'ROCK', 'STONE']
 
 # Model mappings (using Keras models)
 MODELS = {
-    '1': ('models/tf/Mini_ResNet_finetuned_96.keras', 'Mini ResNet FT (96x96)'),
-    '2': ('models/tf/Mini_ResNet_finetuned_128.keras', 'Mini ResNet FT (128x128)')
+    '1': (os.path.normpath(os.path.join(SCRIPT_DIR, 'models/tf/Mini_ResNet_finetuned.keras')), 'Mini ResNet FT'),
+    '2': (os.path.normpath(os.path.join(SCRIPT_DIR, 'models/tf/MobileNetV2_finetuned.keras')), 'MobileNetV2 Gesture FT'),
 }
 
 current_key = '2'
@@ -25,7 +26,7 @@ model_path, model_name = MODELS[current_key]
 model = None
 error_msg = ""
 
-current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
+current_classes = ['UP', 'OK', 'THUMB', 'PALM', 'ROCK', 'STONE']
 expected_channels = 1
 
 def load_keras_model(key):
@@ -39,7 +40,7 @@ def load_keras_model(key):
         
     try:
         print(f"Loading {name} ({path})...")
-        model = tf.keras.models.load_model(path)
+        model = tf.keras.models.load_model(path, safe_mode=False)
         
         # Extract metadata from model
         input_shape = model.input_shape
@@ -53,6 +54,9 @@ def load_keras_model(key):
         if num_classes == 4:
             current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT']
             print(f"Detected 4-class model ({current_classes})")
+        elif num_classes == 6:
+            current_classes = ['UP', 'OK', 'THUMB', 'PALM', 'ROCK', 'STONE']
+            print(f"Detected 6-class model ({current_classes})")
         elif num_classes == 7:
             current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'PAPER', 'SCISSORS', 'STONE']
             print(f"Detected 7-class model ({current_classes})")
@@ -60,8 +64,8 @@ def load_keras_model(key):
             current_classes = ['PAPER', 'SCISSORS', 'STONE']
             print(f"Detected 3-class model ({current_classes})")
         else:
-            current_classes = ['UP', 'DOWN', 'RIGHT', 'LEFT', 'NULL']
-            print(f"Detected 5-class model ({current_classes})")
+            current_classes = ['UP', 'OK', 'THUMB', 'PALM', 'ROCK', 'STONE']
+            print(f"Detected {num_classes}-class model ({current_classes})")
             
         model_path = path
         model_name = name
@@ -74,11 +78,11 @@ def load_keras_model(key):
         return False
 
 # Load default model
-for k in ['2', '1']:
+for k in ['2',  '1']:
     if load_keras_model(k):
         break
 else:
-    print("Warning: No pre-trained Keras model files found in workspace. Run train.py or train_transfer_learning.py first.")
+    print("Warning: No pre-trained Keras model files found in workspace. Run train_mini_resnet.py or train_mobilenet.py first.")
     sys.exit(1)
 
 # Initialize webcam
@@ -124,7 +128,8 @@ while True:
     normalized_roi = resized_roi.astype(np.float32) / 255.0
     
     # Match the model's float32 input range (MobileNet expects [-1, 1], CNNs expect [0, 1])
-    if 'MobileNet' in model_name:
+    # MobileNetV2 finetuned model has internal scaling, so we don't scale it externally
+    if 'MobileNet' in model_name and 'finetuned' not in model_path.lower():
         float_roi = (normalized_roi * 2.0) - 1.0
     else:
         float_roi = normalized_roi
@@ -169,8 +174,8 @@ while True:
     cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (50, 50, 50), -1)
     cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (150, 150, 150), 1)
     
-    cv2.putText(frame, "Switch Model [Press 1-2]:", (20, height - 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame, "1: Mini ResNet 96x96 (FT) | 2: Mini ResNet 128x128 (FT)", (20, height - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    cv2.putText(frame, "Switch Model [Press 1-3]:", (20, height - 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.putText(frame, "1: Mini ResNet | 2: MobileNetV2 Gesture", (20, height - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
     cv2.putText(frame, "[q]: Quit | [s]: Take Snapshot", (20, height - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
 
     # If there is a loading error, show it in red

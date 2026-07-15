@@ -13,18 +13,18 @@ os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
 # CONFIGURATION
-SIGN_MINIST_DIR = "dataset/sign_mnist"
-DATASET_DIR = "dataset/train"
-REAL_LIFE_DIR = "./new_test_data"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+SIGN_MINIST_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "dataset/sign_mnist"))
+DATASET_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "dataset/train"))
+REAL_LIFE_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "new_test_data"))
+MODELS_ROOT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "models"))
+TF_MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "tf")
 IMG_SIZE = (96, 96)
 BATCH_SIZE = 32
 PRETRAIN_BATCH_SIZE = 256
 
 PRETRAIN_TRAIN_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_train/sign_mnist_train.csv"
 PRETRAIN_TEST_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_test.csv"
-
-MODELS_ROOT_DIR = "models"
-TF_MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "tf")
 
 
 def ensure_parent_dir(file_path):
@@ -392,8 +392,8 @@ else:
     ft_test_loss, ft_test_acc = -1.0, -1.0
 
 # Save final fine-tuned model
-ft_model_path = os.path.join(TF_MODELS_DIR, "Mini_ResNet_finetuned_96.keras")
-ft_onnx_path = os.path.join(TF_MODELS_DIR, "Mini_ResNet_finetuned_96.onnx")
+ft_model_path = os.path.join(TF_MODELS_DIR, "Mini_ResNet_finetuned.keras")
+ft_onnx_path = os.path.join(TF_MODELS_DIR, "Mini_ResNet_finetuned.onnx")
 
 print(f"Saving Keras model to {ft_model_path}...")
 try:
