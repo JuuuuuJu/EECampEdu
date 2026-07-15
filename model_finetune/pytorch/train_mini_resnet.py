@@ -12,7 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 
 # CONFIGURATION
-IMG_SIZE = (128, 128)
+IMG_SIZE = (96, 96)
 BATCH_SIZE = 32
 PRETRAIN_BATCH_SIZE = 256
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,7 +21,15 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SIGN_MINIST_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../dataset/sign_mnist"))
 DATASET_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../dataset/train"))
 REAL_LIFE_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../new_test_data"))
-MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models"))
+MODELS_ROOT_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models"))
+MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "pytorch")
+TF_MODELS_DIR = os.path.join(MODELS_ROOT_DIR, "tf")
+
+
+def ensure_parent_dir(file_path):
+    parent = os.path.dirname(file_path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
 
 PRETRAIN_TRAIN_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_train/sign_mnist_train.csv"
 PRETRAIN_TEST_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_test.csv"
@@ -352,6 +360,7 @@ def save_pytorch_as_keras(pytorch_model, keras_save_path, img_size):
                 w_keras = np.transpose(w_pt, (1, 0))
                 layer.set_weights([w_keras, b_pt])
                 
+        ensure_parent_dir(keras_save_path)
         keras_model.save(keras_save_path)
         print(f"Successfully converted and saved Keras model to {keras_save_path}")
     except Exception as e:
@@ -364,66 +373,66 @@ def main():
     print("=== Step 1: Preparing Sign Language MNIST Dataset ===")
     train_csv, test_csv = prepare_sign_language_mnist()
     
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    pretrain_weights_path = os.path.join(MODELS_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.pth")
+    pretrain_weights_path = os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights.pth")
     
     # Instantiate Base Model
     resnet_base = MiniResNetBase(input_channels=1).to(DEVICE)
     
-    # Locate pre-trained weights
+    # Check for existing pre-trained weights
     has_pretrained = os.path.exists(pretrain_weights_path)
     if not has_pretrained:
-        # Fallback to 96x96 PyTorch model if available
-        fallback_pth = os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights_96.pth")
-        if os.path.exists(fallback_pth):
-            print(f"Found 96x96 PyTorch pre-trained weights: {fallback_pth}. Using it.")
-            resnet_base.load_state_dict(torch.load(fallback_pth, map_location=DEVICE))
-            torch.save(resnet_base.state_dict(), pretrain_weights_path)
-            has_pretrained = True
-
-    if not has_pretrained:
-        # Check Keras files
-        h5_paths = [
-            os.path.join(MODELS_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5"),
-            os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights_96.h5"),
-            os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights.h5")
+        # Check if there is an h5 file from the Keras version we can convert
+        h5_path = pretrain_weights_path.replace(".pth", ".h5")
+        h5_candidates = [
+            h5_path,
+            os.path.join(MODELS_DIR, "mini_resnet_pretrained_weights.h5"),
+            os.path.join(TF_MODELS_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5"),
+            os.path.join(TF_MODELS_DIR, "mini_resnet_pretrained_weights.h5"),
+            os.path.join(MODELS_ROOT_DIR, f"mini_resnet_pretrained_weights_{IMG_SIZE[0]}.h5"),
+            os.path.join(MODELS_ROOT_DIR, "mini_resnet_pretrained_weights.h5"),
         ]
-        for h5_path in h5_paths:
-            if os.path.exists(h5_path):
-                print(f"Found existing Keras pre-trained weights: {h5_path}. Converting to PyTorch...")
+        h5_path = next((path for path in h5_candidates if os.path.exists(path)), None)
+            
+        if h5_path:
+            print(f"Found existing Keras pre-trained weights: {h5_path}. Converting to PyTorch...")
+            try:
+                import tensorflow as tf
+                # Build temp keras model to load the weights
+                temp_model = tf.keras.models.load_model(h5_path, compile=False)
+                # Find resnet_base block inside temp_model
+                # temp_model might be a Model with a layer called 'resnet_base'
                 try:
-                    import tensorflow as tf
-                    temp_model = tf.keras.models.load_model(h5_path, compile=False)
-                    try:
-                        temp_base = temp_model.get_layer('resnet_base')
-                    except Exception:
-                        temp_base = temp_model
+                    temp_base = temp_model.get_layer('resnet_base')
+                except Exception:
+                    temp_base = temp_model
+                
+                # Assign to state_dict
+                layer_mapping = {
+                    'conv1_1': ('conv1_1.weight', 'conv1_1.bias'),
+                    'conv1_2': ('conv1_2.weight', 'conv1_2.bias'),
+                    'conv1_3': ('conv1_3.weight', 'conv1_3.bias'),
+                    'shortcut_conv2': ('shortcut_conv2.weight', 'shortcut_conv2.bias'),
+                    'conv2_1': ('conv2_1.weight', 'conv2_1.bias'),
+                    'conv2_2': ('conv2_2.weight', 'conv2_2.bias'),
+                }
+                
+                new_state_dict = {}
+                for k_name, (w_key, b_key) in layer_mapping.items():
+                    k_layer = temp_base.get_layer(k_name)
+                    w_keras, b_keras = k_layer.get_weights()
+                    # Keras format: (h, w, in, out) -> PyTorch: (out, in, h, w)
+                    w_pt = np.transpose(w_keras, (3, 2, 0, 1))
+                    new_state_dict[w_key] = torch.tensor(w_pt)
+                    new_state_dict[b_key] = torch.tensor(b_keras)
                     
-                    layer_mapping = {
-                        'conv1_1': ('conv1_1.weight', 'conv1_1.bias'),
-                        'conv1_2': ('conv1_2.weight', 'conv1_2.bias'),
-                        'conv1_3': ('conv1_3.weight', 'conv1_3.bias'),
-                        'shortcut_conv2': ('shortcut_conv2.weight', 'shortcut_conv2.bias'),
-                        'conv2_1': ('conv2_1.weight', 'conv2_1.bias'),
-                        'conv2_2': ('conv2_2.weight', 'conv2_2.bias'),
-                    }
-                    
-                    new_state_dict = {}
-                    for k_name, (w_key, b_key) in layer_mapping.items():
-                        k_layer = temp_base.get_layer(k_name)
-                        w_keras, b_keras = k_layer.get_weights()
-                        w_pt = np.transpose(w_keras, (3, 2, 0, 1))
-                        new_state_dict[w_key] = torch.tensor(w_pt)
-                        new_state_dict[b_key] = torch.tensor(b_keras)
-                        
-                    resnet_base.load_state_dict(new_state_dict)
-                    torch.save(resnet_base.state_dict(), pretrain_weights_path)
-                    print(f"Pre-trained weights successfully converted and saved to {pretrain_weights_path}")
-                    has_pretrained = True
-                    break
-                except Exception as e:
-                    print(f"Failed to convert Keras weights from {h5_path}: {e}")
-
+                resnet_base.load_state_dict(new_state_dict)
+                ensure_parent_dir(pretrain_weights_path)
+                torch.save(resnet_base.state_dict(), pretrain_weights_path)
+                print(f"Pre-trained weights successfully converted and saved to {pretrain_weights_path}")
+                has_pretrained = True
+            except Exception as e:
+                print(f"Failed to convert Keras weights: {e}. Will pre-train from scratch.")
+                
     if has_pretrained:
         print("\n[INFO] Found existing pre-trained weights. Skipping Sign Language MNIST loading and training entirely!")
         resnet_base.load_state_dict(torch.load(pretrain_weights_path, map_location=DEVICE))
@@ -504,6 +513,7 @@ def main():
         print(f"  Val Acc:   {pre_val_acc * 100:.2f}%")
         print(f"  Test Loss:  {pre_test_loss:.4f} | Test Acc:  {pre_test_acc * 100:.2f}%")
 
+        ensure_parent_dir(pretrain_weights_path)
         torch.save(resnet_base.state_dict(), pretrain_weights_path)
         print(f"Pre-trained base weights saved to {pretrain_weights_path}")
 
@@ -645,11 +655,12 @@ def main():
         ft_test_loss, ft_test_acc = -1.0, -1.0
 
     # Save final fine-tuned model
-    ft_model_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned_128.pth")
-    ft_onnx_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned_128.onnx")
-    ft_keras_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned_128.keras")
+    ft_model_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned.pth")
+    ft_onnx_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned.onnx")
+    ft_keras_path = os.path.join(MODELS_DIR, "Mini_ResNet_finetuned.keras")
 
     print(f"Saving PyTorch state dict to {ft_model_path}...")
+    ensure_parent_dir(ft_model_path)
     torch.save(ft_model.state_dict(), ft_model_path)
     print(f"Fine-tuned Mini ResNet model weights saved to {ft_model_path}")
 
@@ -658,6 +669,7 @@ def main():
     try:
         ft_model.eval()
         dummy_input = torch.zeros(1, 1, IMG_SIZE[0], IMG_SIZE[1]).to(DEVICE)
+        ensure_parent_dir(ft_onnx_path)
         torch.onnx.export(
             ft_model,
             dummy_input,

@@ -1,101 +1,101 @@
-﻿# Model Fine-Tune
+# Model Fine-Tune
 
-`model_finetune/` is owned by the model team. It keeps training scripts, datasets, and source model artifacts.
+This folder keeps only the files needed to train gesture models and hand off
+`.keras` source models to the firmware deploy pipeline.
 
-Both source frameworks are supported:
-
-```text
-PyTorch source    -> .pth and/or .onnx, optionally translated to .keras for deploy tooling
-TensorFlow source -> .keras
-Deploy target     -> int8 TFLite generated under firmware/pc/artifacts/models/
-```
+## Folder Structure
 
 ```text
 model_finetune/
   dataset/
-    train/          Training images
-    validation/     Validation images used by model/deploy checks
-    sign_mnist/     Reference dataset
-  models/           Source model artifacts; subfolders are created only when artifacts are generated
-    tf/             TensorFlow/Keras training outputs
-    pytorch/        PyTorch training outputs and optional Keras handoff
-  pytorch/          PyTorch training and ONNX webcam demo
+    train/          Training images used by the training scripts
+    validation/     Preserved validation set for benchmark / manual checks
+  models/
+    tf/             TensorFlow/Keras source models (.keras) and weights (.h5)
+    pytorch/        PyTorch weights (.pth) and exported ONNX models (.onnx)
+  pytorch/          PyTorch versions of training and demonstration scripts
+    train_mini_resnet.py PyTorch training (96x96, grayscale, 6-class)
+    webcam_demo.py  PC webcam demo using OpenCV DNN to load and test ONNX models
+  train_mini_resnet.py Keras/TensorFlow Mini ResNet training (96x96, grayscale, 6-class)
+  train_mobilenet.py Keras/TensorFlow MobileNetV2 training (96x96, grayscale, 6-class)
+  webcam_demo.py    Optional PC camera demo (Keras/TensorFlow version)
 ```
 
-## Class Contract
-
-Current full-system class order:
+## Class Order
 
 ```text
-up, down, right, left, null
+up, ok, thumb, palm, rock, stone (6 classes)
 ```
 
-Some PyTorch training scripts currently train only the four gesture classes:
+Keep this order aligned across the training scripts, local datasets, and the webcam demo tool.
 
-```text
-up, down, right, left
-```
+## Train Models
 
-Before deploy, the model and deploy teams must confirm whether `null` is included in the exported source model.
-
-## PyTorch Training Flow
+### MobileNetV2 version (Recommended for best accuracy/speed)
 
 Run from this folder:
 
 ```powershell
 cd model_finetune
-python pytorch\train_96.py
+python train_mobilenet.py   # Keras Transfer Learning (6-class MobileNetV2)
 ```
 
-The PyTorch `train_96.py` script trains/fine-tunes gesture models and exports artifacts under `models/pytorch/`, including `.pth`, `.onnx`, and deploy-compatible `.keras` handoff files when supported by the script. The folder is created only when an artifact is saved.
+This trains a MobileNetV2 model using Keras/TensorFlow. It is highly recommended due to its superior accuracy and execution speed on target devices.
 
-## TensorFlow Training Flow
+### Mini ResNet version (Alternative)
+
+You can train a Mini ResNet base model using either the PyTorch or Keras version:
+
+#### PyTorch version
+
+```powershell
+cd model_finetune
+python pytorch/train_mini_resnet.py # PyTorch Transfer Learning (6-class ResNet)
+```
+
+During execution, the PyTorch training script will automatically convert existing Keras weights, complete classification head warmup, full fine-tuning, and save models under `models/pytorch/`.
+
+#### Keras version (Legacy)
+
+```powershell
+cd model_finetune
+python train_mini_resnet.py # Keras Transfer Learning (6-class ResNet)
+```
+
+The training script reads images from `dataset/train/`, converts them to
+grayscale, resizes them, normalizes pixels to `[0.0, 1.0]`, and
+splits the training set internally for validation.
+
+The important handoff artifacts are:
+
+```text
+models/tf/<model_name>.keras
+```
+
+Firmware deploy quantization reads these `.keras` files and generates int8
+TFLite models under:
+
+```text
+../firmware/pc/artifacts/models/
+```
+
+## Optional Demo
+
+### ONNX Demo (Recommended for PyTorch)
 
 Run from this folder:
 
 ```powershell
-cd model_finetune
-python train_96.py
+python pytorch/webcam_demo.py
 ```
 
-The TensorFlow `train_96.py` script trains/fine-tunes gesture models and saves `.keras` and `.onnx` source artifacts under `models/tf/`. The folder is created only when an artifact is saved.
+This runs the demo by loading ONNX models (`.onnx`) directly using OpenCV DNN. It does not require TensorFlow or PyTorch.
 
-## Webcam Demo
-
-Use the PyTorch ONNX demo for model-team sanity checks:
-
-```powershell
-cd model_finetune
-python pytorch\webcam_demo.py
-```
-
-This is a PC-side model check. It does not flash firmware and does not replace deploy benchmark.
-
-For TensorFlow/Keras source models:
+### Keras Demo (Legacy)
 
 ```powershell
 python webcam_demo.py
 ```
 
-## Deploy Handoff
-
-The model team should place source models under:
-
-```text
-model_finetune/models/tf/ or model_finetune/models/pytorch/
-```
-
-Deploy consumes the agreed source artifact and generates ESP32 deploy artifacts under:
-
-```text
-firmware/pc/artifacts/models/
-firmware/pc/artifacts/reports/
-```
-
-Do not put deploy-only quantization ownership inside `model_finetune/`. Quantization, flashing, and ESP benchmark belong to `firmware/`.
-
-If the source model is PyTorch-only, export ONNX and/or a Keras-compatible handoff first. ESP32-S3 does not run PyTorch directly in this project; it runs the unified int8 TFLite deploy target.
-
-## Boundary With Output
-
-`model_finetune/` does not control ESP2 servo output. The model team owns source model quality and class order; deploy/firmware owns int8 TFLite conversion, ESP1 flashing, benchmark, and PC-to-ESP2 gesture forwarding.
+This is kept only for PC-side visual testing. It is not required by firmware
+deployment. The demo loads Keras source `.keras` models directly from `models/tf/`.

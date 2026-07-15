@@ -20,7 +20,7 @@ dataset/
 
 ## ⚙️ 訓練時的資料處理規則
 
-在 `train.py` 訓練流程中，程式會執行以下操作：
+在 `train_mini_resnet.py`（或 `train_mobilenet.py`）訓練流程中，程式會執行以下操作：
 
 1. **載入目錄**：讀取 `dataset/train/` 底下的影像。
 2. **動態分割**：從 `dataset/train/` 內部切出 validation samples。
@@ -37,4 +37,4 @@ dataset/
 1. 將拍攝的照片放入 `dataset/train/` 底下對應的類別資料夾（如 `up/`、`down/` 等）。
 2. 照片檔案格式支援 `.jpg`, `.jpeg`, `.png`, `.bmp`。
 3. 建議照片背景儘量維持單純，或者在訓練前先將手部區域裁剪出來，以獲得最佳的學習效果。
-4. 放好照片後重新運行 `python train.py` 進行訓練。
+4. 放好照片後重新運行 `python train_mini_resnet.py`（或 `python train_mobilenet.py`）進行訓練。

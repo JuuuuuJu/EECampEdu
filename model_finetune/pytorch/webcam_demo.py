@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 
 # CONFIGURATION
-class_names = ['UP', 'DOWN', 'RIGHT', 'LEFT']
+class_names = ['UP', 'OK', 'THUMB', 'PALM', 'ROCK', 'STONE']
 expected_channels = 1
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,15 +13,14 @@ MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../models/pytorch"))
 
 # Model mappings (using ONNX models)
 MODELS = {
-    '1': (os.path.join(MODELS_DIR, 'Mini_ResNet_finetuned_96.onnx'), 'Mini ResNet FT (96x96) ONNX'),
-    '2': (os.path.join(MODELS_DIR, 'Mini_ResNet_finetuned_128.onnx'), 'Mini ResNet FT (128x128) ONNX')
+    '1': (os.path.join(MODELS_DIR, 'Mini_ResNet_finetuned.onnx'), 'Mini ResNet FT ONNX')
 }
 
-current_key = '2'
+current_key = '1'
 model_path, model_name = MODELS[current_key]
 net = None
 error_msg = ""
-IMG_SIZE = (128, 128)
+IMG_SIZE = (96, 96)
 
 def load_onnx_model(key):
     global net, model_path, model_name, error_msg, current_key, IMG_SIZE
@@ -53,11 +52,11 @@ def load_onnx_model(key):
         return False
 
 # Load default model
-for k in ['2', '1']:
+for k in ['1']:
     if load_onnx_model(k):
         break
 else:
-    print("Warning: No pre-trained ONNX model files found in models directory. Run train_96.py or train_128.py first.")
+    print("Warning: No pre-trained ONNX model files found in models directory. Run train_mini_resnet.py first.")
     sys.exit(1)
 
 # Initialize webcam
@@ -133,13 +132,11 @@ while True:
     # Render Active Model Info
     cv2.putText(frame, f"Model: {model_name}", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2)
 
-    # Render Switch Model Menu at the bottom
-    cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (50, 50, 50), -1)
-    cv2.rectangle(frame, (10, height - 110), (width - 10, height - 10), (150, 150, 150), 1)
+    # Render menu at the bottom
+    cv2.rectangle(frame, (10, height - 60), (width - 10, height - 10), (50, 50, 50), -1)
+    cv2.rectangle(frame, (10, height - 60), (width - 10, height - 10), (150, 150, 150), 1)
     
-    cv2.putText(frame, "Switch Model [Press 1-2]:", (20, height - 85), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
-    cv2.putText(frame, "1: Mini ResNet 96x96 (ONNX) | 2: Mini ResNet 128x128 (ONNX)", (20, height - 60), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
-    cv2.putText(frame, "[q]: Quit | [s]: Take Snapshot", (20, height - 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+    cv2.putText(frame, "[q]: Quit | [s]: Take Snapshot", (20, height - 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1, cv2.LINE_AA)
 
     # If there is a loading error, show it in red
     if error_msg:
@@ -157,9 +154,6 @@ while True:
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key in [ord('1'), ord('2')]:
-        target_key = chr(key)
-        load_onnx_model(target_key)
     elif key == ord('s'):
         timestamp = int(time.time())
         img_name = f"snapshot_{predicted_label}_{timestamp}.jpg"
