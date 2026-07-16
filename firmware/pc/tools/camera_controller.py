@@ -25,7 +25,8 @@ ESP1_ASSERT_CONTROL_LINES = os.environ.get('ESP1_ASSERT_CONTROL_LINES', '0').low
 ESP1_STARTUP_CONFIG = os.environ.get('ESP1_STARTUP_CONFIG', '0').lower() in ('1', 'true', 'yes', 'on')
 ESP2_PORT = os.environ.get('OUTPUT_ESP2_PORT', os.environ.get('ESP2_PORT', ''))
 ESP2_BAUD_RATE = int(os.environ.get('OUTPUT_ESP2_BAUD_RATE', os.environ.get('ESP2_BAUD_RATE', '115200')))
-CLASS_NAMES = ['up', 'down', 'right', 'left', 'null']
+CLASS_NAMES = ['up', 'ok', 'thumb', 'palm', 'rock', 'stone']
+ESP2_DIRECTION_CLASSES = {'up', 'down', 'right', 'left', 'null'}
 OUTPUT_DIR = './captured_images'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 receiving_file = False
@@ -119,6 +120,9 @@ def forward_result_to_esp2(line):
         parts = line.split(",")
         pred_idx = int(parts[1])
         pred_name = label_name(pred_idx)
+        if pred_name not in ESP2_DIRECTION_CLASSES:
+            print(f"[ESP2] skipped unmapped gesture: {pred_idx}({pred_name})")
+            return
         command = f"GESTURE,{pred_idx},{pred_name}\n"
         esp2_ser.write(command.encode("ascii"))
         esp2_ser.flush()

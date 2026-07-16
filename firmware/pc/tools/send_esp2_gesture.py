@@ -1,34 +1,44 @@
-﻿import argparse
+import argparse
 import time
 
 import serial
 
-GESTURES = {
+ACTIONS = {
+    "up": "up",
+    "down": "down",
+    "left": "left",
+    "right": "right",
+    "clamp": "clamp",
+    "close": "clamp",
+    "grab": "clamp",
+    "release": "release",
+    "open": "release",
+    "none": "none",
+    "null": "none",
+}
+
+LEGACY_GESTURES = {
     "0": (0, "up"),
-    "up": (0, "up"),
     "1": (1, "down"),
-    "down": (1, "down"),
     "2": (2, "right"),
-    "right": (2, "right"),
     "3": (3, "left"),
-    "left": (3, "left"),
     "4": (4, "null"),
-    "null": (4, "null"),
-    "none": (4, "null"),
 }
 
 
 def build_command(text):
     key = text.strip().lower()
-    if key in GESTURES:
-        idx, name = GESTURES[key]
+    if key in ACTIONS:
+        return f"ACTION,{ACTIONS[key]}"
+    if key in LEGACY_GESTURES:
+        idx, name = LEGACY_GESTURES[key]
         return f"GESTURE,{idx},{name}"
     return text.strip()
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Send one gesture/manual servo command to the ESP2 output controller.")
-    parser.add_argument("command", help="Gesture name/index or manual command such as B90, A90, P100, C30.")
+    parser = argparse.ArgumentParser(description="Send one output action/manual servo command to the ESP2 output controller.")
+    parser.add_argument("command", help="Output action such as up/down/left/right/clamp/release/none, legacy gesture index 0-4, or manual servo command such as B90, A90, P100, C30.")
     parser.add_argument("--port", "-p", required=True, help="Serial port connected to ESP2, for example COM7.")
     parser.add_argument("--baudrate", "--baud", type=int, default=115200)
     parser.add_argument("--repeat", type=int, default=1)
@@ -69,4 +79,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

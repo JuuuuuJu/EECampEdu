@@ -1,4 +1,4 @@
-﻿# EECampEdu
+# EECampEdu
 
 EECampEdu is the integrated workspace for the gesture-controlled robotic arm system.
 
@@ -47,10 +47,10 @@ ESP1 ESP32-S3
 PC
   -> receives ESP1 result
   -> benchmark and/or UI live preview
-  -> forwards GESTURE,<class>,<name> to ESP2
+  -> maps each gesture class to a user-selected output action
 
 ESP2 normal ESP32
-  -> receives gesture command over second USB serial
+  -> receives ACTION,up/down/left/right/clamp/release/none over second USB serial
   -> drives robotic arm servos
 ```
 
@@ -139,30 +139,40 @@ TensorFlow/Keras training flow:
 
 ```powershell
 cd model_finetune
-python train_96.py
+python train_mobilenet.py --check-only
+python train_mobilenet.py
+cd ..
 ```
 
 Expected TensorFlow/Keras handoff artifact:
 
 ```text
-model_finetune/models/tf/Mini_ResNet_finetuned_96.keras
+model_finetune/models/tf/MobileNetV2_finetuned.keras
+```
+
+Mini ResNet remains available for comparison:
+
+```powershell
+python train_mini_resnet.py
+cd ..
+python firmware\pc\tools\quantize_keras_model.py --model-name Mini_ResNet_finetuned
 ```
 
 PyTorch training flow:
 
 ```powershell
 cd model_finetune
-python pytorch\train_96.py
+python pytorch\train_mini_resnet.py
 ```
 
 PyTorch models should be exported through the documented ONNX / Keras-compatible handoff path before firmware quantization. The ESP32 deploy target is still int8 TFLite.
 
 ## Quantize And Flash Model
 
-Default TensorFlow source model:
+Default TensorFlow source model (recommended):
 
 ```text
-model_finetune/models/tf/Mini_ResNet_finetuned_96.keras
+model_finetune/models/tf/MobileNetV2_finetuned.keras
 ```
 
 Quantize with representative calibration images from `model_finetune/dataset/train/`:
@@ -174,14 +184,14 @@ python firmware\pc\tools\quantize_keras_model.py
 Generated deploy artifacts:
 
 ```text
-firmware/pc/artifacts/models/Mini_ResNet_finetuned_96_int8.tflite
-firmware/pc/artifacts/reports/Mini_ResNet_finetuned_96_quantization_report.json
+firmware/pc/artifacts/models/MobileNetV2_finetuned_int8.tflite
+firmware/pc/artifacts/reports/MobileNetV2_finetuned_quantization_report.json
 ```
 
 Flash only the ESP1 model partition:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" -p COM6
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8.tflite" -p COM6
 ```
 
 ## Benchmark
@@ -196,14 +206,14 @@ Benchmark inference only:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
 Benchmark plus ESP2 robotic arm output:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
 ```
 
 Port meaning:
@@ -236,6 +246,7 @@ In the app:
 USB CDC Port      -> ESP1 COM port
 ESP2 Output Port  -> ESP2 COM port
 Auto-forward RESULT checked
+Gesture -> Output Mapping set in the ESP2 Output panel
 ```
 
 ## Unit Tests
@@ -264,4 +275,3 @@ Full integration test order:
 6. Run deploy benchmark with --esp2-port to verify accuracy, output similarity, latency, and servo command forwarding.
 7. Run camera + USB + ImGui App integration for live preview and real gesture-to-output behavior.
 ```
-

@@ -1,8 +1,8 @@
-﻿# ESP2 Output Firmware
+# ESP2 Output Firmware
 
 `firmware/esp2_output/` is a standalone ESP-IDF project for the normal ESP32 board that controls the robotic arm servos.
 
-ESP1 handles camera and model inference. The PC receives ESP1 `RESULT,...` lines and forwards `GESTURE,<index>,<name>` commands to ESP2 over a second USB serial connection.
+ESP1 handles camera and model inference. The PC receives ESP1 `RESULT,...` lines, maps the predicted gesture to one output action, then forwards `ACTION,<name>` commands to ESP2 over a second USB serial connection.
 
 ## Servo Pins
 
@@ -35,7 +35,19 @@ STATE,gesture=4,name=null,base=90,arm=90,pitch=90,claw=30
 
 ## Command Protocol
 
-Gesture commands from PC:
+Preferred action commands from PC / APP:
+
+```text
+ACTION,up       pitch servo moves upward by one step
+ACTION,down     pitch servo moves downward by one step
+ACTION,left     base servo moves left by one step
+ACTION,right    base servo moves right by one step
+ACTION,clamp    claw servo closes
+ACTION,release  claw servo opens
+ACTION,none     no movement
+```
+
+Legacy gesture commands are still accepted for compatibility:
 
 ```text
 GESTURE,0,up
@@ -73,6 +85,8 @@ From repository root:
 
 ```powershell
 python firmware\pc\tools\send_esp2_gesture.py --port COM7 up
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 clamp
+python firmware\pc\tools\send_esp2_gesture.py --port COM7 release
 python firmware\pc\tools\send_esp2_gesture.py --port COM7 right --repeat 3
 python firmware\pc\tools\send_esp2_gesture.py --port COM7 TEST --timeout 5
 ```
@@ -84,4 +98,3 @@ Benchmark path          firmware/pc/benchmark/run_benchmark_png.py --esp2-port C
 Python controller path  OUTPUT_ESP2_PORT=COM7 python firmware/pc/tools/camera_controller.py
 ImGui app path          Connect ESP2 Output panel and enable Auto-forward RESULT
 ```
-

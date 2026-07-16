@@ -19,6 +19,12 @@ public:
     void DisconnectOutput();
     bool IsOutputConnected() const;
     void SendOutputGesture(int gesture, const std::string& name);
+    void SendOutputAction(const std::string& action);
+    const char* ModelClassName(int index) const;
+    const char* OutputActionName(int index) const;
+
+    static constexpr int kModelClassCount = 6;
+    static constexpr int kOutputActionCount = 7;
 
     float camera_focus = 0.0f;
     bool aec_enabled = true;
@@ -47,6 +53,7 @@ public:
     char output_port[64] = "COM7";
     int output_baud_rate = 115200;
     bool auto_forward_output = true;
+    int output_action_for_class[kModelClassCount] = {0, 1, 2, 3, 4, 5};
     std::string output_status;
     std::string last_output_command;
 
@@ -69,5 +76,3 @@ private:
     void ParseCdcFrames();
     void StoreDecodedFrame(int format, int width, int height, const std::vector<uint8_t>& payload);
 };
-
-

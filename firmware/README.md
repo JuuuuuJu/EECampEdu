@@ -100,10 +100,10 @@ python firmware\pc\tools\send_esp2_gesture.py --port COM7 P100
 
 ## Model Deploy
 
-Default source model:
+Default source model (recommended):
 
 ```text
-model_finetune/models/tf/Mini_ResNet_finetuned_96.keras
+model_finetune/models/tf/MobileNetV2_finetuned.keras
 ```
 
 Quantize source model into int8 TFLite:
@@ -124,14 +124,14 @@ The quantization script:
 Generated files:
 
 ```text
-firmware/pc/artifacts/models/Mini_ResNet_finetuned_96_int8.tflite
-firmware/pc/artifacts/reports/Mini_ResNet_finetuned_96_quantization_report.json
+firmware/pc/artifacts/models/MobileNetV2_finetuned_int8.tflite
+firmware/pc/artifacts/reports/MobileNetV2_finetuned_quantization_report.json
 ```
 
 Flash only ESP1 model partition:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" -p COM6
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8.tflite" -p COM6
 ```
 
 The model partition is independent from the firmware app partition.
@@ -148,14 +148,14 @@ Inference benchmark:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
 Inference benchmark plus ESP2 output forwarding:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\Mini_ResNet_finetuned_96_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
 ```
 
 Primary deploy metrics:
@@ -218,3 +218,4 @@ Current flash-storage output:
 ```
 
 `latest.bmp` is intentionally not generated in the firmware hot path. Raw payload and metadata are enough for firmware tests, and avoiding BMP conversion keeps storage writes deterministic.
+

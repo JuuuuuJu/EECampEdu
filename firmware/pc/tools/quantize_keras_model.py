@@ -18,7 +18,7 @@ DEFAULT_MODEL_SOURCE_DIR = PROJECT_ROOT / "model_finetune" / "models" / "tf"
 DEFAULT_CALIBRATION_DIR = PROJECT_ROOT / "model_finetune" / "dataset" / "train"
 DEFAULT_OUTPUT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "models"
 DEFAULT_REPORT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "reports"
-CLASS_NAMES = ["up", "down", "right", "left", "null"]
+CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 FOUR_CLASS_NAMES = ["up", "down", "right", "left"]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 
@@ -144,12 +144,106 @@ def build_mini_resnet_keras_model(tf, image_size, num_classes):
     return tf.keras.Model(inputs, outputs)
 
 
+def build_mobilenetv2_keras_model(tf, image_size, num_classes):
+    width, height = image_size
+    inputs = tf.keras.Input(shape=(height, width, 1), name="input_9")
+    x = tf.keras.layers.GaussianNoise(0.05, name="gaussian_noise_2")(inputs)
+    x = tf.keras.layers.Concatenate(axis=-1, name="concatenate_1")([x, x, x])
+    x = tf.keras.layers.Rescaling(scale=2.0, offset=-1.0, name="rescaling_1")(x)
+    base_model = tf.keras.applications.MobileNetV2(
+        input_shape=(height, width, 3),
+        alpha=0.35,
+        include_top=False,
+        weights=None,
+    )
+    x = base_model(x)
+    x = tf.keras.layers.GlobalAveragePooling2D(name="global_average_pooling2d_1")(x)
+    base = tf.keras.Model(inputs, x, name="mobilenet_base")
+
+    ft_inputs = tf.keras.Input(shape=(height, width, 1), name="input_10")
+    ft_x = base(ft_inputs, training=False)
+    ft_x = tf.keras.layers.Dropout(0.5, name="dropout_2")(ft_x)
+    outputs = tf.keras.layers.Dense(
+        num_classes,
+        activation="softmax",
+        kernel_regularizer=tf.keras.regularizers.l2(0.01),
+        name="dense_2",
+    )(ft_x)
+    return tf.keras.Model(ft_inputs, outputs)
+
+
 def is_keras_archive(model_path):
     if not zipfile.is_zipfile(model_path):
         return False
     with zipfile.ZipFile(model_path) as archive:
         names = set(archive.namelist())
     return {"metadata.json", "config.json", "model.weights.h5"}.issubset(names)
+
+
+def keras_archive_contains(model_path, needle):
+    if not zipfile.is_zipfile(model_path):
+        return False
+    with zipfile.ZipFile(model_path) as archive:
+        try:
+            config = archive.read("config.json").decode("utf-8", errors="ignore")
+        except KeyError:
+            return False
+    return needle in config
+
+
+def h5_dataset(weights, path):
+    candidates = [path, path.replace("/", "\\", 1)]
+    for candidate in candidates:
+        if candidate in weights:
+            return weights[candidate]
+    raise KeyError(path)
+
+
+def sanitize_keras3_config_for_tf210(value):
+    if isinstance(value, dict):
+        value.pop("optional", None)
+        config = value.get("config")
+        if isinstance(config, dict):
+            config.pop("optional", None)
+            if "batch_shape" in config and "batch_input_shape" not in config:
+                config["batch_input_shape"] = config.pop("batch_shape")
+        for child in list(value.values()):
+            sanitize_keras3_config_for_tf210(child)
+    elif isinstance(value, list):
+        for child in value:
+            sanitize_keras3_config_for_tf210(child)
+
+
+def load_keras3_weights_by_shape(model, weights_path):
+    import h5py
+
+    arrays = []
+    with h5py.File(weights_path, "r") as weights:
+        def visit(name, obj):
+            if not hasattr(obj, "shape"):
+                return
+            if "/vars/" not in name:
+                return
+            if name.startswith("optimizer") or name.startswith("metrics"):
+                return
+            arrays.append([name, np.asarray(obj), False])
+
+        weights.visititems(visit)
+
+    if len(arrays) != len(model.weights):
+        raise RuntimeError(f"Keras archive weight count mismatch: model={len(model.weights)} archive={len(arrays)}")
+
+    for weight in model.weights:
+        expected_shape = tuple(weight.shape.as_list())
+        match_index = None
+        for index, (_, array, used) in enumerate(arrays):
+            if not used and tuple(array.shape) == expected_shape:
+                match_index = index
+                break
+        if match_index is None:
+            raise RuntimeError(f"No Keras archive weight matches {weight.name} shape={expected_shape}")
+        arrays[match_index][2] = True
+        weight.assign(arrays[match_index][1])
 
 
 def load_mini_resnet_archive(tf, model_path, image_size):
@@ -161,7 +255,7 @@ def load_mini_resnet_archive(tf, model_path, image_size):
         weights_path = Path(temp_dir) / "model.weights.h5"
 
         with h5py.File(weights_path, "r") as weights:
-            dense_kernel = weights["layers/dense/vars/0"]
+            dense_kernel = h5_dataset(weights, "layers/dense/vars/0")
             num_classes = int(dense_kernel.shape[-1])
             model = build_mini_resnet_keras_model(tf, image_size, num_classes)
             base = model.get_layer("resnet_base")
@@ -175,28 +269,45 @@ def load_mini_resnet_archive(tf, model_path, image_size):
             ]
             for layer_name, group_path in conv_mapping:
                 base.get_layer(layer_name).set_weights([
-                    np.asarray(weights[f"{group_path}/0"]),
-                    np.asarray(weights[f"{group_path}/1"]),
+                    np.asarray(h5_dataset(weights, f"{group_path}/0")),
+                    np.asarray(h5_dataset(weights, f"{group_path}/1")),
                 ])
             model.get_layer("dense_2").set_weights([
-                np.asarray(weights["layers/dense/vars/0"]),
-                np.asarray(weights["layers/dense/vars/1"]),
+                np.asarray(h5_dataset(weights, "layers/dense/vars/0")),
+                np.asarray(h5_dataset(weights, "layers/dense/vars/1")),
             ])
+    return model
+
+
+def load_mobilenetv2_archive(tf, model_path, image_size):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        with zipfile.ZipFile(model_path) as archive:
+            config = json.loads(archive.read("config.json"))
+            sanitize_keras3_config_for_tf210(config)
+            archive.extract("model.weights.h5", temp_dir)
+        weights_path = Path(temp_dir) / "model.weights.h5"
+
+        model = tf.keras.models.model_from_json(json.dumps(config))
+        load_keras3_weights_by_shape(model, weights_path)
     return model
 
 
 def load_source_model(tf, model_path, image_size):
     try:
         return tf.keras.models.load_model(model_path, compile=False)
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         if not is_keras_archive(model_path):
             raise
-        print("[INFO] Detected newer .keras archive. Rebuilding Mini ResNet for TensorFlow 2.10 compatibility.")
+        is_mobilenet = "MobileNetV2" in model_path.stem or keras_archive_contains(model_path, "MobileNetV2")
+        model_family = "MobileNetV2" if is_mobilenet else "Mini ResNet"
+        print(f"[INFO] Detected newer .keras archive. Rebuilding {model_family} for TensorFlow 2.10 compatibility.")
         try:
+            if is_mobilenet:
+                return load_mobilenetv2_archive(tf, model_path, image_size)
             return load_mini_resnet_archive(tf, model_path, image_size)
         except Exception as fallback_exc:
             raise RuntimeError(
-                "Failed to load newer .keras archive with the TensorFlow 2.10 compatibility loader."
+                f"Failed to load newer .keras archive with the TensorFlow 2.10 {model_family} compatibility loader."
             ) from fallback_exc
 
 
@@ -215,7 +326,7 @@ def main():
     )
     parser.add_argument(
         "--model-name",
-        default="Mini_ResNet_finetuned_96",
+        default="MobileNetV2_finetuned",
         help="Model basename under --model-source-dir.",
     )
     parser.add_argument("--keras", help="Explicit .keras source model path. Overrides --model-name.")
@@ -273,7 +384,8 @@ def main():
     converter.inference_output_type = tf.int8
 
     output_dir = Path(args.output_dir) if args.output_dir else DEFAULT_OUTPUT_DIR
-    output_path = Path(args.output) if args.output else output_dir / f"{args.model_name}_int8.tflite"
+    output_stem = model_path.stem
+    output_path = Path(args.output) if args.output else output_dir / f"{output_stem}_int8.tflite"
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(converter.convert())
@@ -286,12 +398,12 @@ def main():
         )
 
     report_dir = Path(args.report_dir) if args.report_dir else DEFAULT_REPORT_DIR
-    report_path = Path(args.report) if args.report else report_dir / f"{args.model_name}_quantization_report.json"
+    report_path = Path(args.report) if args.report else report_dir / f"{output_stem}_quantization_report.json"
     report_path = report_path.expanduser().resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report = {
         "version": 1,
-        "model_name": args.model_name,
+        "model_name": output_stem,
         "source_model": display_path(model_path),
         "exported_tflite": display_path(output_path),
         "calibration_dir": display_path(calibration_dir),

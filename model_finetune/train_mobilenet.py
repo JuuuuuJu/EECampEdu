@@ -1,4 +1,10 @@
 import os
+os.environ.setdefault('TF_ENABLE_ONEDNN_OPTS', '0')
+os.environ.setdefault('TF_USE_LEGACY_KERAS', '1')
+os.environ.setdefault('CUDA_VISIBLE_DEVICES', '-1')
+os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '2')
+
+import sys
 import time
 import urllib.request
 import shutil
@@ -6,11 +12,6 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from PIL import Image
-import matplotlib.pyplot as plt
-
-# Clean execution engine setup
-os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
-os.environ['TF_USE_LEGACY_KERAS'] = '1'
 
 # CONFIGURATION
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -21,11 +22,48 @@ MODELS_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "models/tf"))
 IMG_SIZE = (96, 96)
 BATCH_SIZE = 32
 PRETRAIN_BATCH_SIZE = 256
+USE_IMAGENET_WEIGHTS = os.environ.get("MOBILENET_IMAGENET_WEIGHTS", "0").lower() in ("1", "true", "yes", "on")
+CHECK_ONLY = "--check-only" in sys.argv
+if CHECK_ONLY:
+    sys.argv.remove("--check-only")
 
 def ensure_parent_dir(file_path):
     parent = os.path.dirname(file_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
+
+def get_mobilenet_base(input_shape=(96, 96, 1), alpha=0.35):
+    inputs = tf.keras.Input(shape=input_shape)
+    x = tf.keras.layers.GaussianNoise(0.05)(inputs)
+    # Convert grayscale to RGB using Concatenate layer
+    x = tf.keras.layers.Concatenate(axis=-1)([x, x, x])
+    # Scale to [-1, 1] range using Rescaling layer
+    x = tf.keras.layers.Rescaling(scale=2.0, offset=-1.0)(x)
+
+    base_model = tf.keras.applications.MobileNetV2(
+        input_shape=(96, 96, 3),
+        alpha=alpha,
+        include_top=False,
+        weights='imagenet' if USE_IMAGENET_WEIGHTS else None
+    )
+
+    x = base_model(x)
+    x = tf.keras.layers.GlobalAveragePooling2D()(x)
+    return tf.keras.Model(inputs, x, name='mobilenet_base')
+
+if CHECK_ONLY:
+    print("=== MobileNetV2 training handoff check ===")
+    base = get_mobilenet_base(input_shape=(IMG_SIZE[0], IMG_SIZE[1], 1), alpha=0.35)
+    inputs = tf.keras.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 1))
+    x = base(inputs, training=False)
+    x = tf.keras.layers.Dropout(0.5)(x)
+    outputs = tf.keras.layers.Dense(6, activation='softmax', kernel_regularizer=tf.keras.regularizers.l2(0.01))(x)
+    model = tf.keras.Model(inputs, outputs)
+    print(f"Input shape : {model.input_shape}")
+    print(f"Output shape: {model.output_shape}")
+    print(f"Source model: {os.path.join(MODELS_DIR, 'MobileNetV2_finetuned.keras')}")
+    print("Status      : OK")
+    raise SystemExit(0)
 
 PRETRAIN_TRAIN_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_train/sign_mnist_train.csv"
 PRETRAIN_TEST_URL = "https://github.com/emanbuc/ASL-Recognition-Deep-Learning/raw/main/datasets/sign-language-mnist/sign_mnist_test.csv"
@@ -116,25 +154,6 @@ data_augmentation = tf.keras.Sequential([
 # ==========================================
 # 3. MODEL ARCHITECTURE (MOBILENET V2 BASE)
 # ==========================================
-def get_mobilenet_base(input_shape=(96, 96, 1), alpha=0.35):
-    inputs = tf.keras.Input(shape=input_shape)
-    x = tf.keras.layers.GaussianNoise(0.05)(inputs)
-    # Convert grayscale to RGB using Concatenate layer
-    x = tf.keras.layers.Concatenate(axis=-1)([x, x, x])
-    # Scale to [-1, 1] range using Rescaling layer
-    x = tf.keras.layers.Rescaling(scale=2.0, offset=-1.0)(x)
-    
-    base_model = tf.keras.applications.MobileNetV2(
-        input_shape=(96, 96, 3),
-        alpha=alpha,
-        include_top=False,
-        weights='imagenet'
-    )
-    
-    x = base_model(x)
-    x = tf.keras.layers.GlobalAveragePooling2D()(x)
-    return tf.keras.Model(inputs, x, name='mobilenet_base')
-
 print("\n=== Step 2: Pre-training MobileNetV2 on Sign Language MNIST ===")
 mobilenet_base = get_mobilenet_base(input_shape=(IMG_SIZE[0], IMG_SIZE[1], 1), alpha=0.35)
 mobilenet_base.trainable = True

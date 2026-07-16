@@ -64,14 +64,27 @@ void ControlsWin::draw(AppState& state) {
     if (!state.last_output_command.empty()) {
         ImGui::TextWrapped("Last output: %s", state.last_output_command.c_str());
     }
-    if (ImGui::Button("Output Up")) state.SendOutputGesture(0, "up");
+    ImGui::SeparatorText("Gesture -> Output Mapping");
+    const char* output_actions[AppState::kOutputActionCount];
+    for (int i = 0; i < AppState::kOutputActionCount; ++i) {
+        output_actions[i] = state.OutputActionName(i);
+    }
+    for (int i = 0; i < AppState::kModelClassCount; ++i) {
+        ImGui::Combo(state.ModelClassName(i), &state.output_action_for_class[i], output_actions, AppState::kOutputActionCount);
+    }
+    HelpMarker("Maps each model class to one ESP2 output action. Use 'none' to ignore a gesture.");
+
+    if (ImGui::Button("Output Up")) state.SendOutputAction("up");
     ImGui::SameLine();
-    if (ImGui::Button("Output Down")) state.SendOutputGesture(1, "down");
-    if (ImGui::Button("Output Right")) state.SendOutputGesture(2, "right");
+    if (ImGui::Button("Output Down")) state.SendOutputAction("down");
+    if (ImGui::Button("Output Left")) state.SendOutputAction("left");
     ImGui::SameLine();
-    if (ImGui::Button("Output Left")) state.SendOutputGesture(3, "left");
+    if (ImGui::Button("Output Right")) state.SendOutputAction("right");
+    if (ImGui::Button("Output Clamp")) state.SendOutputAction("clamp");
     ImGui::SameLine();
-    if (ImGui::Button("Output Null")) state.SendOutputGesture(4, "null");
+    if (ImGui::Button("Output Release")) state.SendOutputAction("release");
+    ImGui::SameLine();
+    if (ImGui::Button("Output None")) state.SendOutputAction("none");
 
     ImGui::SeparatorText("Camera Commands");
     if (ImGui::Button("Capture once")) {

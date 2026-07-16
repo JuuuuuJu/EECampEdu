@@ -43,6 +43,8 @@ static std::vector<uint8_t> DecodeBase64(const std::string& input) {
     return out;
 }
 
+static const char* kModelClassNames[AppState::kModelClassCount] = {"up", "ok", "thumb", "palm", "rock", "stone"};
+static const char* kOutputActionNames[AppState::kOutputActionCount] = {"up", "down", "left", "right", "clamp", "release", "none"};
 static bool ParseFrameHeader(const std::string& header, int* format, int* width, int* height, int* bytes) {
     return std::sscanf(header.c_str(), "---START_IMAGE:%d:%d:%d:%d---", format, width, height, bytes) == 4;
 }
@@ -80,7 +82,7 @@ void AppState::Init() {
     latest_frame_height = 0;
     latest_frame_format = -1;
     latest_frame_dirty = false;
-    
+
     aec_enabled = true;
     aec_value = 300;
     agc_enabled = true;
@@ -91,6 +93,9 @@ void AppState::Init() {
     saturation = 0;
     horizontal_mirror = false;
     vertical_flip = false;
+    for (int i = 0; i < kModelClassCount; ++i) {
+        output_action_for_class[i] = i;
+    }
 }
 
 bool AppState::ConnectUsb() {
@@ -143,6 +148,46 @@ void AppState::DisconnectOutput() {
 
 bool AppState::IsOutputConnected() const {
     return output_client.IsOpen();
+}
+
+const char* AppState::ModelClassName(int index) const {
+    if (index >= 0 && index < kModelClassCount) {
+        return kModelClassNames[index];
+    }
+    return "unknown";
+}
+
+const char* AppState::OutputActionName(int index) const {
+    if (index >= 0 && index < kOutputActionCount) {
+        return kOutputActionNames[index];
+    }
+    return "none";
+}
+
+void AppState::SendOutputAction(const std::string& action) {
+    std::string command = "ACTION," + action + "\n";
+    last_output_command = command;
+
+    if (!output_client.IsOpen()) {
+        output_status = "Output disconnected";
+        return;
+    }
+
+    std::string error;
+    if (!output_client.Write(command, &error)) {
+        output_status = "ESP2 send failed: " + error;
+        AppendUsbLog("[ESP2] " + output_status + "\n");
+        return;
+    }
+
+    std::string ack;
+    if (output_client.ReadAvailable(&ack, &error) && !ack.empty()) {
+        output_status = ack;
+        AppendUsbLog("[ESP2] " + ack);
+    } else {
+        output_status = "Sent " + command;
+        AppendUsbLog("[ESP2 TX] " + command);
+    }
 }
 
 void AppState::SendOutputGesture(int gesture, const std::string& name) {
@@ -270,9 +315,22 @@ void AppState::ForwardResultLineToOutput(const std::string& line) {
         return;
     }
 
-    static const char* class_names[] = {"up", "down", "right", "left", "null"};
-    const char* name = (gesture >= 0 && gesture < 5) ? class_names[gesture] : "unknown";
-    SendOutputGesture(gesture, name);
+        if (gesture < 0 || gesture >= kModelClassCount) {
+        output_status = "Skipped out-of-range gesture: " + std::to_string(gesture);
+        AppendUsbLog("[ESP2] " + output_status + "\n");
+        return;
+    }
+
+    const char* gesture_name = ModelClassName(gesture);
+    const char* action = OutputActionName(output_action_for_class[gesture]);
+    if (std::string(action) == "none") {
+        output_status = "Skipped gesture mapped to none: " + std::to_string(gesture) + "(" + gesture_name + ")";
+        AppendUsbLog("[ESP2] " + output_status + "\n");
+        return;
+    }
+
+    AppendUsbLog("[ESP2 MAP] " + std::string(gesture_name) + " -> " + action + "\n");
+    SendOutputAction(action);
 }
 void AppState::ParseCdcFrames() {
     const std::string start_marker = "---START_IMAGE:";
@@ -456,6 +514,3 @@ void AppState::StoreDecodedFrame(int format, int width, int height, const std::v
     latest_frame_rgba.clear();
     AppendUsbLog("[PC] Unsupported image frame format: " + std::to_string(format) + "\n");
 }
-
-
-
