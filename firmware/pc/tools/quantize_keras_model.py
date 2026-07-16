@@ -16,6 +16,7 @@ FIRMWARE_ROOT = Path(__file__).resolve().parents[2]
 PROJECT_ROOT = FIRMWARE_ROOT.parent
 DEFAULT_MODEL_SOURCE_DIR = PROJECT_ROOT / "model_finetune" / "models" / "tf"
 DEFAULT_CALIBRATION_DIR = PROJECT_ROOT / "model_finetune" / "dataset" / "train"
+DEFAULT_VALIDATION_DIR = PROJECT_ROOT / "model_finetune" / "dataset" / "validation"
 DEFAULT_OUTPUT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "models"
 DEFAULT_REPORT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "reports"
 CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
@@ -77,6 +78,78 @@ def representative_dataset(image_paths, image_size, preprocess_mode):
             yield [preprocess_image(path, image_size, preprocess_mode)[None, ...]]
 
     return generator
+
+
+def select_calibration_images(calibration_dir, class_names, sample_limit):
+    calibration_dir = Path(calibration_dir)
+    per_class = []
+    for class_name in class_names:
+        class_dir = calibration_dir / class_name
+        paths = list(iter_images(class_dir)) if class_dir.exists() else []
+        per_class.append(paths)
+
+    if any(per_class):
+        selected = []
+        max_len = max(len(paths) for paths in per_class)
+        for index in range(max_len):
+            for paths in per_class:
+                if index < len(paths):
+                    selected.append(paths[index])
+                    if len(selected) >= sample_limit:
+                        return selected
+        return selected
+
+    return list(iter_images(calibration_dir))[:sample_limit]
+
+
+def evaluate_source_model(model, validation_dir, image_size, preprocess_mode, min_accuracy):
+    validation_dir = Path(validation_dir)
+    output_classes = int(model.output_shape[-1]) if model.output_shape else 0
+    class_names = class_names_for_output(model.output_shape)
+    if not validation_dir.exists():
+        print(f"[WARN] Source validation skipped: {validation_dir} does not exist.")
+        return None
+    if output_classes not in (len(CLASS_NAMES), len(FOUR_CLASS_NAMES)):
+        print(f"[WARN] Source validation skipped: unsupported output class count {output_classes}.")
+        return None
+
+    x_data = []
+    y_data = []
+    counts = {}
+    for label, class_name in enumerate(class_names):
+        class_dir = validation_dir / class_name
+        paths = list(iter_images(class_dir)) if class_dir.exists() else []
+        counts[class_name] = len(paths)
+        for path in paths:
+            x_data.append(preprocess_image(path, image_size, preprocess_mode))
+            y_data.append(label)
+
+    if not x_data:
+        print(f"[WARN] Source validation skipped: no class folders matched {class_names}.")
+        return None
+
+    x = np.stack(x_data, axis=0).astype(np.float32)
+    y = np.asarray(y_data, dtype=np.int32)
+    preds = model.predict(x, batch_size=32, verbose=0)
+    pred_labels = np.argmax(preds, axis=1)
+    accuracy = float(np.mean(pred_labels == y))
+    output_variation = float(np.mean(np.std(preds, axis=0)))
+    pred_counts = {class_names[index]: int(np.sum(pred_labels == index)) for index in range(len(class_names))}
+
+    print(f"Source validation images : {validation_dir} ({len(y)} samples)")
+    print(f"Source validation classes: {counts}")
+    print(f"Source .keras accuracy   : {int(np.sum(pred_labels == y))}/{len(y)} ({accuracy * 100:.2f}%)")
+    print(f"Source prediction dist   : {pred_counts}")
+    print(f"Source output variation  : {output_variation:.8f}")
+
+    if accuracy < min_accuracy or output_variation < 1e-4:
+        raise RuntimeError(
+            "Source .keras model failed validation before quantization. "
+            f"accuracy={accuracy * 100:.2f}% min={min_accuracy * 100:.2f}%, "
+            f"output_variation={output_variation:.8f}. "
+            "Retrain or fix the source model before exporting int8 TFLite."
+        )
+    return accuracy
 
 
 def resolve_model_path(args):
@@ -354,6 +427,21 @@ def main():
         help="Calibration preprocessing mode. Default: resize.",
     )
     parser.add_argument("--samples", type=int, default=200, help="Maximum calibration samples. Default: 200.")
+    parser.add_argument(
+        "--validation-dir",
+        help=f"Source .keras validation directory. Default: {display_path(DEFAULT_VALIDATION_DIR)}",
+    )
+    parser.add_argument(
+        "--min-source-accuracy",
+        type=float,
+        default=0.50,
+        help="Minimum accepted source .keras validation accuracy before quantization. Default: 0.50.",
+    )
+    parser.add_argument(
+        "--skip-source-validation",
+        action="store_true",
+        help="Skip source .keras validation before quantization. Not recommended.",
+    )
     parser.add_argument("--output", help="Explicit output .tflite path.")
     parser.add_argument("--report", help="Explicit report JSON path.")
     args = parser.parse_args()
@@ -361,17 +449,24 @@ def main():
     model_path = resolve_model_path(args)
     calibration_dir = Path(args.calibration_dir).expanduser().resolve() if args.calibration_dir else DEFAULT_CALIBRATION_DIR
     image_size = parse_image_size(args.image_size)
-    image_paths = list(iter_images(calibration_dir))[: args.samples]
-    if not image_paths:
-        raise RuntimeError(f"No calibration images found under {calibration_dir}")
 
     import tensorflow as tf
 
     print(f"Source .keras model : {model_path}")
-    print(f"Calibration images  : {calibration_dir} ({len(image_paths)} samples)")
     print(f"Preprocess          : {args.preprocess_mode}, {image_size[0]}x{image_size[1]}, grayscale / 255.0")
 
     model = load_source_model(tf, model_path, image_size)
+    class_order = class_names_for_output(model.output_shape)
+    image_paths = select_calibration_images(calibration_dir, class_order, args.samples)
+    if not image_paths:
+        raise RuntimeError(f"No calibration images found under {calibration_dir} for classes {class_order}")
+    calibration_counts = {name: sum(1 for path in image_paths if path.parent.name == name) for name in class_order}
+    print(f"Calibration images  : {calibration_dir} ({len(image_paths)} samples)")
+    print(f"Calibration classes : {calibration_counts}")
+
+    if not args.skip_source_validation:
+        validation_dir = Path(args.validation_dir).expanduser().resolve() if args.validation_dir else DEFAULT_VALIDATION_DIR
+        evaluate_source_model(model, validation_dir, image_size, args.preprocess_mode, args.min_source_accuracy)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     converter.optimizations = [tf.lite.Optimize.DEFAULT]
     converter.representative_dataset = representative_dataset(
@@ -410,7 +505,7 @@ def main():
         "calibration_samples": len(image_paths),
         "preprocess_mode": args.preprocess_mode,
         "image_size": [image_size[0], image_size[1]],
-        "class_order": class_names_for_output(info["output_shape"]),
+        "class_order": class_order,
         "input": {
             "shape": info["input_shape"],
             "dtype": "int8",
