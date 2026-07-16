@@ -34,6 +34,8 @@ static const char *TAG = "ESP2_OUTPUT";
 #define PITCH_MAX_DEG 125
 #define CLAW_MIN_DEG 0
 #define CLAW_MAX_DEG 90
+#define CLAW_CLAMP_DEG 0
+#define CLAW_RELEASE_DEG 80
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
@@ -119,11 +121,36 @@ static const char *gesture_name(int gesture) {
     }
 }
 
+static const char *action_name(int action) {
+    switch (action) {
+        case 0: return "up";
+        case 1: return "down";
+        case 2: return "left";
+        case 3: return "right";
+        case 4: return "clamp";
+        case 5: return "release";
+        case 6: return "none";
+        default: return "unknown";
+    }
+}
+
 static void print_state(const char *prefix, int gesture) {
     printf("%s,gesture=%d,name=%s,base=%d,arm=%d,pitch=%d,claw=%d\n",
            prefix,
            gesture,
            gesture_name(gesture),
+           base_angle,
+           arm_angle,
+           pitch_angle,
+           claw_angle);
+    fflush(stdout);
+}
+
+static void print_action_state(const char *prefix, int action) {
+    printf("%s,action=%d,name=%s,base=%d,arm=%d,pitch=%d,claw=%d\n",
+           prefix,
+           action,
+           action_name(action),
            base_angle,
            arm_angle,
            pitch_angle,
@@ -168,6 +195,27 @@ static int parse_gesture(const char *command) {
     return -1;
 }
 
+static int parse_action(const char *command) {
+    char buf[96];
+    strlcpy(buf, command, sizeof(buf));
+    trim_ascii(buf);
+    to_lower_ascii(buf);
+
+    if (strncmp(buf, "action,", 7) == 0) {
+        memmove(buf, buf + 7, strlen(buf + 7) + 1);
+        trim_ascii(buf);
+    }
+
+    if (strcmp(buf, "0") == 0 || strcmp(buf, "up") == 0) return 0;
+    if (strcmp(buf, "1") == 0 || strcmp(buf, "down") == 0) return 1;
+    if (strcmp(buf, "2") == 0 || strcmp(buf, "left") == 0) return 2;
+    if (strcmp(buf, "3") == 0 || strcmp(buf, "right") == 0) return 3;
+    if (strcmp(buf, "4") == 0 || strcmp(buf, "clamp") == 0 || strcmp(buf, "close") == 0 || strcmp(buf, "grab") == 0) return 4;
+    if (strcmp(buf, "5") == 0 || strcmp(buf, "release") == 0 || strcmp(buf, "open") == 0) return 5;
+    if (strcmp(buf, "6") == 0 || strcmp(buf, "none") == 0 || strcmp(buf, "null") == 0) return 6;
+    return -1;
+}
+
 static void apply_gesture(int gesture) {
     switch (gesture) {
         case 0:
@@ -187,6 +235,38 @@ static void apply_gesture(int gesture) {
             write_servo(LEDC_CHANNEL_0, base_angle);
             break;
         case 4:
+        default:
+            break;
+    }
+}
+
+static void apply_action(int action) {
+    switch (action) {
+        case 0:
+            pitch_angle = clamp_int(pitch_angle + STEP_DEG, PITCH_MIN_DEG, PITCH_MAX_DEG);
+            write_servo(LEDC_CHANNEL_2, pitch_angle);
+            break;
+        case 1:
+            pitch_angle = clamp_int(pitch_angle - STEP_DEG, PITCH_MIN_DEG, PITCH_MAX_DEG);
+            write_servo(LEDC_CHANNEL_2, pitch_angle);
+            break;
+        case 2:
+            base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
+            write_servo(LEDC_CHANNEL_0, base_angle);
+            break;
+        case 3:
+            base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
+            write_servo(LEDC_CHANNEL_0, base_angle);
+            break;
+        case 4:
+            claw_angle = clamp_int(CLAW_CLAMP_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
+            write_servo(LEDC_CHANNEL_3, claw_angle);
+            break;
+        case 5:
+            claw_angle = clamp_int(CLAW_RELEASE_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
+            write_servo(LEDC_CHANNEL_3, claw_angle);
+            break;
+        case 6:
         default:
             break;
     }
@@ -233,6 +313,15 @@ static void handle_command(char *line) {
         servo_sweep_test();
         print_state("OK_TEST", 4);
         return;
+    }
+
+    if (strncmp(command_lower, "action,", 7) == 0) {
+        const int action = parse_action(line);
+        if (action >= 0 && action <= 6) {
+            apply_action(action);
+            print_action_state("OK_ACTION", action);
+            return;
+        }
     }
 
     const int gesture = parse_gesture(line);

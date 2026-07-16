@@ -26,15 +26,16 @@ DEFAULT_DATA_DIR = CNN_DIR / "dataset" / "test" / "tflite"
 READY_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_READY_TIMEOUT_SEC", "30"))
 READY_RETRY_LIMIT = int(os.environ.get("BENCHMARK_READY_RETRY_LIMIT", "2"))
 RESULT_TIMEOUT_SEC = int(os.environ.get("BENCHMARK_RESULT_TIMEOUT_SEC", "20"))
-DEFAULT_TFLITE_MODEL_PATH = CNN_DIR / "artifacts" / "models" / "Mini_ResNet_finetuned_96_int8.tflite"
+DEFAULT_TFLITE_MODEL_PATH = CNN_DIR / "artifacts" / "models" / "MobileNetV2_finetuned_int8.tflite"
 ENABLE_OUTPUT_COMPARE = os.environ.get("BENCHMARK_COMPARE_OUTPUT", "1") != "0"
 
 MODEL_INPUT_WIDTH = 96
 MODEL_INPUT_HEIGHT = 96
 DEFAULT_FRAME_WIDTH = int(os.environ.get("BENCHMARK_FRAME_WIDTH", "160"))
 DEFAULT_FRAME_HEIGHT = int(os.environ.get("BENCHMARK_FRAME_HEIGHT", "160"))
-DEFAULT_CLASS_NAMES = ["up", "down", "right", "left", "null"]
+DEFAULT_CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 CLASS_NAMES = list(DEFAULT_CLASS_NAMES)
+ESP2_DIRECTION_CLASSES = {"up", "down", "right", "left", "null"}
 PREPROCESS_MODE = os.environ.get("BENCHMARK_PREPROCESS_MODE", "resize").lower()
 HAND_CROP_MARGIN_PERCENT = int(os.environ.get("BENCHMARK_HAND_CROP_MARGIN_PERCENT", "18"))
 HAND_CROP_MIN_AREA_PERCENT = int(os.environ.get("BENCHMARK_HAND_CROP_MIN_AREA_PERCENT", "1"))
@@ -183,8 +184,8 @@ def parse_expected_label(image_path):
     if folder in CLASS_NAMES:
         return CLASS_NAMES.index(folder)
 
-    # Numeric-only folders are allowed for the new 5-class dataset, e.g.
-    # 0/, 1/, 2/, 3/, 4/. Do not treat legacy folders such as "01_palm" as
+    # Numeric-only folders are allowed for indexed datasets, e.g. 0/, 1/, 2/.
+    # Do not treat legacy folders such as "01_palm" as
     # class 1; that silently corrupts accuracy for the old 10-class dataset.
     if len(tokens) == 1:
         try:
@@ -270,6 +271,8 @@ def open_esp2_serial():
 def forward_prediction_to_esp2(esp2, pred_idx, pred_name):
     if esp2 is None:
         return ""
+    if pred_name not in ESP2_DIRECTION_CLASSES:
+        return f" | ESP2: skipped(unmapped gesture '{pred_name}')"
     command = f"GESTURE,{pred_idx},{pred_name}\n"
     try:
         esp2.write(command.encode("ascii"))
@@ -742,7 +745,7 @@ def run_benchmark():
             print(f"Label Accuracy   : {correct_count}/{labeled_count} ({correct_count / labeled_count * 100:.2f}%)")
             print(f"Labeled Images   : {labeled_count}/{success_count}")
         else:
-            print("Label Accuracy   : skipped (no folders matched up/down/right/left/null)")
+            print("Label Accuracy   : skipped (no folders matched the active class map)")
         print(f"Average Model Latency      : {avg_model_latency_ms:.2f} ms")
         if extended_timing_count:
             avg_preprocess_ms = total_preprocess_us / extended_timing_count / 1000.0

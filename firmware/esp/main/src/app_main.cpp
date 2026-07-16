@@ -810,13 +810,16 @@ static void usb_cdc_command_task(void *pvParameters) {
 }
 static constexpr int kExpectedTfliteSchemaVersion = 3;
 
-static constexpr int kMaxClassCount = 5;
+static constexpr int kMaxClassCount = 8;
 static constexpr const char *kClassNames[kMaxClassCount] = {
     "up",
-    "down",
-    "right",
-    "left",
-    "null",
+    "ok",
+    "thumb",
+    "palm",
+    "rock",
+    "stone",
+    "class6",
+    "class7",
 };
 
 
@@ -1223,6 +1226,9 @@ static bool init_tflite_micro() {
         resolver.AddMaxPool2D() != kTfLiteOk ||
         resolver.AddFullyConnected() != kTfLiteOk ||
         resolver.AddMean() != kTfLiteOk ||
+        resolver.AddMul() != kTfLiteOk ||
+        resolver.AddPad() != kTfLiteOk ||
+        resolver.AddConcatenation() != kTfLiteOk ||
         resolver.AddReshape() != kTfLiteOk ||
         resolver.AddSoftmax() != kTfLiteOk) {
         ESP_LOGE(TAG, "Failed to register TFLite Micro operators.");
