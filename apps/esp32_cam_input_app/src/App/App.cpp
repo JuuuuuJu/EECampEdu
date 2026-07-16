@@ -56,6 +56,7 @@ void App::Update() {
     }
 
     app_state.PollUsb();
+    app_state.UpdateContinuousInference();
 
     if (SDL_GetWindowFlags(window) & SDL_WINDOW_MINIMIZED) {
         SDL_Delay(10);

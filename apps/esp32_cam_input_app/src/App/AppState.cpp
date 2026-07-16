@@ -3,8 +3,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
+#include <iomanip>
 #include <sstream>
 #include <utility>
 
@@ -48,6 +51,22 @@ static const char* kOutputActionNames[AppState::kOutputActionCount] = {"up", "do
 static bool ParseFrameHeader(const std::string& header, int* format, int* width, int* height, int* bytes) {
     return std::sscanf(header.c_str(), "---START_IMAGE:%d:%d:%d:%d---", format, width, height, bytes) == 4;
 }
+static std::string MakeTimestamp() {
+    auto now = std::chrono::system_clock::now();
+    auto in_time_t = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
+
+    std::tm tm_value{};
+#ifdef _WIN32
+    localtime_s(&tm_value, &in_time_t);
+#else
+    localtime_r(&in_time_t, &tm_value);
+#endif
+
+    std::ostringstream ss;
+    ss << std::put_time(&tm_value, "%Y%m%d_%H%M%S") << "_" << std::setw(3) << std::setfill('0') << ms;
+    return ss.str();
+}
 static bool LooksLikeImagePayload(const std::string& text) {
     if (text.size() < 96) {
         return false;
@@ -76,6 +95,10 @@ void AppState::Init() {
     cdc_parse_buffer.clear();
     cdc_text_buffer.clear();
     cdc_receiving_image_frame = false;
+    continuous_inference_pending = false;
+    last_continuous_inference_send = std::chrono::steady_clock::time_point{};
+    last_continuous_inference_complete = std::chrono::steady_clock::now();
+    continuous_inference_status = "Continuous inference disabled";
     received_image_count = 0;
     latest_frame_rgba.clear();
     latest_frame_width = 0;
@@ -92,6 +115,10 @@ void AppState::Init() {
     contrast = 0;
     saturation = 0;
     horizontal_mirror = false;
+    stream_enabled = false;
+    continuous_inference_enabled = false;
+    continuous_inference_interval_ms = 3000;
+    continuous_inference_timeout_ms = 8000;
     vertical_flip = false;
     for (int i = 0; i < kModelClassCount; ++i) {
         output_action_for_class[i] = i;
@@ -118,6 +145,9 @@ void AppState::DisconnectUsb() {
     }
     usb_status = "Disconnected";
     stream_enabled = false;
+    continuous_inference_enabled = false;
+    continuous_inference_pending = false;
+    continuous_inference_status = "USB disconnected";
     cdc_receiving_image_frame = false;
 }
 
@@ -237,6 +267,63 @@ void AppState::SendUsbCommand(const std::string& command, const std::string& lab
     AppendUsbLog("[TX] " + payload);
 }
 
+void AppState::UpdateContinuousInference() {
+    const auto now = std::chrono::steady_clock::now();
+
+    if (!continuous_inference_enabled) {
+        if (continuous_inference_pending) {
+            continuous_inference_pending = false;
+        }
+        continuous_inference_status = "Continuous inference disabled";
+        return;
+    }
+
+    if (!usb_client.IsOpen()) {
+        continuous_inference_pending = false;
+        continuous_inference_status = "USB disconnected";
+        return;
+    }
+
+    continuous_inference_interval_ms = std::clamp(continuous_inference_interval_ms, 1500, 10000);
+    continuous_inference_timeout_ms = std::clamp(continuous_inference_timeout_ms, 3000, 30000);
+
+    if (continuous_inference_pending) {
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_continuous_inference_send).count();
+        if (elapsed_ms < continuous_inference_timeout_ms) {
+            continuous_inference_status = "Waiting for RESULT (" + std::to_string(elapsed_ms) + " ms)";
+            return;
+        }
+        continuous_inference_pending = false;
+        continuous_inference_status = "Inference timeout; retrying";
+        AppendUsbLog("[PC] Continuous inference timeout; sending next capture.\n");
+    }
+
+    if (cdc_receiving_image_frame) {
+        continuous_inference_status = "Waiting for preview frame to finish";
+        return;
+    }
+
+    if (last_continuous_inference_send != std::chrono::steady_clock::time_point{}) {
+        const auto interval_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now - last_continuous_inference_send).count();
+        if (interval_ms < continuous_inference_interval_ms) {
+            continuous_inference_status = "Waiting interval (" + std::to_string(interval_ms) + "/" + std::to_string(continuous_inference_interval_ms) + " ms)";
+            return;
+        }
+    }
+
+    const std::string timestamp = MakeTimestamp();
+    SendUsbCommand("q" + timestamp, "continuous inference");
+    continuous_inference_pending = true;
+    last_continuous_inference_send = now;
+    continuous_inference_status = "Capture sent: " + timestamp;
+}
+
+void AppState::MarkInferenceFinished(const std::string& reason) {
+    continuous_inference_pending = false;
+    last_continuous_inference_complete = std::chrono::steady_clock::now();
+    continuous_inference_status = "Last inference finished: " + reason;
+}
+
 void AppState::PollUsb() {
     if (!usb_client.IsOpen()) {
         return;
@@ -269,6 +356,11 @@ void AppState::PollUsb() {
         AppendUsbLog("[PC] CDC parse buffer overflow; dropped old frame data.\n");
     }
     ParseCdcFrames();
+    if (chunk_has_image_marker && !cdc_receiving_image_frame && !cdc_parse_buffer.empty() &&
+        !LooksLikeImagePayload(cdc_parse_buffer)) {
+        ProcessCdcText(cdc_parse_buffer);
+        cdc_parse_buffer.clear();
+    }
 }
 
 void AppState::AppendUsbLog(const std::string& text) {
@@ -286,6 +378,11 @@ void AppState::ProcessCdcText(const std::string& text) {
         std::string line = cdc_text_buffer.substr(0, newline);
         cdc_text_buffer.erase(0, newline + 1);
         if (!line.empty()) {
+            if (line.rfind("RESULT,", 0) == 0) {
+                MarkInferenceFinished("RESULT");
+            } else if (line.rfind("ERROR,", 0) == 0) {
+                MarkInferenceFinished(line);
+            }
             ForwardResultLineToOutput(line);
         }
     }
