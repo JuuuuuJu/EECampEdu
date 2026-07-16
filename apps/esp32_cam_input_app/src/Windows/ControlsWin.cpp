@@ -87,8 +87,8 @@ void ControlsWin::draw(AppState& state) {
     if (ImGui::Button("Output None")) state.SendOutputAction("none");
 
     ImGui::SeparatorText("Camera Commands");
-    if (ImGui::Button("Capture once")) {
-        state.SendUsbCommand("c" + GetTimestamp(), "capture once");
+    if (ImGui::Button("Infer once")) {
+        state.SendUsbCommand("q" + GetTimestamp(), "infer once");
     }
     ImGui::SameLine();
     if (ImGui::Button(state.stream_enabled ? "Stop stream" : "Start stream")) {
@@ -99,6 +99,13 @@ void ControlsWin::draw(AppState& state) {
     if (ImGui::Button("Save frame")) {
         state.SendUsbCommand("w" + GetTimestamp(), "save frame to MSC storage");
     }
+
+    ImGui::Checkbox("Continuous inference", &state.continuous_inference_enabled);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(140.0f);
+    ImGui::SliderInt("Interval ms", &state.continuous_inference_interval_ms, 1500, 10000);
+    ImGui::TextWrapped("Inference: %s", state.continuous_inference_status.c_str());
+    HelpMarker("Continuously sends quick inference commands. ESP1 does not mount MSC or save files in this mode. The app waits for preview frame completion and RESULT/ERROR before sending the next request.");
 
     if (ImGui::Button("List storage")) {
         state.SendUsbCommand("L", "list storage");

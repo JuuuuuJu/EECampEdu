@@ -2,6 +2,7 @@
 
 #include "Usb/UsbCdcClient.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -10,6 +11,7 @@ class AppState {
 public:
     void Init();
     void PollUsb();
+    void UpdateContinuousInference();
     bool ConnectUsb();
     void DisconnectUsb();
     void SendUsbCommand(const std::string& command, const std::string& label);
@@ -39,6 +41,10 @@ public:
     int frame_size = 3;      // Firmware protocol: 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA, 4=SVGA, 5=UXGA.
     int pixel_format = 3;   // Camera command protocol: 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG.
     bool stream_enabled = false;
+    bool continuous_inference_enabled = false;
+    int continuous_inference_interval_ms = 3000;
+    int continuous_inference_timeout_ms = 8000;
+    std::string continuous_inference_status;
     bool vertical_flip = false;
     bool show_imgui_demo = true;
 
@@ -69,9 +75,13 @@ private:
     std::string cdc_parse_buffer;
     std::string cdc_text_buffer;
     bool cdc_receiving_image_frame = false;
+    bool continuous_inference_pending = false;
+    std::chrono::steady_clock::time_point last_continuous_inference_send{};
+    std::chrono::steady_clock::time_point last_continuous_inference_complete{};
 
     void AppendUsbLog(const std::string& text);
     void ProcessCdcText(const std::string& text);
+    void MarkInferenceFinished(const std::string& reason);
     void ForwardResultLineToOutput(const std::string& line);
     void ParseCdcFrames();
     void StoreDecodedFrame(int format, int width, int height, const std::vector<uint8_t>& payload);

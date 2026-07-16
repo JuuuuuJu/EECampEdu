@@ -168,6 +168,89 @@ static void camera_stream_task(void *pvParameters) {
     }
 }
 
+
+static bool run_quick_live_inference() {
+    bool was_streaming = streaming_mode;
+    if (was_streaming) {
+        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
+            streaming_mode = false;
+            xSemaphoreGive(camera_mutex);
+        }
+        vTaskDelay(pdMS_TO_TICKS(40));
+    }
+
+    bool ok = false;
+    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        dual_printf("ERROR,camera_busy\n");
+        if (was_streaming) streaming_mode = true;
+        return false;
+    }
+
+    if (was_streaming) {
+        camera_fb_t *dummy = esp_camera_fb_get();
+        if (dummy) esp_camera_fb_return(dummy);
+    }
+
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb) {
+        dual_printf("ERROR,camera_capture_failed\n");
+        xSemaphoreGive(camera_mutex);
+        if (was_streaming) streaming_mode = true;
+        return false;
+    }
+
+    const size_t data_len = fb->len;
+    uint8_t *temp_buf = (uint8_t *)malloc(data_len);
+    const int fmt = fb->format;
+    const int w = fb->width;
+    const int h = fb->height;
+    if (temp_buf != nullptr) {
+        memcpy(temp_buf, fb->buf, data_len);
+    }
+    esp_camera_fb_return(fb);
+    xSemaphoreGive(camera_mutex);
+
+    if (temp_buf == nullptr) {
+        dual_printf("ERROR,capture_alloc_failed\n");
+        if (was_streaming) streaming_mode = true;
+        return false;
+    }
+
+    if (allocate_frame_buffers()) {
+        uint8_t *full_gray_buf = (uint8_t *)malloc((size_t)w * (size_t)h);
+        if (full_gray_buf != nullptr) {
+            bool decoded = false;
+            if (fmt == PIXFORMAT_JPEG) {
+                decoded = decode_jpeg_to_high_fidelity_grayscale(temp_buf, data_len, w, h, full_gray_buf);
+            } else if (fmt == PIXFORMAT_GRAYSCALE) {
+                const size_t pixels = (size_t)w * (size_t)h;
+                if (data_len >= pixels) {
+                    memcpy(full_gray_buf, temp_buf, pixels);
+                    decoded = true;
+                }
+            }
+
+            if (decoded) {
+                resize_grayscale_to_runtime_frame(full_gray_buf, w, h, g_raw_frame);
+                ok = run_inference_on_grayscale_frame(g_raw_frame);
+            } else {
+                dual_printf("ERROR,quick_inference_decode_failed\n");
+            }
+            free(full_gray_buf);
+        } else {
+            dual_printf("ERROR,quick_inference_gray_alloc_failed\n");
+        }
+    } else {
+        dual_printf("ERROR,frame_buffer_alloc_failed\n");
+    }
+
+    free(temp_buf);
+    if (was_streaming) {
+        streaming_mode = true;
+    }
+    return ok;
+}
+
 static void usb_cdc_command_task(void *pvParameters) {
     (void)pvParameters;
     usb_cdc_msg_t msg;
@@ -383,6 +466,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                         if (was_streaming) {
                             streaming_mode = true;
                         }
+                        break;
+                    }
+                    case 'q':
+                    case 'Q': {
+                        run_quick_live_inference();
                         break;
                     }
                     case 'd':
