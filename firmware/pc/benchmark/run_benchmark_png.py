@@ -1,4 +1,4 @@
-﻿import argparse
+import argparse
 import glob
 import json
 import os
@@ -453,15 +453,17 @@ class PCTFLiteReference:
         input_dtype = self.input_detail["dtype"]
         raw_flat = raw_u8.astype(np.float32).reshape(-1)
 
-        if input_dtype == np.int8 or input_dtype == np.uint8:
+        if input_dtype in (np.int8, np.uint8, np.int16):
             scale, zero_point = self.input_detail.get("quantization", (0.0, 0))
             if not scale:
                 raise ValueError("Quantized TFLite input has missing scale.")
             quantized = np.round((raw_flat / 255.0) / scale + zero_point)
             if input_dtype == np.int8:
                 model_input = np.clip(quantized, -128, 127).astype(np.int8)
-            else:
+            elif input_dtype == np.uint8:
                 model_input = np.clip(quantized, 0, 255).astype(np.uint8)
+            else:
+                model_input = np.clip(quantized, -32768, 32767).astype(np.int16)
         elif input_dtype == np.float32:
             model_input = (raw_flat / 255.0).astype(np.float32)
         else:
@@ -474,8 +476,8 @@ class PCTFLiteReference:
         self.interpreter.invoke()
         output = self.interpreter.get_tensor(self.output_detail["index"]).reshape(-1)
 
-        if output.dtype == np.int8 or output.dtype == np.uint8:
-            return output.astype(np.int16)[:len(CLASS_NAMES)]
+        if output.dtype in (np.int8, np.uint8, np.int16):
+            return output.astype(np.int32)[:len(CLASS_NAMES)]
 
         return np.round(output.astype(np.float64) * 1000000.0).astype(np.int32)[:len(CLASS_NAMES)]
 
@@ -495,10 +497,30 @@ def dump_raw_grayscale(image_path, raw, width, height, prefix):
     )
 
 
+def explain_serial_exception(exc, context):
+    print(f"[ERROR] Serial port failed while {context}: {exc}")
+    print(
+        "[HINT] Windows reported that the ESP32-S3 COM port is no longer readable/writable. "
+        "Common causes: ESP32 rebooted/panicked during inference, USB cable/power glitch, "
+        "idf.py monitor or another app grabbed the same COM port, or the board re-enumerated."
+    )
+    print("[HINT] Close other serial monitors, unplug/replug ESP1 if needed, then rerun the benchmark.")
+
+
+def safe_readline(ser, context):
+    try:
+        return ser.readline().decode("utf-8", errors="ignore").strip()
+    except (serial.SerialException, OSError) as exc:
+        explain_serial_exception(exc, context)
+        return None
+
+
 def wait_for_ready(ser, timeout_sec=READY_TIMEOUT_SEC):
     deadline = time.time() + timeout_sec
     while time.time() < deadline:
-        line = ser.readline().decode("utf-8", errors="ignore").strip()
+        line = safe_readline(ser, "waiting for ESP32 READY")
+        if line is None:
+            return False
         if "READY" in line:
             return True
         if line:
@@ -509,10 +531,14 @@ def wait_for_ready(ser, timeout_sec=READY_TIMEOUT_SEC):
     return False
 
 
-def send_frame_to_esp32(ser, raw):
+def send_frame_to_esp32(ser, raw, filename="frame"):
     roundtrip_start_ns = time.perf_counter_ns()
-    ser.write(raw.tobytes())
-    ser.flush()
+    try:
+        ser.write(raw.tobytes())
+        ser.flush()
+    except (serial.SerialException, OSError) as exc:
+        explain_serial_exception(exc, f"sending {filename} to ESP32")
+        return None
     return roundtrip_start_ns
 
 
@@ -598,13 +624,18 @@ def run_benchmark():
 
             dump_raw_grayscale(image_path, raw, FRAME_WIDTH, FRAME_HEIGHT, "PC_FRAME_DUMP")
             dump_raw_grayscale(image_path, model_input_raw, MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT, "PC_MODEL_DUMP")
-            roundtrip_start_ns = send_frame_to_esp32(ser, raw)
+            roundtrip_start_ns = send_frame_to_esp32(ser, raw, filename)
+            if roundtrip_start_ns is None:
+                break
             ready_retry_count = 0
             abort_benchmark = False
             result_deadline = time.time() + RESULT_TIMEOUT_SEC
 
             while True:
-                line = ser.readline().decode("utf-8", errors="ignore").strip()
+                line = safe_readline(ser, f"waiting for RESULT from {filename}")
+                if line is None:
+                    abort_benchmark = True
+                    break
                 if not line and time.time() > result_deadline:
                     print(f"[ERROR] Timed out waiting for RESULT from {filename} after {RESULT_TIMEOUT_SEC}s.")
                     print("[HINT] Check ESP32 monitor output. Firmware should be in RuntimeMode::kTestUartFrame and print RESULT after receiving one frame.")
@@ -629,7 +660,10 @@ def run_benchmark():
                         f"[WARN] ESP32 returned READY while waiting for RESULT from {filename}; "
                         f"resending frame ({ready_retry_count}/{READY_RETRY_LIMIT})."
                     )
-                    roundtrip_start_ns = send_frame_to_esp32(ser, raw)
+                    roundtrip_start_ns = send_frame_to_esp32(ser, raw, filename)
+                    if roundtrip_start_ns is None:
+                        abort_benchmark = True
+                        break
                     result_deadline = time.time() + RESULT_TIMEOUT_SEC
                     continue
 
