@@ -38,3 +38,7 @@ esp/sdkconfig
 # Steganography Challenge Files
 challenge_image.png
 scripts/generate_challenge.py
+stego.jpg
+stego_dual.png
+scripts/generate_dual_image.py
+scripts/generate_base64_art.py

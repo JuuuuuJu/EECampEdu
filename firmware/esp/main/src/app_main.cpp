@@ -82,10 +82,10 @@ static bool decode_jpeg_to_high_fidelity_grayscale(const uint8_t *jpg_buf, size_
 static pixformat_t g_current_format = PIXFORMAT_JPEG;
 static framesize_t g_current_size = FRAMESIZE_VGA;
 static TaskHandle_t g_input_controls_task_handle = nullptr;
-static TaskHandle_t g_uart_test_task_handle = nullptr;
-static TaskHandle_t g_camera_stream_task_handle = nullptr;
-static TaskHandle_t g_usb_cdc_command_task_handle = nullptr;
-static TaskHandle_t g_photo_flash_task_handle = nullptr;
+[[maybe_unused]] static TaskHandle_t g_uart_test_task_handle = nullptr;
+[[maybe_unused]] static TaskHandle_t g_camera_stream_task_handle = nullptr;
+[[maybe_unused]] static TaskHandle_t g_usb_cdc_command_task_handle = nullptr;
+[[maybe_unused]] static TaskHandle_t g_photo_flash_task_handle = nullptr;
 static TaskHandle_t g_camera_flash_task_handle = nullptr;
 
 static void dual_printf(const char *format, ...) {
@@ -169,7 +169,7 @@ static void camera_stream_task(void *pvParameters) {
 }
 
 
-static bool run_quick_live_inference() {
+[[maybe_unused]] static bool run_quick_live_inference() {
     bool was_streaming = streaming_mode;
     if (was_streaming) {
         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -346,6 +346,20 @@ static void usb_cdc_command_task(void *pvParameters) {
                 }
                 int val = atoi(argStr);
                 
+                bool lock_acquired = false;
+                char act_upper = (action >= 'a' && action <= 'z') ? (action - 'a' + 'A') : action;
+                if (act_upper == 'E' || act_upper == 'G' || act_upper == 'V' || 
+                    act_upper == 'A' || act_upper == 'B' || act_upper == 'T' || 
+                    act_upper == 'X' || act_upper == 'M' || act_upper == 'P' || 
+                    act_upper == 'Y' || act_upper == 'Q') {
+                    if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+                        lock_acquired = true;
+                    } else {
+                        dual_printf("ERROR: Camera busy, settings update delayed.\n");
+                        continue;
+                    }
+                }
+
                 switch (action) {
                     case 'c':
                     case 'C': {
@@ -470,7 +484,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                     }
                     case 'q':
                     case 'Q': {
-                        run_quick_live_inference();
+                        sensor_t *s = esp_camera_sensor_get();
+                        if (s) {
+                            s->set_quality(s, val);
+                            dual_printf("[System] JPEG Quality updated to %d.\n", val);
+                        }
                         break;
                     }
                     case 'd':
@@ -590,6 +608,101 @@ static void usb_cdc_command_task(void *pvParameters) {
                             streaming_mode = true;
                         }
                         usb_msc_mount_to_pc();
+                        break;
+                    }
+                    case 'r':
+                    case 'R': {
+                        bool was_streaming = streaming_mode;
+                        if (was_streaming) {
+                            if (xSemaphoreTake(camera_mutex, portMAX_DELAY) == pdTRUE) {
+                                streaming_mode = false;
+                                xSemaphoreGive(camera_mutex);
+                            }
+                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera stream task finish sending the current frame
+                        }
+
+                        usb_msc_mount_to_app();
+                        vTaskDelay(pdMS_TO_TICKS(500)); // Give VFS time to transition locks
+
+                        char input_buf[256];
+                        strncpy(input_buf, argStr, sizeof(input_buf));
+                        input_buf[sizeof(input_buf)-1] = '\0';
+                        
+                        // Strip trailing spaces/newlines
+                        int len = strlen(input_buf);
+                        while (len > 0 && (input_buf[len-1] <= ' ')) { input_buf[--len] = '\0'; }
+                        
+                        if (len == 0) {
+                            dual_printf("ERROR: Usage: r <filename> OR r <index>\n");
+                            usb_msc_mount_to_pc();
+                            if (was_streaming) streaming_mode = true;
+                            break;
+                        }
+
+                        // 1. Resolve to full path
+                        char target_path[512] = {0};
+                        bool is_index = true;
+                        for(int j=0; j<len; j++) { if(!isdigit(input_buf[j])) is_index = false; }
+
+                        if (is_index) {
+                            int target_idx = atoi(input_buf);
+                            DIR *dir = opendir("/usb");
+                            if (dir) {
+                                struct dirent *entry;
+                                int count = 0;
+                                while ((entry = readdir(dir)) != NULL) {
+                                    if (entry->d_name[0] != '.') { 
+                                        if (count == target_idx) {
+                                            snprintf(target_path, sizeof(target_path), "/usb/%s", entry->d_name);
+                                            break;
+                                        }
+                                        count++;
+                                    }
+                                }
+                                closedir(dir);
+                            }
+                            if (strlen(target_path) == 0) {
+                                dual_printf("ERROR: Index %d not found.\n", target_idx);
+                                usb_msc_mount_to_pc();
+                                if (was_streaming) streaming_mode = true;
+                                break;
+                            }
+                        } else {
+                            if (input_buf[0] == '/') snprintf(target_path, sizeof(target_path), "%s", input_buf);
+                            else snprintf(target_path, sizeof(target_path), "/usb/%s", input_buf);
+                        }
+
+                        // 2. Open file
+                        FILE *f = fopen(target_path, "rb");
+                        if (!f) {
+                            dual_printf("ERROR: Could not open %s\n", target_path);
+                        } else {
+                            // Get file size
+                            fseek(f, 0, SEEK_END);
+                            size_t fsize = ftell(f);
+                            fseek(f, 0, SEEK_SET);
+
+                            // Read content
+                            uint8_t *file_buf = (uint8_t *)malloc(fsize);
+                            if (file_buf) {
+                                size_t read_bytes = fread(file_buf, 1, fsize, f);
+                                if (read_bytes == fsize) {
+                                    // Retrieve file metadata (use default resolution for formatting output)
+                                    dual_printf("---START_FILE:4:640:480:%d:%s---\n", (int)fsize, target_path);
+                                    usb_cdc_write_base64(file_buf, fsize);
+                                    dual_printf("---END_FILE---\n");
+                                } else {
+                                    dual_printf("ERROR: Incomplete file read: %d of %d\n", (int)read_bytes, (int)fsize);
+                                }
+                                free(file_buf);
+                            } else {
+                                dual_printf("ERROR: Out of memory reading file %s\n", target_path);
+                            }
+                            fclose(f);
+                        }
+
+                        usb_msc_mount_to_pc();
+                        if (was_streaming) streaming_mode = true;
                         break;
                     }
                     case 'k':
@@ -891,6 +1004,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                         }
                         break;
                     }
+                }
+                if (lock_acquired) {
+                    xSemaphoreGive(camera_mutex);
                 }
             }
         }
