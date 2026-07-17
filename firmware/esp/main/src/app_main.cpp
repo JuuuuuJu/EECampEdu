@@ -169,7 +169,7 @@ static void camera_stream_task(void *pvParameters) {
 }
 
 
-[[maybe_unused]] static bool run_quick_live_inference() {
+static bool run_quick_live_inference() {
     bool was_streaming = streaming_mode;
     if (was_streaming) {
         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(500)) == pdTRUE) {
@@ -351,7 +351,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                 if (act_upper == 'E' || act_upper == 'G' || act_upper == 'V' || 
                     act_upper == 'A' || act_upper == 'B' || act_upper == 'T' || 
                     act_upper == 'X' || act_upper == 'M' || act_upper == 'P' || 
-                    act_upper == 'Y' || act_upper == 'Q') {
+                    act_upper == 'Y') {
                     if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                         lock_acquired = true;
                     } else {
@@ -484,11 +484,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                     }
                     case 'q':
                     case 'Q': {
-                        sensor_t *s = esp_camera_sensor_get();
-                        if (s) {
-                            s->set_quality(s, val);
-                            dual_printf("[System] JPEG Quality updated to %d.\n", val);
-                        }
+                        run_quick_live_inference();
                         break;
                     }
                     case 'd':
