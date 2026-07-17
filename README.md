@@ -1,4 +1,4 @@
-﻿# EECampEdu
+# EECampEdu
 
 EECampEdu is the integrated workspace for the gesture-controlled robotic arm system.
 
@@ -187,8 +187,9 @@ Supported `--quant-format` choices:
 | --- | --- | --- |
 | `int8` | Required | Recommended. Full int8 input/output and int8 weights. Best size/speed target for ESP1. |
 | `int16` | Required | Experimental TFLite int16 activations with int8 weights. Currently supports `per-channel` only; verify TFLite Micro operator support per model. |
-| `float16` | Not required | Float16 weight export; input/output usually remain float32. Useful for size comparison, not the primary ESP path. |
 | `float32` | Not required | No quantization. Useful as a reference export; usually larger/slower on ESP. |
+
+`float16` is intentionally not offered as an ESP deploy option: this ESP TFLite Micro build registers `DEQUANTIZE`, but its kernel does not support float16-weight dequantization.
 
 Supported `--quant-granularity` choices for integer formats:
 

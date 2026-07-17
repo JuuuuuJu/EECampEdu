@@ -1,4 +1,4 @@
-﻿# Firmware
+# Firmware
 
 `firmware/` contains all deploy-side code for ESP1, ESP2, and PC tooling.
 
@@ -42,7 +42,7 @@ Important settings:
 
 - `RUNTIME_MODE`: selects benchmark, camera, USB, or self-test behavior.
 - `ENABLE_INPUT_CONTROLS`: enables rotary encoder / button GPIO input on ESP1.
-- `TENSOR_ARENA_SIZE`: TFLite Micro tensor arena size.
+- `TENSOR_ARENA_SIZE`: TFLite Micro tensor arena size. Current integration default is `1536 * 1024` bytes so float32 MobileNetV2 can allocate tensors from PSRAM.
 - `MODEL_PARTITION_LABEL`: flash partition containing the selected TFLite model.
 - `STORAGE_PARTITION_LABEL`: FAT storage partition used by camera/USB.
 
@@ -118,7 +118,7 @@ The quantization script:
 - reads calibration images from `model_finetune/dataset/train/`
 - applies grayscale 96x96 preprocessing
 - runs TensorFlow Lite representative calibration for integer formats
-- exports one of the supported deploy formats: `int8`, `int16`, `float16`, or `float32`
+- exports one of the supported ESP deploy formats: `int8`, `int16`, or `float32`
 - writes a quantization report with input/output shape, dtype, scale, zero point, and class order
 Supported deploy formats:
 
@@ -126,8 +126,9 @@ Supported deploy formats:
 | --- | --- | --- |
 | `int8` | Required | Recommended ESP1 format. Full int8 input/output and weights. |
 | `int16` | Required | Experimental int16 activations with int8 weights. Currently supports `per-channel` only and requires per-model TFLite Micro verification. |
-| `float16` | Not required | Float16 weight export; input/output usually remain float32. |
 | `float32` | Not required | Reference export without quantization. |
+
+`float16` is not listed because this ESP TFLite Micro build cannot prepare float16-weight `DEQUANTIZE`; use `float32` for the floating-point reference path.
 
 `--quant-granularity per-channel` is recommended for integer formats. `per-tensor` is available for int8 as a simpler shared tensor scale mode; int16 currently uses per-channel only.
 
@@ -144,7 +145,7 @@ Flash only ESP1 model partition:
 python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
 ```
 
-The model partition is independent from the firmware app partition.
+The model partition is independent from the firmware app partition. Current ESP1 partition table reserves `4M` for `model` at `0x310000`, then starts FAT `storage` at `0x710000`.
 
 ## Benchmark
 
