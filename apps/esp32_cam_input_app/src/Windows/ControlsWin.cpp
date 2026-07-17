@@ -119,11 +119,27 @@ void ControlsWin::draw(AppState& state) {
     ImGui::SeparatorText("Sensor Settings");
     const char* formats[] = {"Grayscale", "RGB565", "YUV422", "JPEG"};
     if (ImGui::Combo("Pixel format", &state.pixel_format, formats, IM_ARRAYSIZE(formats))) {
+        if (state.pixel_format == 3 && state.frame_size == 0) {
+            // Grayscale and JPEG not supported/unstable at 96x96
+            state.frame_size = 1; // Switch to QQVGA
+            state.SendUsbCommand("s1", "auto QQVGA for Grayscale/JPEG");
+        } else if (state.pixel_format != 3 && state.frame_size >= 3) {
+            // Raw formats not supported at VGA or higher
+            state.pixel_format = 3; // Revert to JPEG
+        }
         state.SendUsbCommand("f" + std::to_string(state.pixel_format), "set pixel format");
     }
 
     const char* sizes[] = {"96x96", "QQVGA", "QVGA", "VGA", "SVGA", "UXGA"};
     if (ImGui::Combo("Frame size", &state.frame_size, sizes, IM_ARRAYSIZE(sizes))) {
+        if (state.frame_size == 0 && state.pixel_format == 3) {
+            // 96x96 not supported by Grayscale/JPEG, revert to QQVGA
+            state.frame_size = 1;
+        } else if (state.frame_size >= 3 && state.pixel_format != 3) {
+            // VGA or higher requires JPEG format
+            state.pixel_format = 3; // Auto switch to JPEG
+            state.SendUsbCommand("f3", "auto JPEG for VGA+");
+        }
         state.SendUsbCommand("s" + std::to_string(state.frame_size), "set frame size");
     }
 
