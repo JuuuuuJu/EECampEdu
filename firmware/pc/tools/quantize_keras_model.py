@@ -22,7 +22,7 @@ DEFAULT_REPORT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "reports"
 CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 FOUR_CLASS_NAMES = ["up", "down", "right", "left"]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
-TFLITE_EXPORT_FORMATS = ["float32", "float16", "int8", "int16"]
+TFLITE_EXPORT_FORMATS = ["float32", "int8", "int16"]
 INT_QUANT_GRANULARITY_CHOICES = ["per-channel", "per-tensor"]
 
 
@@ -190,6 +190,104 @@ def inspect_tflite(tf, model_path):
     }
 
 
+
+def quantize_input_for_tflite(array, input_detail):
+    dtype = input_detail["dtype"]
+    if np.issubdtype(dtype, np.floating):
+        return array.astype(dtype)
+
+    scale, zero_point = input_detail["quantization"]
+    if not scale:
+        return array.astype(dtype)
+
+    quantized = np.round(array / scale + zero_point)
+    limits = np.iinfo(dtype)
+    quantized = np.clip(quantized, limits.min, limits.max)
+    return quantized.astype(dtype)
+
+
+def dequantize_output_for_report(array, output_detail):
+    dtype = output_detail["dtype"]
+    if np.issubdtype(dtype, np.floating):
+        return array.astype(np.float32)
+
+    scale, zero_point = output_detail["quantization"]
+    if not scale:
+        return array.astype(np.float32)
+    return (array.astype(np.float32) - float(zero_point)) * float(scale)
+
+
+def evaluate_tflite_model(tf, tflite_path, validation_dir, image_size, preprocess_mode, min_accuracy):
+    validation_dir = Path(validation_dir)
+    interpreter = tf.lite.Interpreter(model_path=str(tflite_path))
+    interpreter.allocate_tensors()
+    input_detail = interpreter.get_input_details()[0]
+    output_detail = interpreter.get_output_details()[0]
+    output_shape = output_detail["shape"].tolist()
+    class_names = class_names_for_output(output_shape)
+
+    if not validation_dir.exists():
+        print(f"[WARN] TFLite validation skipped: {validation_dir} does not exist.")
+        return None
+
+    x_paths = []
+    y_data = []
+    counts = {}
+    for label, class_name in enumerate(class_names):
+        class_dir = validation_dir / class_name
+        paths = list(iter_images(class_dir)) if class_dir.exists() else []
+        counts[class_name] = len(paths)
+        for path in paths:
+            x_paths.append(path)
+            y_data.append(label)
+
+    if not x_paths:
+        print(f"[WARN] TFLite validation skipped: no class folders matched {class_names}.")
+        return None
+
+    y = np.asarray(y_data, dtype=np.int32)
+    predictions = []
+    outputs = []
+    for path in x_paths:
+        sample = preprocess_image(path, image_size, preprocess_mode)[None, ...].astype(np.float32)
+        sample = quantize_input_for_tflite(sample, input_detail)
+        interpreter.set_tensor(input_detail["index"], sample)
+        interpreter.invoke()
+        raw_output = interpreter.get_tensor(output_detail["index"])[0]
+        output = dequantize_output_for_report(raw_output, output_detail)
+        outputs.append(output)
+        predictions.append(int(np.argmax(output)))
+
+    pred_labels = np.asarray(predictions, dtype=np.int32)
+    outputs = np.stack(outputs, axis=0).astype(np.float32)
+    accuracy = float(np.mean(pred_labels == y))
+    output_variation = float(np.mean(np.std(outputs, axis=0)))
+    correct = int(np.sum(pred_labels == y))
+    pred_counts = {class_names[index]: int(np.sum(pred_labels == index)) for index in range(len(class_names))}
+
+    print(f"TFLite validation images: {validation_dir} ({len(y)} samples)")
+    print(f"TFLite validation classes: {counts}")
+    print(f"TFLite accuracy         : {correct}/{len(y)} ({accuracy * 100:.2f}%)")
+    print(f"TFLite prediction dist  : {pred_counts}")
+    print(f"TFLite output variation : {output_variation:.8f}")
+
+    summary = {
+        "samples": int(len(y)),
+        "correct": correct,
+        "accuracy": accuracy,
+        "classes": counts,
+        "prediction_distribution": pred_counts,
+        "output_variation": output_variation,
+    }
+
+    if accuracy < min_accuracy or output_variation < 1e-4:
+        raise RuntimeError(
+            "Converted TFLite model failed validation after quantization. "
+            f"accuracy={accuracy * 100:.2f}% min={min_accuracy * 100:.2f}%, "
+            f"output_variation={output_variation:.8f}. "
+            "Try int8/per-channel, int16/per-channel, or retrain/fix calibration data before flashing."
+        )
+    return summary
 def configure_deploy_converter(tf, converter, quant_format, quant_granularity, image_paths, image_size, preprocess_mode):
     """Configure TensorFlow Lite converter for supported export/deploy formats."""
     if quant_format == "float32":
@@ -199,14 +297,6 @@ def configure_deploy_converter(tf, converter, quant_format, quant_granularity, i
             "deploy_note": "Float32 TFLite export. Firmware supports float32 I/O, but it is slower and larger than int8.",
         }
 
-    if quant_format == "float16":
-        converter.optimizations = [tf.lite.Optimize.DEFAULT]
-        converter.target_spec.supported_types = [tf.float16]
-        return {
-            "requires_calibration": False,
-            "storage_dtype": "float16 weights, float32 input/output",
-            "deploy_note": "Float16 weight quantization. TFLite input/output usually remain float32; firmware needs Dequantize op support.",
-        }
 
     if quant_granularity == "per-tensor":
         if hasattr(converter, "_experimental_disable_per_channel"):
@@ -519,13 +609,13 @@ def main():
         "--quant-format",
         choices=TFLITE_EXPORT_FORMATS,
         default="int8",
-        help="TensorFlow Lite export format. Choices: float32, float16, int8, int16. Default: int8.",
+        help="ESP deploy TFLite export format. Choices: float32, int8, int16. Default: int8. Float16 is intentionally disabled because ESP TFLite Micro does not support float16-weight DEQUANTIZE in this project.",
     )
     parser.add_argument(
         "--quant-granularity",
         choices=INT_QUANT_GRANULARITY_CHOICES,
         default="per-channel",
-        help="Integer quantization granularity. per-tensor is supported for int8; int16 currently requires per-channel. Ignored for float32/float16. Default: per-channel.",
+        help="Integer quantization granularity. per-tensor is supported for int8; int16 currently requires per-channel. Ignored for float32. Default: per-channel.",
     )
     parser.add_argument("--output", help="Explicit output .tflite path.")
     parser.add_argument("--report", help="Explicit report JSON path.")
@@ -562,8 +652,8 @@ def main():
     else:
         print(f"Calibration images  : not required for {args.quant_format}")
 
+    validation_dir = Path(args.validation_dir).expanduser().resolve() if args.validation_dir else DEFAULT_VALIDATION_DIR
     if not args.skip_source_validation:
-        validation_dir = Path(args.validation_dir).expanduser().resolve() if args.validation_dir else DEFAULT_VALIDATION_DIR
         evaluate_source_model(model, validation_dir, image_size, args.preprocess_mode, args.min_source_accuracy)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
     conversion_config = configure_deploy_converter(
@@ -586,10 +676,25 @@ def main():
     output_path = Path(args.output) if args.output else output_dir / f"{output_stem}_{deploy_suffix}.tflite"
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_bytes(converter.convert())
+    temp_output_path = output_path.with_name(f".{output_path.name}.tmp")
+    temp_output_path.write_bytes(converter.convert())
 
-    info = inspect_tflite(tf, output_path)
-    validate_deploy_tflite(info, args.quant_format)
+    try:
+        info = inspect_tflite(tf, temp_output_path)
+        validate_deploy_tflite(info, args.quant_format)
+        tflite_validation = evaluate_tflite_model(
+            tf,
+            temp_output_path,
+            validation_dir,
+            image_size,
+            args.preprocess_mode,
+            args.min_source_accuracy,
+        )
+    except Exception:
+        temp_output_path.unlink(missing_ok=True)
+        raise
+
+    temp_output_path.replace(output_path)
 
     report_dir = Path(args.report_dir) if args.report_dir else DEFAULT_REPORT_DIR
     report_path = Path(args.report) if args.report else report_dir / f"{output_stem}_{deploy_suffix}_quantization_report.json"
@@ -610,6 +715,7 @@ def main():
         "preprocess_mode": args.preprocess_mode,
         "image_size": [image_size[0], image_size[1]],
         "class_order": class_order,
+        "tflite_validation": tflite_validation,
         "input": {
             "shape": info["input_shape"],
             "dtype": info["input_dtype"],

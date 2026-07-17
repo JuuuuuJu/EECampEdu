@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 // TFLite Micro gesture model configuration.
 // The default Mini ResNet deploy model uses grayscale 96x96x1 tensors. The firmware can
@@ -50,7 +50,7 @@ constexpr int IO_SELF_TEST_INTERVAL_MS = 1000;
 // Integration default: keep the tensor arena on PSRAM so all supported model
 // candidates use the same memory path. Set true only for small-model speed tests.
 constexpr bool PREFER_INTERNAL_TENSOR_ARENA = false;
-constexpr int TENSOR_ARENA_SIZE = 800 * 1024;
+constexpr int TENSOR_ARENA_SIZE = 1536 * 1024;
 constexpr int FALLBACK_TENSOR_ARENA_SIZE = 256 * 1024;
 constexpr const char *MODEL_PARTITION_LABEL = "model";
 constexpr const char *STORAGE_PARTITION_LABEL = "storage";

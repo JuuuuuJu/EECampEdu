@@ -1429,6 +1429,7 @@ static bool init_tflite_micro() {
         resolver.AddMul() != kTfLiteOk ||
         resolver.AddPad() != kTfLiteOk ||
         resolver.AddConcatenation() != kTfLiteOk ||
+        resolver.AddDequantize() != kTfLiteOk ||
         resolver.AddReshape() != kTfLiteOk ||
         resolver.AddSoftmax() != kTfLiteOk) {
         ESP_LOGE(TAG, "Failed to register TFLite Micro operators.");
