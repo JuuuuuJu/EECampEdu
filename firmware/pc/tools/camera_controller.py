@@ -163,7 +163,6 @@ camera_state = {
     "mirror": 0,      # 0 = Disabled, 1 = Enabled
     "flip": 0,        # 0 = Disabled, 1 = Enabled
     "awb": 1,         # 1 = Auto, 0 = Manual
-    "quality": 12,    # 10 to 63, lower is higher quality
     "streaming": False # True = Continuous stream active
 }
 
@@ -448,7 +447,6 @@ def print_help_menu():
     print("  g1 / g0  - Enable/Disable Auto Gain Control (AGC)")
     print("  a <0-30> - Manual Gain index (Only active when AGC is disabled)")
     print("  y1 / y0  - Enable/Disable Auto White Balance (AWB)")
-    print("  q <val>  - Set JPEG Quality (10-63, lower is higher quality)")
     print("  b <value>- Set Brightness (-2 to 2)")
     print("  t <value>- Set Contrast (-2 to 2)")
     print("  x <value>- Set Saturation (-2 to 2)")
@@ -458,7 +456,7 @@ def print_help_menu():
     print(f"Current State: Format = {camera_state['format']} | Resolution = {camera_state['resolution']}")
     print(f"               AEC = {'AUTO' if camera_state['aec'] else 'MANUAL'} | Exposure = {camera_state['exposure']}")
     print(f"               AGC = {'AUTO' if camera_state['agc'] else 'MANUAL'} | Gain = {camera_state['gain']}")
-    print(f"               AWB = {'AUTO' if camera_state['awb'] else 'MANUAL'} | Quality = {camera_state['quality']}")
+    print(f"               AWB = {'AUTO' if camera_state['awb'] else 'MANUAL'}")
     print(f"               Brightness = {camera_state['brightness']} | Contrast = {camera_state['contrast']} | Saturation = {camera_state['saturation']}")
     print(f"               Mirror = {'ENABLED' if camera_state['mirror'] else 'DISABLED'} | Flip = {'ENABLED' if camera_state['flip'] else 'DISABLED'}")
     print(f"               Streaming = {'ENABLED' if camera_state['streaming'] else 'DISABLED'}")
@@ -744,15 +742,6 @@ def handle_command(cmd_str):
         camera_state["awb"] = val
         print(f"[Python UI] Auto White Balance (AWB) set to {'AUTO' if val else 'MANUAL'}")
         ser.write(f"y{val}\n".encode('utf-8'))
-        return True
-        
-    elif action == 'q':
-        if not (10 <= val <= 63):
-            print("❌ Error: JPEG Quality must be between 10 and 63")
-            return False
-        camera_state["quality"] = val
-        print(f"[Python UI] JPEG Quality set to {val} (higher values compress more to prevent serial freeze)")
-        ser.write(f"q{val}\n".encode('utf-8'))
         return True
         
     elif action == 'd':
