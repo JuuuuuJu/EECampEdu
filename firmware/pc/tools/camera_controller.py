@@ -1,4 +1,4 @@
-﻿import serial
+import serial
 import base64
 import os
 import threading
@@ -140,6 +140,7 @@ metadata = {}
 file_index_cache = []
 pending_downloads = []
 pending_inferences = []
+show_serial_stream = False
 
 # Globally shared variables for live preview and capture synchronization
 latest_frame = None
@@ -162,6 +163,7 @@ camera_state = {
     "mirror": 0,      # 0 = Disabled, 1 = Enabled
     "flip": 0,        # 0 = Disabled, 1 = Enabled
     "awb": 1,         # 1 = Auto, 0 = Manual
+    "quality": 12,    # 10 to 63, lower is higher quality
     "streaming": False # True = Continuous stream active
 }
 
@@ -246,6 +248,9 @@ def read_serial_thread():
             elif line.startswith("---END_FILE---"):
                 if receiving_file:
                     receiving_file = False
+                    if show_serial_stream:
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
                     base64_data = "".join(file_buffer)
                     try:
                         file_bytes = base64.b64decode(base64_data)
@@ -343,6 +348,9 @@ def read_serial_thread():
                         print(f"❌ Failed to decode Base64 image: {ex}")
                 
             elif receiving_file:
+                if show_serial_stream:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
                 file_buffer.append(line)
             elif receiving:
                 buffer.append(line)
@@ -417,7 +425,7 @@ def print_help_menu():
     print("  d1 / d0             - Start/Stop Continuous live camera stream (GUI preview)")
     print("  w                   - Capture image and save locally to ESP32 Flash storage")
     print("  l                   - List all files stored in ESP32 Flash storage (displays index numbers)")
-    print("  r <idx/file> [cv]   - Retrieve file from ESP32 Flash (r 0 to retrieve all files). Append 'cv' for CV copy")
+    print("  r <idx/file>        - Retrieve file from ESP32 Flash (r 0 to retrieve all files).")
     print("  k <idx/file>        - Delete/Kill a file from ESP32 Flash (k 0 to delete all files)")
     print("  i <idx/file>        - Feed a stored file to local CV model task (i 0 to infer on all files)")
     print("  format              - Format ESP32 Flash partition")
@@ -440,6 +448,7 @@ def print_help_menu():
     print("  g1 / g0  - Enable/Disable Auto Gain Control (AGC)")
     print("  a <0-30> - Manual Gain index (Only active when AGC is disabled)")
     print("  y1 / y0  - Enable/Disable Auto White Balance (AWB)")
+    print("  q <val>  - Set JPEG Quality (10-63, lower is higher quality)")
     print("  b <value>- Set Brightness (-2 to 2)")
     print("  t <value>- Set Contrast (-2 to 2)")
     print("  x <value>- Set Saturation (-2 to 2)")
@@ -449,7 +458,7 @@ def print_help_menu():
     print(f"Current State: Format = {camera_state['format']} | Resolution = {camera_state['resolution']}")
     print(f"               AEC = {'AUTO' if camera_state['aec'] else 'MANUAL'} | Exposure = {camera_state['exposure']}")
     print(f"               AGC = {'AUTO' if camera_state['agc'] else 'MANUAL'} | Gain = {camera_state['gain']}")
-    print(f"               AWB = {'AUTO' if camera_state['awb'] else 'MANUAL'}")
+    print(f"               AWB = {'AUTO' if camera_state['awb'] else 'MANUAL'} | Quality = {camera_state['quality']}")
     print(f"               Brightness = {camera_state['brightness']} | Contrast = {camera_state['contrast']} | Saturation = {camera_state['saturation']}")
     print(f"               Mirror = {'ENABLED' if camera_state['mirror'] else 'DISABLED'} | Flip = {'ENABLED' if camera_state['flip'] else 'DISABLED'}")
     print(f"               Streaming = {'ENABLED' if camera_state['streaming'] else 'DISABLED'}")
@@ -533,15 +542,23 @@ def handle_command(cmd_str):
                     return False
         else:
             filename = target
-            if not filename.startswith("/"):
-                filename = "/" + filename
+            if not filename.startswith("/usb/"):
+                if filename.startswith("/"):
+                    filename = "/usb" + filename
+                else:
+                    filename = "/usb/" + filename
                 
         normalized_args = filename
         if len(parts) > 1:
             normalized_args += " " + parts[1]
             
         if action == 'r':
-            if normalized_args == "/0" or normalized_args == "0":
+            show_serial_stream = False
+            esp_arg = filename
+            if len(parts) > 1 and parts[1].strip().lower() == 'show':
+                show_serial_stream = True
+                
+            if esp_arg == "/0" or esp_arg == "0" or esp_arg == "/usb/0":
                 if not file_index_cache:
                     print("❌ Error: No files listed in cache. Please type 'l' first to list and index files.")
                     return False
@@ -550,8 +567,8 @@ def handle_command(cmd_str):
                 print(f"[Python UI] Batch download started. Requesting file '{next_file}' ({len(pending_downloads)} remaining)...")
                 ser.write(f"r{next_file}\n".encode('utf-8'))
             else:
-                print(f"[Python UI] Requesting retrieval of file '{normalized_args}' from ESP32...")
-                ser.write(f"r{normalized_args}\n".encode('utf-8'))
+                print(f"[Python UI] Requesting retrieval of file '{esp_arg}' from ESP32...")
+                ser.write(f"r{esp_arg}\n".encode('utf-8'))
         elif action == 'k':
             if normalized_args == "/0" or normalized_args == "0":
                 print("[Python UI] Requesting deletion of ALL files from ESP32 storage...")
@@ -727,6 +744,15 @@ def handle_command(cmd_str):
         camera_state["awb"] = val
         print(f"[Python UI] Auto White Balance (AWB) set to {'AUTO' if val else 'MANUAL'}")
         ser.write(f"y{val}\n".encode('utf-8'))
+        return True
+        
+    elif action == 'q':
+        if not (10 <= val <= 63):
+            print("❌ Error: JPEG Quality must be between 10 and 63")
+            return False
+        camera_state["quality"] = val
+        print(f"[Python UI] JPEG Quality set to {val} (higher values compress more to prevent serial freeze)")
+        ser.write(f"q{val}\n".encode('utf-8'))
         return True
         
     elif action == 'd':
