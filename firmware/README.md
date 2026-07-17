@@ -14,7 +14,7 @@ Deploy contract:
 
 ```text
 Source framework can be PyTorch or TensorFlow.
-Deploy target is unified as int8 TFLite for ESP1 ESP32-S3 TFLite Micro.
+Deploy target is TensorFlow Lite for ESP1 ESP32-S3 TFLite Micro. Full int8 TFLite is the default/recommended target.
 Servo output target is ESP2 ESP-IDF firmware, controlled by PC serial commands.
 ```
 
@@ -43,7 +43,7 @@ Important settings:
 - `RUNTIME_MODE`: selects benchmark, camera, USB, or self-test behavior.
 - `ENABLE_INPUT_CONTROLS`: enables rotary encoder / button GPIO input on ESP1.
 - `TENSOR_ARENA_SIZE`: TFLite Micro tensor arena size.
-- `MODEL_PARTITION_LABEL`: flash partition containing the int8 TFLite model.
+- `MODEL_PARTITION_LABEL`: flash partition containing the selected TFLite model.
 - `STORAGE_PARTITION_LABEL`: FAT storage partition used by camera/USB.
 
 ESP1 does not drive robotic-arm servo GPIO. It only prints inference results such as:
@@ -106,10 +106,10 @@ Default source model (recommended):
 model_finetune/models/tf/MobileNetV2_finetuned.keras
 ```
 
-Quantize source model into int8 TFLite:
+Export source model into deployable TFLite. Default/recommended format is full int8:
 
 ```powershell
-python firmware\pc\tools\quantize_keras_model.py
+python firmware\pc\tools\quantize_keras_model.py --quant-format int8 --quant-granularity per-channel
 ```
 
 The quantization script:
@@ -117,21 +117,31 @@ The quantization script:
 - loads a `.keras` source model from `model_finetune/models/tf/` or `model_finetune/models/pytorch/`
 - reads calibration images from `model_finetune/dataset/train/`
 - applies grayscale 96x96 preprocessing
-- runs TensorFlow Lite representative calibration
-- exports full int8 input/output TFLite
+- runs TensorFlow Lite representative calibration for integer formats
+- exports one of the supported deploy formats: `int8`, `int16`, `float16`, or `float32`
 - writes a quantization report with input/output shape, dtype, scale, zero point, and class order
+Supported deploy formats:
+
+| Format | Calibration | Notes |
+| --- | --- | --- |
+| `int8` | Required | Recommended ESP1 format. Full int8 input/output and weights. |
+| `int16` | Required | Experimental int16 activations with int8 weights. Currently supports `per-channel` only and requires per-model TFLite Micro verification. |
+| `float16` | Not required | Float16 weight export; input/output usually remain float32. |
+| `float32` | Not required | Reference export without quantization. |
+
+`--quant-granularity per-channel` is recommended for integer formats. `per-tensor` is available for int8 as a simpler shared tensor scale mode; int16 currently uses per-channel only.
 
 Generated files:
 
 ```text
-firmware/pc/artifacts/models/MobileNetV2_finetuned_int8.tflite
-firmware/pc/artifacts/reports/MobileNetV2_finetuned_quantization_report.json
+firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite
+firmware/pc/artifacts/reports/MobileNetV2_finetuned_int8_per-channel_quantization_report.json
 ```
 
 Flash only ESP1 model partition:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8.tflite" -p COM6
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
 ```
 
 The model partition is independent from the firmware app partition.
@@ -148,14 +158,14 @@ Inference benchmark:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
 Inference benchmark plus ESP2 output forwarding:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
 ```
 
 Primary deploy metrics:

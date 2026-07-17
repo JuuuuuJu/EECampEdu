@@ -22,6 +22,8 @@ DEFAULT_REPORT_DIR = FIRMWARE_ROOT / "pc" / "artifacts" / "reports"
 CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 FOUR_CLASS_NAMES = ["up", "down", "right", "left"]
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
+TFLITE_EXPORT_FORMATS = ["float32", "float16", "int8", "int16"]
+INT_QUANT_GRANULARITY_CHOICES = ["per-channel", "per-tensor"]
 
 
 def display_path(path):
@@ -147,7 +149,7 @@ def evaluate_source_model(model, validation_dir, image_size, preprocess_mode, mi
             "Source .keras model failed validation before quantization. "
             f"accuracy={accuracy * 100:.2f}% min={min_accuracy * 100:.2f}%, "
             f"output_variation={output_variation:.8f}. "
-            "Retrain or fix the source model before exporting int8 TFLite."
+            "Retrain or fix the source model before exporting TFLite."
         )
     return accuracy
 
@@ -186,6 +188,77 @@ def inspect_tflite(tf, model_path):
             "zero_point": int(output_detail["quantization"][1]),
         },
     }
+
+
+def configure_deploy_converter(tf, converter, quant_format, quant_granularity, image_paths, image_size, preprocess_mode):
+    """Configure TensorFlow Lite converter for supported export/deploy formats."""
+    if quant_format == "float32":
+        return {
+            "requires_calibration": False,
+            "storage_dtype": "float32",
+            "deploy_note": "Float32 TFLite export. Firmware supports float32 I/O, but it is slower and larger than int8.",
+        }
+
+    if quant_format == "float16":
+        converter.optimizations = [tf.lite.Optimize.DEFAULT]
+        converter.target_spec.supported_types = [tf.float16]
+        return {
+            "requires_calibration": False,
+            "storage_dtype": "float16 weights, float32 input/output",
+            "deploy_note": "Float16 weight quantization. TFLite input/output usually remain float32; firmware needs Dequantize op support.",
+        }
+
+    if quant_granularity == "per-tensor":
+        if hasattr(converter, "_experimental_disable_per_channel"):
+            converter._experimental_disable_per_channel = True
+        else:
+            print("[WARN] This TensorFlow version cannot force per-tensor quantization; converter may still emit per-channel weights.")
+
+    converter.optimizations = [tf.lite.Optimize.DEFAULT]
+    converter.representative_dataset = representative_dataset(
+        image_paths,
+        image_size,
+        preprocess_mode,
+    )
+
+    if quant_format == "int8":
+        converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
+        converter.inference_input_type = tf.int8
+        converter.inference_output_type = tf.int8
+        return {
+            "requires_calibration": True,
+            "storage_dtype": "full int8 input/output/weights",
+            "deploy_note": "Recommended ESP deploy format.",
+        }
+
+    if quant_format == "int16":
+        ops_name = "EXPERIMENTAL_TFLITE_BUILTINS_ACTIVATIONS_INT16_WEIGHTS_INT8"
+        if not hasattr(tf.lite.OpsSet, ops_name):
+            raise RuntimeError(
+                "This TensorFlow version does not expose int16 activation / int8 weight quantization. "
+                f"Missing tf.lite.OpsSet.{ops_name}."
+            )
+        converter.target_spec.supported_ops = [getattr(tf.lite.OpsSet, ops_name)]
+        converter.inference_input_type = tf.int16
+        converter.inference_output_type = tf.int16
+        return {
+            "requires_calibration": True,
+            "storage_dtype": "int16 activations, int8 weights",
+            "deploy_note": "Experimental TensorFlow Lite int16 activation export. Verify TFLite Micro kernel support on ESP per model.",
+        }
+
+    raise ValueError(f"Unsupported TFLite export format: {quant_format}")
+
+
+def validate_deploy_tflite(info, quant_format):
+    input_dtype = info["input_dtype"]
+    output_dtype = info["output_dtype"]
+    if quant_format == "int8" and ("int8" not in input_dtype or "int8" not in output_dtype):
+        raise RuntimeError(f"Converted model is not full int8. input={input_dtype} output={output_dtype}")
+    if quant_format == "int16" and ("int16" not in input_dtype or "int16" not in output_dtype):
+        raise RuntimeError(f"Converted model is not int16 I/O. input={input_dtype} output={output_dtype}")
+    if quant_format == "float32" and ("float32" not in input_dtype or "float32" not in output_dtype):
+        raise RuntimeError(f"Converted model is not float32 I/O. input={input_dtype} output={output_dtype}")
 
 
 def build_mini_resnet_keras_model(tf, image_size, num_classes):
@@ -395,7 +468,7 @@ def class_names_for_output(output_shape):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Quantize a .keras gesture model into an ESP deploy int8 TFLite model."
+        description="Export a .keras gesture model into a deployable TFLite model."
     )
     parser.add_argument(
         "--model-name",
@@ -442,9 +515,28 @@ def main():
         action="store_true",
         help="Skip source .keras validation before quantization. Not recommended.",
     )
+    parser.add_argument(
+        "--quant-format",
+        choices=TFLITE_EXPORT_FORMATS,
+        default="int8",
+        help="TensorFlow Lite export format. Choices: float32, float16, int8, int16. Default: int8.",
+    )
+    parser.add_argument(
+        "--quant-granularity",
+        choices=INT_QUANT_GRANULARITY_CHOICES,
+        default="per-channel",
+        help="Integer quantization granularity. per-tensor is supported for int8; int16 currently requires per-channel. Ignored for float32/float16. Default: per-channel.",
+    )
     parser.add_argument("--output", help="Explicit output .tflite path.")
     parser.add_argument("--report", help="Explicit report JSON path.")
     args = parser.parse_args()
+
+    if args.quant_format == "int16" and args.quant_granularity != "per-channel":
+        parser.error(
+            "--quant-format int16 currently supports only --quant-granularity per-channel. "
+            "TensorFlow Lite int16 activation quantization fails with forced per-tensor weight scales. "
+            "Use int16/per-channel or int8/per-tensor."
+        )
 
     model_path = resolve_model_path(args)
     calibration_dir = Path(args.calibration_dir).expanduser().resolve() if args.calibration_dir else DEFAULT_CALIBRATION_DIR
@@ -457,43 +549,50 @@ def main():
 
     model = load_source_model(tf, model_path, image_size)
     class_order = class_names_for_output(model.output_shape)
-    image_paths = select_calibration_images(calibration_dir, class_order, args.samples)
-    if not image_paths:
-        raise RuntimeError(f"No calibration images found under {calibration_dir} for classes {class_order}")
-    calibration_counts = {name: sum(1 for path in image_paths if path.parent.name == name) for name in class_order}
-    print(f"Calibration images  : {calibration_dir} ({len(image_paths)} samples)")
-    print(f"Calibration classes : {calibration_counts}")
+    needs_calibration = args.quant_format in ("int8", "int16")
+    image_paths = []
+    calibration_counts = {name: 0 for name in class_order}
+    if needs_calibration:
+        image_paths = select_calibration_images(calibration_dir, class_order, args.samples)
+        if not image_paths:
+            raise RuntimeError(f"No calibration images found under {calibration_dir} for classes {class_order}")
+        calibration_counts = {name: sum(1 for path in image_paths if path.parent.name == name) for name in class_order}
+        print(f"Calibration images  : {calibration_dir} ({len(image_paths)} samples)")
+        print(f"Calibration classes : {calibration_counts}")
+    else:
+        print(f"Calibration images  : not required for {args.quant_format}")
 
     if not args.skip_source_validation:
         validation_dir = Path(args.validation_dir).expanduser().resolve() if args.validation_dir else DEFAULT_VALIDATION_DIR
         evaluate_source_model(model, validation_dir, image_size, args.preprocess_mode, args.min_source_accuracy)
     converter = tf.lite.TFLiteConverter.from_keras_model(model)
-    converter.optimizations = [tf.lite.Optimize.DEFAULT]
-    converter.representative_dataset = representative_dataset(
+    conversion_config = configure_deploy_converter(
+        tf,
+        converter,
+        args.quant_format,
+        args.quant_granularity,
         image_paths,
         image_size,
         args.preprocess_mode,
     )
-    converter.target_spec.supported_ops = [tf.lite.OpsSet.TFLITE_BUILTINS_INT8]
-    converter.inference_input_type = tf.int8
-    converter.inference_output_type = tf.int8
 
     output_dir = Path(args.output_dir) if args.output_dir else DEFAULT_OUTPUT_DIR
     output_stem = model_path.stem
-    output_path = Path(args.output) if args.output else output_dir / f"{output_stem}_int8.tflite"
+    deploy_suffix = (
+        f"{args.quant_format}_{args.quant_granularity}"
+        if args.quant_format in ("int8", "int16")
+        else args.quant_format
+    )
+    output_path = Path(args.output) if args.output else output_dir / f"{output_stem}_{deploy_suffix}.tflite"
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_bytes(converter.convert())
 
     info = inspect_tflite(tf, output_path)
-    if "int8" not in info["input_dtype"] or "int8" not in info["output_dtype"]:
-        raise RuntimeError(
-            "Converted model is not full int8. "
-            f"input={info['input_dtype']} output={info['output_dtype']}"
-        )
+    validate_deploy_tflite(info, args.quant_format)
 
     report_dir = Path(args.report_dir) if args.report_dir else DEFAULT_REPORT_DIR
-    report_path = Path(args.report) if args.report else report_dir / f"{output_stem}_quantization_report.json"
+    report_path = Path(args.report) if args.report else report_dir / f"{output_stem}_{deploy_suffix}_quantization_report.json"
     report_path = report_path.expanduser().resolve()
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report = {
@@ -502,23 +601,30 @@ def main():
         "source_model": display_path(model_path),
         "exported_tflite": display_path(output_path),
         "calibration_dir": display_path(calibration_dir),
+        "requested_quant_format": args.quant_format,
+        "export_variant": deploy_suffix,
+        "storage_dtype": conversion_config["storage_dtype"],
+        "quantization_granularity": args.quant_granularity if args.quant_format in ("int8", "int16") else "not_applicable",
+        "deploy_note": conversion_config["deploy_note"],
         "calibration_samples": len(image_paths),
         "preprocess_mode": args.preprocess_mode,
         "image_size": [image_size[0], image_size[1]],
         "class_order": class_order,
         "input": {
             "shape": info["input_shape"],
-            "dtype": "int8",
+            "dtype": info["input_dtype"],
             **info["input_quantization"],
         },
         "output": {
             "shape": info["output_shape"],
-            "dtype": "int8",
+            "dtype": info["output_dtype"],
             **info["output_quantization"],
         },
     }
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
+    print(f"Quant format        : {args.quant_format} ({conversion_config['storage_dtype']})")
+    print(f"Quant granularity   : {args.quant_granularity if args.quant_format in ('int8', 'int16') else 'not_applicable'}")
     print(f"Deploy TFLite       : {output_path}")
     print(f"Quantization report : {report_path}")
     print(f"Input               : {info['input_shape']} {info['input_dtype']} {info['input_quantization']}")

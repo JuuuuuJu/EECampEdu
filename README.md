@@ -1,4 +1,4 @@
-# EECampEdu
+﻿# EECampEdu
 
 EECampEdu is the integrated workspace for the gesture-controlled robotic arm system.
 
@@ -6,7 +6,7 @@ Current integration architecture:
 
 ```text
 Model source: PyTorch or TensorFlow
-Deploy target: unified int8 TFLite
+Deploy target: TensorFlow Lite, default/recommended int8 TFLite
 Inference board: ESP1, ESP32-S3
 Output board: ESP2, normal ESP32
 PC role: live preview, benchmark, command bridge, and UI
@@ -34,14 +34,14 @@ Model team
   -> export source artifacts under model_finetune/models/
 
 Deploy team
-  -> quantize/calibrate source model into int8 TFLite
+  -> export source model into deployable TFLite
   -> flash ESP1 model partition
   -> validate accuracy, latency, throughput, and output similarity
 
 ESP1 ESP32-S3
   -> OV2640 capture
   -> grayscale / crop / resize / scale
-  -> int8 TFLite Micro inference
+  -> TFLite Micro inference
   -> print RESULT,<class>,<model_us>,<preprocess_us>,<device_us>,<scores...>
 
 PC
@@ -59,7 +59,7 @@ ESP2 normal ESP32
 | Team | Main folder | Main responsibility |
 | --- | --- | --- |
 | Model | `model_finetune/` | Train/fine-tune gesture models and provide source artifacts. |
-| Deploy | `firmware/` | Convert PyTorch/TensorFlow handoff into int8 TFLite, flash, benchmark, and validate ESP behavior. |
+| Deploy | `firmware/` | Convert PyTorch/TensorFlow handoff into ESP-deployable TFLite, flash, benchmark, and validate ESP behavior. |
 | Camera | `firmware/esp/main/src/camera_capture_ov2640.cpp` | OV2640 capture and frame format/resolution control on ESP1. |
 | USB | `firmware/esp/main/src/usb_composite.cpp` | ESP1 USB CDC command stream and USB MSC storage exposure. |
 | Input | `apps/`, `firmware/esp/main/src/input_controls.cpp` | PC UI, rotary encoder/button controls, camera parameters. |
@@ -165,7 +165,7 @@ cd model_finetune
 python pytorch\train_mini_resnet.py
 ```
 
-PyTorch models should be exported through the documented ONNX / Keras-compatible handoff path before firmware quantization. The ESP32 deploy target is still int8 TFLite.
+PyTorch models should be exported through the documented ONNX / Keras-compatible handoff path before firmware export. The recommended ESP32 deploy target is full int8 TFLite.
 
 ## Quantize And Flash Model
 
@@ -175,23 +175,40 @@ Default TensorFlow source model (recommended):
 model_finetune/models/tf/MobileNetV2_finetuned.keras
 ```
 
-Quantize with representative calibration images from `model_finetune/dataset/train/`:
+Export the source model into a deployable TFLite file. Default is full `int8`, which is the recommended ESP32-S3 deployment format:
 
 ```powershell
-python firmware\pc\tools\quantize_keras_model.py
+python firmware\pc\tools\quantize_keras_model.py --quant-format int8 --quant-granularity per-channel
 ```
 
-Generated deploy artifacts:
+Supported `--quant-format` choices:
+
+| Format | Calibration | Notes |
+| --- | --- | --- |
+| `int8` | Required | Recommended. Full int8 input/output and int8 weights. Best size/speed target for ESP1. |
+| `int16` | Required | Experimental TFLite int16 activations with int8 weights. Currently supports `per-channel` only; verify TFLite Micro operator support per model. |
+| `float16` | Not required | Float16 weight export; input/output usually remain float32. Useful for size comparison, not the primary ESP path. |
+| `float32` | Not required | No quantization. Useful as a reference export; usually larger/slower on ESP. |
+
+Supported `--quant-granularity` choices for integer formats:
 
 ```text
-firmware/pc/artifacts/models/MobileNetV2_finetuned_int8.tflite
-firmware/pc/artifacts/reports/MobileNetV2_finetuned_quantization_report.json
+per-channel  recommended for accuracy
+per-tensor   simpler shared scale per tensor; supported for int8
+```
+
+
+Generated deploy artifacts use the selected format suffix, for example:
+
+```text
+firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite
+firmware/pc/artifacts/reports/MobileNetV2_finetuned_int8_per-channel_quantization_report.json
 ```
 
 Flash only the ESP1 model partition:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8.tflite" -p COM6
+python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
 ```
 
 ## Benchmark
@@ -206,14 +223,14 @@ Benchmark inference only:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
 Benchmark plus ESP2 robotic arm output:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
 ```
 
 Port meaning:
@@ -268,9 +285,9 @@ Full integration test order:
 
 ```text
 1. Train/fine-tune source model in model_finetune/.
-2. Quantize/calibrate the source model into int8 TFLite under firmware/pc/artifacts/models/.
+2. Export the source model into deployable TFLite under firmware/pc/artifacts/models; use int8 unless there is a specific experiment reason.
 3. Build and flash ESP1 firmware.
-4. Flash the int8 TFLite model into the ESP1 model partition.
+4. Flash the selected TFLite model into the ESP1 model partition.
 5. Build and flash ESP2 output firmware.
 6. Run deploy benchmark with --esp2-port to verify accuracy, output similarity, latency, and servo command forwarding.
 7. Run camera + USB + ImGui App integration for live preview and real gesture-to-output behavior.
