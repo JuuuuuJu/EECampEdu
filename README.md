@@ -20,7 +20,7 @@ ESP1 no longer drives servos directly. ESP1 runs camera/model inference and prin
 EECampEdu/
   model_finetune/   Model training, fine-tuning, datasets, and source model handoff.
   firmware/         ESP1 firmware, ESP2 output firmware, quantization, flashing, benchmark, camera, USB.
-  apps/             Windows Dear ImGui / SDL3 integration app.
+  apps/             Windows Dear ImGui / SDL3 integration app, AI PC training portal (browser GUI), and student-PC flash helper.
   docs/unit_tests/  Unit-test guides for model, deploy, camera, USB, input, and output teams.
 ```
 
@@ -211,6 +211,260 @@ Flash only the ESP1 model partition:
 ```powershell
 python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
 ```
+
+## AI PC Training Portal (Browser GUI)
+
+Students can drive training and quantization from a browser instead of the CLI.
+The portal runs on the AI PC and reuses the exact scripts documented above; it
+does not reimplement the ML pipeline.
+
+Start the server on the AI PC:
+
+```bash
+conda activate eecampedu
+python apps/training_portal/server.py --host 0.0.0.0 --port 8000
+```
+
+The classroom gateway forwards each team's public port to its AI PC's `:8000`:
+
+```text
+Team 1  -> http://140.112.194.42:8081
+Team 2  -> http://140.112.194.42:8082
+...
+Team 10 -> http://140.112.194.42:8090
+```
+
+For the full classroom network setup — stable AI PC IP, running the portal as a
+service, firewall, and the gateway port-forwarding table (`808X` → AI PC `:8000`)
+— see [`apps/training_portal/DEPLOYMENT.md`](apps/training_portal/DEPLOYMENT.md).
+
+From the page a student can upload a dataset `.zip`, choose PyTorch or
+TensorFlow and a model recipe, start training, start quantization, watch live
+job logs, and download artifacts (`.keras`, `.pth`, `.onnx`, `.tflite`,
+quantization reports).
+
+Because the ESP32-S3 is plugged into the **student PC** (not the AI PC),
+flashing uses a small localhost helper on the student PC:
+
+```bash
+conda activate eecampedu
+python apps/local_flash_helper/flash_helper.py   # listens on 127.0.0.1:8765
+```
+
+The portal's Flash panel calls that helper, which downloads the selected
+`.tflite` and runs `python -m esptool` locally (default model-partition offset
+`0x310000`). See [`apps/training_portal/README.md`](apps/training_portal/README.md)
+and [`apps/local_flash_helper/README.md`](apps/local_flash_helper/README.md).
+The web dependency (`Flask`) is part of `firmware/pc/requirements.txt`, so no
+separate environment is needed.
+
+## AI PC Full-Test Workflow (Linux)
+
+End-to-end path for validating the AI PC deployment on a Linux AI PC. The portal
+and flash helper are pure-Python and run the same on Linux and Windows; only the
+shell syntax differs (use forward-slash paths and `python`).
+
+### 1. Clone and switch to the `aipc` branch
+
+```bash
+git clone https://github.com/JuuuuuJu/EECampEdu.git
+cd EECampEdu
+git checkout aipc
+```
+
+### 2. Set up the Linux Python environment
+
+The portal only needs the Python deploy stack, not the native ImGui/SDL3
+packages (those are for the Windows desktop app), so use `--skip-native`:
+
+```bash
+python scripts/setup_env.py --skip-native
+conda activate eecampedu
+```
+
+Notes for a fresh Linux miniconda:
+
+- If conda reports *"Terms of Service have not been accepted"* for the default
+  Anaconda channels, either accept them
+  (`conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main`
+  and `.../pkgs/r`) **or** create the env from conda-forge:
+  `conda create -n eecampedu -c conda-forge --override-channels python=3.10`,
+  then `python -m pip install -r firmware/pc/requirements.txt`.
+- The pinned `tensorflow==2.10.1` / `torch==2.2.2` wheels are CPU builds and
+  install on Linux for Python 3.10.
+
+Quick dependency check:
+
+```bash
+python -c "import flask, serial, esptool, numpy, PIL; print('portal deps OK')"
+python -c "import tensorflow as tf; print('tf', tf.__version__)"
+```
+
+### 3. Start the AI PC training portal
+
+```bash
+python apps/training_portal/server.py --host 0.0.0.0 --port 8000
+```
+
+Smoke-check from another shell on the AI PC:
+
+```bash
+curl -s http://127.0.0.1:8000/api/health
+curl -s http://127.0.0.1:8000/api/recipes
+```
+
+Students reach it through the gateway port for their team (`8081`–`8090`). To
+expose `:8000` at `140.112.194.42:808X`, follow
+[`apps/training_portal/DEPLOYMENT.md`](apps/training_portal/DEPLOYMENT.md)
+(stable IP, run-as-service, firewall, and the gateway port-forward table).
+
+### 4. Import or verify dataset structure
+
+The training scripts read `model_finetune/dataset/train/<class>/*.jpg` with class
+order `up, ok, thumb, palm, rock, stone`. Verify the layout:
+
+```bash
+for c in up ok thumb palm rock stone; do \
+  echo "$c: $(ls model_finetune/dataset/train/$c 2>/dev/null | wc -l) images"; done
+```
+
+To import a new dataset, upload a `.zip` (one folder per class) from the portal's
+**Import dataset** panel, or `POST` it:
+
+```bash
+curl -F "file=@dataset.zip" -F "target=train" \
+  http://127.0.0.1:8000/api/dataset/upload
+```
+
+### 5. Train a source model from the web GUI
+
+In the portal: choose **Framework** (TensorFlow/PyTorch), pick a **recipe**
+(MobileNetV2 recommended), then **Start training** and watch the live log.
+Equivalent API call:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/train \
+  -H 'Content-Type: application/json' \
+  -d '{"recipe":"tf_mobilenet","epochs":15}'
+```
+
+Trained source models land in `model_finetune/models/tf/*.keras` (TensorFlow) and
+`model_finetune/models/pytorch/*` (PyTorch). A CLI dry check without training:
+`python model_finetune/train_mobilenet.py --check-only`.
+
+### 6. Quantize / export a deployable TFLite from the web GUI
+
+In the portal's **Quantize** panel choose a source `.keras`, format
+(`int8` recommended) and granularity, then **Start quantization**. Equivalent:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/api/quantize \
+  -H 'Content-Type: application/json' \
+  -d '{"model_name":"MobileNetV2_finetuned","quant_format":"int8","quant_granularity":"per-channel"}'
+```
+
+Underlying CLI (also runnable directly):
+
+```bash
+python firmware/pc/tools/quantize_keras_model.py \
+  --quant-format int8 --quant-granularity per-channel
+```
+
+### 7. Download or select the generated artifact
+
+List and download from the portal's **Generated artifacts** table, or:
+
+```bash
+curl -s http://127.0.0.1:8000/api/artifacts
+curl -s -OJ "http://127.0.0.1:8000/api/artifacts/download?path=firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite"
+```
+
+### 8. Flash path A — ESP32-S3 connected to the AI PC (direct)
+
+If the board is plugged into the AI PC itself, flash the model partition
+directly with the project script (offset handled by the script):
+
+```bash
+python firmware/esp/flash_tflite_model.py \
+  firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite -p /dev/ttyUSB0
+```
+
+(Linux serial ports are typically `/dev/ttyUSB0` or `/dev/ttyACM0`; ensure your
+user can access them — see the dialout note in step 12.)
+
+### 9. Flash path B — ESP32-S3 connected to the student PC (local helper)
+
+The usual classroom case. On the **student PC** (board plugged in):
+
+```bash
+conda activate eecampedu
+python apps/local_flash_helper/flash_helper.py   # http://127.0.0.1:8765
+```
+
+In the portal's **Flash** panel: set the helper URL, click **Check helper & list
+ports**, pick the port and a `.tflite`, then **Flash model**. The helper
+downloads the artifact from the portal and runs
+`python -m esptool ... write-flash --flash-size keep 0x310000 model.tflite`
+locally. CLI fallback without the browser:
+
+```bash
+python -m esptool --chip esp32s3 --port /dev/ttyUSB0 --baud 460800 \
+  write-flash --flash-size keep 0x310000 model.tflite
+```
+
+### 10. Benchmark / validation commands
+
+Portal-independent checks that run on the AI PC:
+
+```bash
+# Quantization already validates the source .keras and the int8 TFLite against
+# the validation set and writes a report:
+ls firmware/pc/artifacts/reports/*.json
+
+# PC-side benchmark / cross-checks (see the Benchmark section below):
+python firmware/pc/benchmark/run_benchmark_png.py --help
+python firmware/pc/tools/crosscheck_quantized.py --help
+```
+
+ESP-IDF firmware build (only if ESP-IDF is already installed and `idf.py` is on
+PATH):
+
+```bash
+idf.py --version
+cd firmware/esp && idf.py set-target esp32s3 && idf.py build
+```
+
+### 11. Expected outputs and success criteria
+
+| Step | Expected output | Success criteria |
+|------|-----------------|------------------|
+| Env | `portal deps OK`, `tf 2.10.1` | imports succeed |
+| Portal start | `listening : http://0.0.0.0:8000` | `/api/health` returns `{"status":"ok"}` |
+| Dataset | per-class image counts > 0 | all 6 classes present |
+| Train | `.keras` under `model_finetune/models/` | job status `succeeded`, reload check passes |
+| Quantize | `*_int8_per-channel.tflite` + `*_quantization_report.json` | report accuracy above threshold; job `succeeded` |
+| Artifacts | file listed in `/api/artifacts` | download returns the bytes |
+| Flash | `Hash of data verified.` from esptool | esptool returncode `0` |
+| ESP-IDF build | `Project build complete` | `firmware/esp/build/*.bin` produced |
+
+### 12. Known hardware / network / browser-dependent steps
+
+These cannot be fully validated without the classroom hardware/network:
+
+- **ESP32-S3 board** — actual flashing, serial-port enumeration, and on-device
+  inference require the physical board. On Linux, serial access usually needs the
+  user in the `dialout` group (`sudo usermod -aG dialout $USER` then re-login) —
+  a one-time admin step, not run automatically here.
+- **Gateway port forwarding** — the `8081`–`8090` → AI PC `:8000` mapping is
+  configured on the classroom gateway, outside this repo.
+- **Browser → localhost helper** — the portal page (gateway origin) calling
+  `http://127.0.0.1:8765` is cross-origin + public→localhost. Works with both
+  sides on plain `http`; blocked if the portal is served over `https`
+  (mixed content) or if a browser/enterprise policy forbids public→localhost
+  (use the step-9 CLI fallback). The helper already sends the Chrome Private
+  Network Access preflight header.
+- **ESP-IDF** — firmware build/flash needs a separate ESP-IDF install with
+  `idf.py` on PATH; it is not part of the Python portal environment.
 
 ## Benchmark
 

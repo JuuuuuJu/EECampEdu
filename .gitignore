@@ -29,6 +29,9 @@ model_finetune/models/*_saved_model/
 # Local PC app builds
 apps/*/build/
 
+# Training portal runtime (uploaded zips, extracted datasets, job logs, web-run metadata)
+apps/training_portal/runs/
+
 # esp firmware output
 esp/build/
 esp/managed_components/
