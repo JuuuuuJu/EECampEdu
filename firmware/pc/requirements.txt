@@ -17,3 +17,9 @@ opencv-python==4.9.0.80
 torch==2.2.2
 torchvision==0.17.2
 onnx==1.12.0
+
+# Student-facing AI PC training portal web server (apps/training_portal) and the
+# student-PC localhost flash helper (apps/local_flash_helper). Flask serves the
+# browser GUI/JSON API; pyserial (above) enumerates local serial ports and esptool
+# (above) flashes the ESP32-S3 model partition from the student PC.
+Flask==3.0.3

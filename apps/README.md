@@ -1,6 +1,14 @@
 ﻿# Apps
 
-`apps/` contains Windows PC applications. UI code stays here, not inside firmware.
+`apps/` contains PC applications. UI code stays here, not inside firmware.
+
+## Apps
+
+- `esp32_cam_input_app/` — Windows Dear ImGui / SDL3 integration demo (below).
+- `training_portal/` — AI PC browser GUI to run training + quantization without
+  the CLI. See [`training_portal/README.md`](training_portal/README.md).
+- `local_flash_helper/` — student-PC localhost helper that flashes the ESP32-S3
+  from the browser. See [`local_flash_helper/README.md`](local_flash_helper/README.md).
 
 ## Current App
 

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EECampEdu AI PC Training Portal</title>
+<style>
+  :root { --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0;
+          --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --bad:#ef4444;
+          --warn:#f59e0b; --border:#334155; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background:var(--bg); color:var(--text); line-height:1.45; }
+  header { padding:18px 24px; background:var(--panel); border-bottom:1px solid var(--border); }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:20px; display:grid; gap:18px;
+         grid-template-columns: 1fr 1fr; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; }
+  .card.wide { grid-column: 1 / -1; }
+  .card h2 { margin:0 0 10px; font-size:15px; letter-spacing:.02em; }
+  .card h2 .step { color:var(--accent); margin-right:6px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input, select, button { font:inherit; }
+  input[type=text], input[type=number], select, input[type=file] {
+    width:100%; padding:8px; background:var(--panel2); color:var(--text);
+    border:1px solid var(--border); border-radius:6px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1; min-width:120px; }
+  button { cursor:pointer; padding:9px 14px; border-radius:6px; border:1px solid var(--border);
+           background:var(--accent); color:#06283d; font-weight:600; margin-top:12px; }
+  button.secondary { background:var(--panel2); color:var(--text); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  pre#log { background:#020617; color:#cbd5e1; padding:12px; border-radius:6px; height:320px;
+            overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; margin:0; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:600; }
+  .status { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:600; }
+  .s-running { background:#0c4a6e; color:#7dd3fc; }
+  .s-succeeded { background:#14532d; color:#86efac; }
+  .s-failed { background:#7f1d1d; color:#fca5a5; }
+  .s-starting { background:#3f3f46; color:#e4e4e7; }
+  .msg { font-size:12px; margin-top:8px; min-height:16px; }
+  .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); } .msg.warn { color:var(--warn); }
+  .note { font-size:11px; color:var(--muted); margin-top:6px; }
+  .pill { font-size:11px; color:var(--muted); }
+  code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12px; }
+  a { color:var(--accent); }
+  .tag { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
+         border:1px solid var(--border); border-radius:4px; padding:1px 5px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🤖 EECampEdu — AI PC Training Portal</h1>
+  <p>Train &amp; quantize gesture models from your browser. Classes:
+     <code id="classNames">up, ok, thumb, palm, rock, stone</code></p>
+</header>
+
+<main>
+  <!-- 1. Dataset upload -->
+  <section class="card">
+    <h2><span class="step">1.</span>Import dataset (.zip)</h2>
+    <p class="note">Zip layout: one folder per class, e.g. <code>up/*.jpg</code>, <code>ok/*.jpg</code> …
+       (a single wrapper folder is also accepted).</p>
+    <label>Dataset zip</label>
+    <input type="file" id="datasetFile" accept=".zip" />
+    <label>Import into</label>
+    <select id="datasetTarget">
+      <option value="train">dataset/train (training)</option>
+      <option value="validation">dataset/validation (validation)</option>
+    </select>
+    <button id="uploadBtn">Upload &amp; import</button>
+    <div class="msg" id="uploadMsg"></div>
+  </section>
+
+  <!-- 2. Training -->
+  <section class="card">
+    <h2><span class="step">2.</span>Train a model</h2>
+    <label>Framework</label>
+    <select id="framework">
+      <option value="tensorflow">TensorFlow</option>
+      <option value="pytorch">PyTorch</option>
+    </select>
+    <label>Model recipe</label>
+    <select id="recipe"></select>
+    <div class="note" id="recipeDesc"></div>
+    <div class="row" id="tuning">
+      <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
+      <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default" /></div>
+      <div><label>Alpha (width)</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
+    </div>
+    <label><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
+    <button id="trainBtn">Start training</button>
+    <div class="msg" id="trainMsg"></div>
+  </section>
+
+  <!-- 3. Quantization -->
+  <section class="card">
+    <h2><span class="step">3.</span>Quantize for ESP32-S3</h2>
+    <p class="note">Converts a trained <code>.keras</code> model into a deployable int8 TFLite +
+       quantization report.</p>
+    <label>Source .keras model</label>
+    <select id="quantModel"></select>
+    <div class="row">
+      <div>
+        <label>Quant format</label>
+        <select id="quantFormat"></select>
+      </div>
+      <div>
+        <label>Granularity</label>
+        <select id="quantGranularity"></select>
+      </div>
+    </div>
+    <label><input type="checkbox" id="skipValidation" style="width:auto" /> Skip source accuracy check (not recommended)</label>
+    <button id="quantBtn">Start quantization</button>
+    <div class="msg" id="quantMsg"></div>
+  </section>
+
+  <!-- 4. Flash helper (student PC) -->
+  <section class="card">
+    <h2><span class="step">4.</span>Flash ESP32-S3 (your PC)</h2>
+    <p class="note">The board is plugged into <b>your</b> PC, so flashing uses the local helper
+       running on <code>127.0.0.1:8765</code>. Start it with
+       <code>python apps/local_flash_helper/flash_helper.py</code>.</p>
+    <label>Local flash helper URL</label>
+    <input type="text" id="helperUrl" value="http://127.0.0.1:8765" />
+    <div class="row">
+      <div><label>Serial port</label><select id="flashPort"></select></div>
+      <div><label>Flash offset</label><input type="text" id="flashOffset" value="0x310000" /></div>
+    </div>
+    <label>TFLite artifact</label>
+    <select id="flashArtifact"></select>
+    <div class="row">
+      <div><button class="secondary" id="helperCheckBtn">Check helper &amp; list ports</button></div>
+      <div><button id="flashBtn">Flash model</button></div>
+    </div>
+    <div class="msg" id="flashMsg"></div>
+  </section>
+
+  <!-- Job log -->
+  <section class="card wide">
+    <h2>Live job log <span class="pill" id="jobPill"></span></h2>
+    <pre id="log">No job selected. Start a training or quantization job above.</pre>
+  </section>
+
+  <!-- Artifacts -->
+  <section class="card wide">
+    <h2>Generated artifacts
+      <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button>
+    </h2>
+    <table>
+      <thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+      <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody>
+    </table>
+  </section>
+
+  <!-- Jobs history -->
+  <section class="card wide">
+    <h2>Job history</h2>
+    <table>
+      <thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
+      <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody>
+    </table>
+  </section>
+</main>
+
+<script>
+const ORIGIN = window.location.origin;   // e.g. http://140.112.194.42:8081 (the gateway)
+let RECIPES = [];
+let currentJobId = null;
+let logOffset = 0;
+let logTimer = null;
+
+function $(id){ return document.getElementById(id); }
+function setMsg(el, text, cls){ el.textContent = text; el.className = "msg " + (cls||""); }
+function fmtSize(n){ if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(1)+" MB"; }
+
+async function api(path, opts){
+  const res = await fetch(ORIGIN + path, opts);
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch(e){ body = { error: text }; }
+  if(!res.ok){ throw new Error(body.error || body.message || (res.status+" error")); }
+  return body;
+}
+
+// ---------- init ----------
+async function init(){
+  try {
+    const h = await api("/api/health");
+    $("classNames").textContent = h.class_names.join(", ");
+  } catch(e){}
+  const r = await api("/api/recipes");
+  RECIPES = r.recipes;
+  fillSelect($("quantFormat"), r.quant_formats);
+  fillSelect($("quantGranularity"), r.quant_granularities);
+  fillSelect($("quantModel"), r.available_keras_models,
+             r.available_keras_models.length ? null : "(train a model first)");
+  populateRecipes();
+  refreshArtifacts();
+  refreshJobs();
+  setInterval(refreshJobs, 5000);
+}
+
+function fillSelect(sel, values, emptyLabel){
+  sel.innerHTML = "";
+  if((!values || !values.length) && emptyLabel){
+    const o = document.createElement("option"); o.textContent = emptyLabel; o.value=""; sel.appendChild(o); return;
+  }
+  (values||[]).forEach(v => { const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
+}
+
+function populateRecipes(){
+  const fw = $("framework").value;
+  const sel = $("recipe"); sel.innerHTML = "";
+  RECIPES.filter(r => r.framework === fw).forEach(r => {
+    const o = document.createElement("option"); o.value = r.key; o.textContent = r.label; sel.appendChild(o);
+  });
+  onRecipeChange();
+}
+
+function onRecipeChange(){
+  const r = RECIPES.find(x => x.key === $("recipe").value);
+  if(!r){ $("recipeDesc").textContent=""; return; }
+  $("recipeDesc").textContent = r.description;
+  const s = r.supports || [];
+  $("epochs").parentElement.style.display    = s.includes("epochs") ? "" : "none";
+  $("batchSize").parentElement.style.display = s.includes("batch_size") ? "" : "none";
+  $("alpha").parentElement.style.display     = s.includes("alpha") ? "" : "none";
+  $("exportOnnx").parentElement.style.display= s.includes("export_onnx") ? "" : "none";
+}
+
+// ---------- dataset upload ----------
+$("uploadBtn").onclick = async () => {
+  const f = $("datasetFile").files[0];
+  if(!f){ setMsg($("uploadMsg"), "Choose a .zip first.", "bad"); return; }
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("target", $("datasetTarget").value);
+  setMsg($("uploadMsg"), "Uploading & extracting…", "warn");
+  $("uploadBtn").disabled = true;
+  try {
+    const r = await api("/api/dataset/upload", { method:"POST", body: fd });
+    const per = Object.entries(r.per_class).map(([k,v]) => k+":"+v).join("  ");
+    setMsg($("uploadMsg"), `Imported ${r.total_images} images into ${r.target}. (${per})`, "ok");
+  } catch(e){ setMsg($("uploadMsg"), "Upload failed: "+e.message, "bad"); }
+  $("uploadBtn").disabled = false;
+};
+
+// ---------- training ----------
+$("framework").onchange = populateRecipes;
+$("recipe").onchange = onRecipeChange;
+$("trainBtn").onclick = async () => {
+  const body = {
+    recipe: $("recipe").value,
+    epochs: $("epochs").value || undefined,
+    batch_size: $("batchSize").value || undefined,
+    alpha: $("alpha").value || undefined,
+    export_onnx: $("exportOnnx").checked,
+  };
+  await startJob("/api/train", body, $("trainMsg"), "training");
+};
+
+// ---------- quantization ----------
+$("quantBtn").onclick = async () => {
+  if(!$("quantModel").value){ setMsg($("quantMsg"), "No .keras model available — train first.", "bad"); return; }
+  const body = {
+    model_name: $("quantModel").value,
+    quant_format: $("quantFormat").value,
+    quant_granularity: $("quantGranularity").value,
+    skip_source_validation: $("skipValidation").checked,
+  };
+  await startJob("/api/quantize", body, $("quantMsg"), "quantization");
+};
+
+async function startJob(path, body, msgEl, kind){
+  setMsg(msgEl, "Starting "+kind+"…", "warn");
+  try {
+    const job = await api(path, {
+      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)
+    });
+    setMsg(msgEl, "Started job "+job.id, "ok");
+    attachLog(job.id);
+    refreshJobs();
+  } catch(e){
+    setMsg(msgEl, "Could not start: "+e.message+" (another job may be running)", "bad");
+  }
+}
+
+// ---------- live log ----------
+function attachLog(jobId){
+  currentJobId = jobId; logOffset = 0;
+  $("log").textContent = "";
+  if(logTimer) clearInterval(logTimer);
+  pollLog();
+  logTimer = setInterval(pollLog, 1500);
+}
+async function pollLog(){
+  if(!currentJobId) return;
+  try {
+    const r = await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
+    if(r.data){ $("log").textContent += r.data; $("log").scrollTop = $("log").scrollHeight; }
+    logOffset = r.offset;
+    $("jobPill").textContent = `${currentJobId} — ${r.status}` + (r.returncode!==null ? ` (rc=${r.returncode})` : "");
+    if(r.status === "succeeded" || r.status === "failed"){
+      clearInterval(logTimer); logTimer = null;
+      refreshArtifacts(); refreshJobs();
+      if(r.status === "succeeded"){ fillFlashArtifacts(); }
+    }
+  } catch(e){ /* transient */ }
+}
+
+// ---------- artifacts ----------
+async function refreshArtifacts(){
+  try {
+    const r = await api("/api/artifacts");
+    const tb = $("artifactsBody"); tb.innerHTML = "";
+    if(!r.artifacts.length){ tb.innerHTML = '<tr><td colspan="5" class="note">No artifacts yet.</td></tr>'; }
+    r.artifacts.forEach(a => {
+      const tr = document.createElement("tr");
+      const dl = ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(a.path);
+      tr.innerHTML = `<td><span class="tag">${a.category}</span></td>
+        <td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td>
+        <td><a href="${dl}">download</a></td>`;
+      tb.appendChild(tr);
+    });
+    fillFlashArtifacts(r.artifacts);
+  } catch(e){}
+}
+
+function fillFlashArtifacts(list){
+  const sel = $("flashArtifact");
+  const prev = sel.value;
+  const doFill = (items) => {
+    const tfl = items.filter(a => a.name.toLowerCase().endsWith(".tflite"));
+    sel.innerHTML = "";
+    if(!tfl.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no .tflite yet — quantize first)"; sel.appendChild(o); return; }
+    tfl.forEach(a => { const o=document.createElement("option"); o.value=a.path; o.textContent=a.name; sel.appendChild(o); });
+    if(prev) sel.value = prev;
+  };
+  if(list){ doFill(list); }
+  else { api("/api/artifacts").then(r => doFill(r.artifacts)).catch(()=>{}); }
+}
+
+// ---------- jobs history ----------
+async function refreshJobs(){
+  try {
+    const r = await api("/api/jobs");
+    const tb = $("jobsBody"); tb.innerHTML = "";
+    if(!r.jobs.length){ tb.innerHTML = '<tr><td colspan="5" class="note">No jobs yet.</td></tr>'; return; }
+    r.jobs.forEach(j => {
+      const tr = document.createElement("tr");
+      tr.style.cursor = "pointer";
+      tr.onclick = () => attachLog(j.id);
+      tr.innerHTML = `<td>${j.id}</td><td>${j.kind}</td>
+        <td><span class="status s-${j.status}">${j.status}</span></td>
+        <td>${j.returncode===null?"":j.returncode}</td><td>${j.created_at}</td>`;
+      tb.appendChild(tr);
+    });
+  } catch(e){}
+}
+
+// ---------- flash helper (talks to student-PC localhost helper) ----------
+$("helperCheckBtn").onclick = async () => {
+  const base = $("helperUrl").value.replace(/\/$/, "");
+  setMsg($("flashMsg"), "Contacting local helper…", "warn");
+  try {
+    const h = await (await fetch(base + "/health")).json();
+    const p = await (await fetch(base + "/ports")).json();
+    const sel = $("flashPort"); sel.innerHTML = "";
+    (p.ports||[]).forEach(port => {
+      const o=document.createElement("option"); o.value=port.device;
+      o.textContent = port.device + (port.description ? " — "+port.description : "");
+      sel.appendChild(o);
+    });
+    if(!(p.ports||[]).length){ const o=document.createElement("option"); o.value=""; o.textContent="(no serial ports found)"; sel.appendChild(o); }
+    setMsg($("flashMsg"), `Helper OK (esptool ${h.esptool_version||"?"}). Found ${(p.ports||[]).length} port(s).`, "ok");
+  } catch(e){
+    setMsg($("flashMsg"),
+      "Cannot reach local helper. Start it on your PC and ensure the browser may call 127.0.0.1. ("+e.message+")", "bad");
+  }
+};
+
+$("flashBtn").onclick = async () => {
+  const base = $("helperUrl").value.replace(/\/$/, "");
+  const artifactPath = $("flashArtifact").value;
+  const port = $("flashPort").value;
+  if(!artifactPath){ setMsg($("flashMsg"), "Select a .tflite artifact.", "bad"); return; }
+  if(!port){ setMsg($("flashMsg"), "Select a serial port (check helper first).", "bad"); return; }
+  const artifactUrl = ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(artifactPath);
+  setMsg($("flashMsg"), "Downloading model to your PC and flashing… (do not unplug)", "warn");
+  $("flashBtn").disabled = true;
+  try {
+    const res = await fetch(base + "/flash", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ artifact_url: artifactUrl, port: port, offset: $("flashOffset").value })
+    });
+    const r = await res.json();
+    $("log").textContent = (r.output || r.error || "(no output)");
+    if(res.ok && r.ok){ setMsg($("flashMsg"), "Flash succeeded.", "ok"); }
+    else { setMsg($("flashMsg"), "Flash failed (see log).", "bad"); }
+  } catch(e){ setMsg($("flashMsg"), "Flash request failed: "+e.message, "bad"); }
+  $("flashBtn").disabled = false;
+};
+
+$("refreshArtifacts").onclick = refreshArtifacts;
+init();
+</script>
+</body>
+</html>
