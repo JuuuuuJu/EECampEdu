@@ -62,8 +62,10 @@
   <!-- 1. Dataset upload -->
   <section class="card">
     <h2><span class="step">1.</span>Import dataset (.zip)</h2>
-    <p class="note">Zip layout: one folder per class, e.g. <code>up/*.jpg</code>, <code>ok/*.jpg</code> …
-       (a single wrapper folder is also accepted).</p>
+    <p class="note">Zip layout: class folders may be direct or nested, e.g. <code>up/*.jpg</code>,
+       <code>dataset/up/*.jpg</code>, <code>train/up/*.jpg</code>, or
+       <code>dataset/train/up/*.jpg</code>. If both <code>train</code> and
+       <code>validation</code> are present, both are imported automatically.</p>
     <label>Dataset zip</label>
     <input type="file" id="datasetFile" accept=".zip" />
     <label>Import into</label>
@@ -243,7 +245,8 @@ $("uploadBtn").onclick = async () => {
   try {
     const r = await api("/api/dataset/upload", { method:"POST", body: fd });
     const per = Object.entries(r.per_class).map(([k,v]) => k+":"+v).join("  ");
-    setMsg($("uploadMsg"), `Imported ${r.total_images} images into ${r.target}. (${per})`, "ok");
+    const detail = r.imports ? r.imports.map(x => `${x.target}:${x.total_images}`).join("  ") : r.target;
+    setMsg($("uploadMsg"), `Imported ${r.total_images} images into ${detail}. (${per})`, "ok");
   } catch(e){ setMsg($("uploadMsg"), "Upload failed: "+e.message, "bad"); }
   $("uploadBtn").disabled = false;
 };

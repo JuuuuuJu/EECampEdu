@@ -281,12 +281,48 @@ def _safe_float(value, name, minimum, maximum):
 
 
 def _available_keras_models():
-    """Model basenames (.keras) that quantization is allowed to consume."""
-    names = []
-    if TF_MODELS_DIR.is_dir():
-        for path in sorted(TF_MODELS_DIR.glob("*.keras")):
-            names.append(path.stem)
-    return names
+    """Allowed .keras model IDs shown in the quantization dropdown.
+
+    IDs are framework-prefixed (tf/<name>, pytorch/<name>) so TensorFlow and
+    PyTorch exports can coexist even when their basenames are identical.
+    """
+    models = []
+    for prefix, root in (("tf", TF_MODELS_DIR), ("pytorch", PYTORCH_MODELS_DIR)):
+        if root.is_dir():
+            for path in sorted(root.glob("*.keras")):
+                models.append(f"{prefix}/{path.stem}")
+    return models
+
+
+def _resolve_keras_model_id(model_id):
+    """Resolve a strict model ID to a .keras path under the allowed model roots."""
+    if not model_id:
+        return None
+    roots = {
+        "tf": TF_MODELS_DIR,
+        "pytorch": PYTORCH_MODELS_DIR,
+    }
+    if "/" in model_id:
+        prefix, stem = model_id.split("/", 1)
+        root = roots.get(prefix)
+        if root is None or not re.fullmatch(r"[A-Za-z0-9_.-]+", stem or ""):
+            return None
+        candidate = (root / f"{stem}.keras").resolve()
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError:
+            return None
+        return candidate if candidate.is_file() else None
+
+    # Backward compatibility for older UI values that only sent the basename.
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", model_id):
+        return None
+    matches = []
+    for root in (TF_MODELS_DIR, PYTORCH_MODELS_DIR):
+        candidate = (root / f"{model_id}.keras").resolve()
+        if candidate.is_file():
+            matches.append(candidate)
+    return matches[0] if len(matches) == 1 else None
 
 
 def _resolve_within_roots(candidate):
@@ -327,34 +363,112 @@ def _extract_zip_safely(zip_path, dest_dir):
     return extracted
 
 
-def _find_class_root(base_dir):
-    """Find the directory that directly contains the gesture class subfolders.
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
+TRAIN_SPLIT_NAMES = {"train", "training"}
+VALIDATION_SPLIT_NAMES = {"validation", "valid", "val"}
 
-    Accepts zips laid out as either:
-        up/ ok/ thumb/ ...            (classes at top level)
-        my_dataset/up/ my_dataset/ok/ (classes under one wrapper folder)
-    """
-    def has_classes(directory):
-        present = [c for c in CLASS_NAMES if (directory / c).is_dir()]
-        return len(present) >= 2  # tolerate partial class sets, but need real structure
 
-    base_dir = Path(base_dir)
-    if has_classes(base_dir):
-        return base_dir
-    subdirs = [d for d in base_dir.iterdir() if d.is_dir()]
-    if len(subdirs) == 1 and has_classes(subdirs[0]):
-        return subdirs[0]
-    for d in subdirs:
-        if has_classes(d):
-            return d
+def _class_image_count(class_root, class_name):
+    class_dir = class_root / class_name
+    if not class_dir.is_dir():
+        return 0
+    return sum(
+        1
+        for path in class_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+    )
+
+
+def _detect_split_name(path, base_dir):
+    """Infer train/validation from the candidate path or one of its parents."""
+    try:
+        parts = path.relative_to(base_dir).parts
+    except ValueError:
+        parts = path.parts
+    lowered = [part.lower() for part in parts]
+    for part in lowered:
+        if part in TRAIN_SPLIT_NAMES:
+            return "train"
+        if part in VALIDATION_SPLIT_NAMES:
+            return "validation"
     return None
+
+
+def _find_class_roots(base_dir):
+    """Find directories that directly contain gesture class subfolders.
+
+    Accepted zip layouts include:
+        up/ ok/ thumb/ ...
+        dataset/up/ ok/ thumb/ ...
+        train/up/ ... and validation/up/ ...
+        dataset/train/up/ ... and dataset/validation/up/ ...
+
+    Returns candidates sorted by confidence. Each candidate contains:
+        root: directory with class folders
+        split: "train", "validation", or None
+        total_images: image count under known class folders
+    """
+    base_dir = Path(base_dir)
+    candidates = []
+    for directory in [base_dir, *[p for p in base_dir.rglob("*") if p.is_dir()]]:
+        counts = {class_name: _class_image_count(directory, class_name) for class_name in CLASS_NAMES}
+        present = [class_name for class_name, count in counts.items() if count > 0]
+        if len(present) < 2:
+            continue
+        total = sum(counts.values())
+        split = _detect_split_name(directory, base_dir)
+        candidates.append({
+            "root": directory,
+            "split": split,
+            "total_images": total,
+            "present_classes": len(present),
+        })
+    candidates.sort(
+        key=lambda item: (
+            item["split"] is not None,
+            item["present_classes"],
+            item["total_images"],
+            -len(item["root"].relative_to(base_dir).parts),
+        ),
+        reverse=True,
+    )
+    return candidates
+
+
+def _copy_class_images(class_root, target):
+    dest = DATASET_DIR / target
+    dest.mkdir(parents=True, exist_ok=True)
+    counts = {}
+    for class_name in CLASS_NAMES:
+        src_class = class_root / class_name
+        if not src_class.is_dir():
+            continue
+        dest_class = dest / class_name
+        dest_class.mkdir(parents=True, exist_ok=True)
+        n = 0
+        for img in src_class.rglob("*"):
+            if not img.is_file() or img.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            rel = img.relative_to(src_class)
+            safe_parts = [re.sub(r"[^A-Za-z0-9._-]", "_", part) for part in rel.parts]
+            dest_name = "__".join(safe_parts)
+            shutil.copy2(img, dest_class / dest_name)
+            n += 1
+        counts[class_name] = n
+    total = sum(counts.values())
+    if total == 0:
+        allowed = "/".join(sorted(IMAGE_EXTENSIONS))
+        raise ValueError(f"No supported images ({allowed}) found inside the class folders.")
+    return {"target": target, "total_images": total, "per_class": counts}
 
 
 def _import_dataset(zip_path, target):
     """Extract an uploaded dataset zip into model_finetune/dataset/<target>.
 
-    Merges into the target folder (existing per-class images are kept unless a
-    same-named file is overwritten). Returns a summary dict.
+    If the zip contains explicit train/validation folders, both splits are
+    imported in one upload. Otherwise, the discovered class root is imported
+    into the UI-selected target folder. Existing per-class images are kept
+    unless a same-named file is overwritten. Returns a summary dict.
     """
     if target not in ("train", "validation"):
         raise ValueError("target must be 'train' or 'validation'")
@@ -363,31 +477,41 @@ def _import_dataset(zip_path, target):
     staging.mkdir(parents=True, exist_ok=True)
     try:
         _extract_zip_safely(zip_path, staging)
-        class_root = _find_class_root(staging)
-        if class_root is None:
+        candidates = _find_class_roots(staging)
+        if not candidates:
             raise ValueError(
                 "Zip does not contain gesture class folders "
-                f"({', '.join(CLASS_NAMES)}). Expected <class>/*.jpg layout."
+                f"({', '.join(CLASS_NAMES)}). Accepted layouts include "
+                "<class>/*.jpg, dataset/<class>/*.jpg, train/<class>/*.jpg, "
+                "or dataset/train/<class>/*.jpg."
             )
-        dest = DATASET_DIR / target
-        dest.mkdir(parents=True, exist_ok=True)
-        counts = {}
-        for class_name in CLASS_NAMES:
-            src_class = class_root / class_name
-            if not src_class.is_dir():
-                continue
-            dest_class = dest / class_name
-            dest_class.mkdir(parents=True, exist_ok=True)
-            n = 0
-            for img in src_class.iterdir():
-                if img.is_file() and img.suffix.lower() in {".png", ".jpg", ".jpeg", ".bmp"}:
-                    shutil.copy2(img, dest_class / img.name)
-                    n += 1
-            counts[class_name] = n
-        total = sum(counts.values())
-        if total == 0:
-            raise ValueError("No images (.png/.jpg/.jpeg/.bmp) found inside the class folders.")
-        return {"target": target, "total_images": total, "per_class": counts}
+
+        best_by_split = {}
+        for candidate in candidates:
+            split = candidate["split"]
+            if split and split not in best_by_split:
+                best_by_split[split] = candidate
+
+        imports = []
+        if best_by_split:
+            for split in ("train", "validation"):
+                candidate = best_by_split.get(split)
+                if candidate:
+                    imports.append(_copy_class_images(candidate["root"], split))
+        else:
+            imports.append(_copy_class_images(candidates[0]["root"], target))
+
+        total = sum(item["total_images"] for item in imports)
+        merged_counts = {class_name: 0 for class_name in CLASS_NAMES}
+        for item in imports:
+            for class_name, count in item["per_class"].items():
+                merged_counts[class_name] += count
+        return {
+            "target": "+".join(item["target"] for item in imports),
+            "total_images": total,
+            "per_class": merged_counts,
+            "imports": imports,
+        }
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
@@ -425,9 +549,11 @@ def build_quantize_command(params):
     available = _available_keras_models()
     if not model_name:
         raise ValueError("model_name is required for quantization")
-    if model_name not in available:
+    model_path = _resolve_keras_model_id(model_name)
+    if model_path is None:
         raise ValueError(
-            f"model_name '{model_name}' not found under model_finetune/models/tf/. "
+            f"model_name '{model_name}' not found under model_finetune/models/tf "
+            "or model_finetune/models/pytorch. "
             f"Available: {', '.join(available) if available else '(none - train a model first)'}"
         )
 
@@ -442,7 +568,7 @@ def build_quantize_command(params):
     cmd = [
         sys.executable,
         str(script),
-        "--model-name", model_name,
+        "--keras", str(model_path),
         "--quant-format", quant_format,
         "--quant-granularity", granularity,
     ]
