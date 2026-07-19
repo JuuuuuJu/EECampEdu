@@ -281,16 +281,34 @@ def _safe_float(value, name, minimum, maximum):
 
 
 def _available_keras_models():
-    """Allowed .keras model IDs shown in the quantization dropdown.
+    """Allowed source models shown in the quantization dropdown.
 
-    IDs are framework-prefixed (tf/<name>, pytorch/<name>) so TensorFlow and
-    PyTorch exports can coexist even when their basenames are identical.
+    IDs are framework-prefixed relative paths (tf/<name>, pytorch/<name>) so
+    TensorFlow and PyTorch exports can coexist even when their basenames are
+    identical. Recursing lets students organize model runs in subfolders.
     """
     models = []
     for prefix, root in (("tf", TF_MODELS_DIR), ("pytorch", PYTORCH_MODELS_DIR)):
-        if root.is_dir():
-            for path in sorted(root.glob("*.keras")):
-                models.append(f"{prefix}/{path.stem}")
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*.keras")) + sorted(root.rglob("*.h5")):
+            try:
+                rel = path.relative_to(root)
+            except ValueError:
+                continue
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            model_id = f"{prefix}/{rel.as_posix()}"
+            stat = path.stat()
+            models.append({
+                "id": model_id,
+                "label": f"{model_id} ({stat.st_size / 1024:.1f} KB)",
+                "framework": prefix,
+                "name": path.name,
+                "relative_path": rel.as_posix(),
+                "size_bytes": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+            })
     return models
 
 
@@ -303,11 +321,18 @@ def _resolve_keras_model_id(model_id):
         "pytorch": PYTORCH_MODELS_DIR,
     }
     if "/" in model_id:
-        prefix, stem = model_id.split("/", 1)
+        prefix, rel = model_id.split("/", 1)
         root = roots.get(prefix)
-        if root is None or not re.fullmatch(r"[A-Za-z0-9_.-]+", stem or ""):
+        if root is None or not rel:
             return None
-        candidate = (root / f"{stem}.keras").resolve()
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            return None
+        if rel_path.suffix.lower() not in {".keras", ".h5"}:
+            rel_path = Path(f"{rel}.keras")
+        if not all(re.fullmatch(r"[A-Za-z0-9_. -]+", part) for part in rel_path.parts):
+            return None
+        candidate = (root / rel_path).resolve()
         try:
             candidate.relative_to(root.resolve())
         except ValueError:
@@ -319,10 +344,36 @@ def _resolve_keras_model_id(model_id):
         return None
     matches = []
     for root in (TF_MODELS_DIR, PYTORCH_MODELS_DIR):
-        candidate = (root / f"{model_id}.keras").resolve()
-        if candidate.is_file():
-            matches.append(candidate)
+        for suffix in (".keras", ".h5"):
+            candidate = (root / f"{model_id}{suffix}").resolve()
+            if candidate.is_file():
+                matches.append(candidate)
     return matches[0] if len(matches) == 1 else None
+
+
+def _save_uploaded_source_model(upload, framework):
+    """Store a user-uploaded .keras/.h5 model under the selected source root."""
+    roots = {
+        "tf": TF_MODELS_DIR,
+        "pytorch": PYTORCH_MODELS_DIR,
+    }
+    root = roots.get(framework)
+    if root is None:
+        raise ValueError("framework must be 'tf' or 'pytorch'")
+    filename = Path(upload.filename or "").name
+    if not filename:
+        raise ValueError("No model file selected.")
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".keras", ".h5"}:
+        raise ValueError("Source model must be a .keras or .h5 file.")
+    safe_name = re.sub(r"[^A-Za-z0-9._ -]", "_", filename).strip(" .")
+    if not safe_name:
+        raise ValueError("Model filename is invalid.")
+    root.mkdir(parents=True, exist_ok=True)
+    target = (root / safe_name).resolve()
+    target.relative_to(root.resolve())
+    upload.save(str(target))
+    return target
 
 
 def _resolve_within_roots(candidate):
@@ -551,10 +602,11 @@ def build_quantize_command(params):
         raise ValueError("model_name is required for quantization")
     model_path = _resolve_keras_model_id(model_name)
     if model_path is None:
+        available_labels = [item["id"] for item in available]
         raise ValueError(
             f"model_name '{model_name}' not found under model_finetune/models/tf "
             "or model_finetune/models/pytorch. "
-            f"Available: {', '.join(available) if available else '(none - train a model first)'}"
+            f"Available: {', '.join(available_labels) if available_labels else '(none - train a model first)'}"
         )
 
     quant_format = params.get("quant_format", "int8")
@@ -641,6 +693,23 @@ def create_app():
             abort(400, str(exc))
         return jsonify({"ok": True, "zip": saved_zip.name, **summary})
 
+    @app.post("/api/models/upload")
+    def model_upload():
+        if "file" not in request.files:
+            abort(400, "No file part named 'file'.")
+        upload = request.files["file"]
+        framework = request.form.get("framework", "tf")
+        try:
+            saved_model = _save_uploaded_source_model(upload, framework)
+        except ValueError as exc:
+            abort(400, str(exc))
+        return jsonify({
+            "ok": True,
+            "model": saved_model.name,
+            "framework": framework,
+            "available_keras_models": _available_keras_models(),
+        })
+
     @app.post("/api/train")
     def train():
         data = request.get_json(silent=True) or request.form.to_dict()
@@ -712,14 +781,14 @@ def create_app():
         items = []
         categories = [
             ("keras_source", TF_MODELS_DIR, {".keras", ".h5"}),
-            ("pytorch", PYTORCH_MODELS_DIR, {".pth", ".onnx", ".keras"}),
+            ("pytorch", PYTORCH_MODELS_DIR, {".pth", ".onnx", ".keras", ".h5"}),
             ("tflite_deploy", ARTIFACT_MODELS_DIR, {".tflite"}),
             ("quant_report", ARTIFACT_REPORTS_DIR, {".json"}),
         ]
         for category, root, exts in categories:
             if not root.is_dir():
                 continue
-            for path in sorted(root.glob("*")):
+            for path in sorted(root.rglob("*")):
                 if path.is_file() and path.suffix.lower() in exts:
                     rel = path.resolve().relative_to(REPO_ROOT.resolve())
                     stat = path.stat()
