@@ -222,10 +222,10 @@ Start the server on the AI PC:
 
 ```bash
 conda activate eecampedu
-python apps/training_portal/server.py --host 0.0.0.0 --port 8000
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080
 ```
 
-The classroom gateway forwards each team's public port to its AI PC's `:8000`:
+The classroom gateway forwards each team's public port to its AI PC's `:8080`:
 
 ```text
 Team 1  -> http://140.112.194.42:8081
@@ -234,8 +234,11 @@ Team 2  -> http://140.112.194.42:8082
 Team 10 -> http://140.112.194.42:8090
 ```
 
+Current classroom setup: Team 1 is already reachable at
+`http://140.112.194.42:8081`, forwarded to that AI PC's `:8080` portal.
+
 For the full classroom network setup — stable AI PC IP, running the portal as a
-service, firewall, and the gateway port-forwarding table (`808X` → AI PC `:8000`)
+service, firewall, and the gateway port-forwarding table (`808X` → AI PC `:8080`)
 — see [`apps/training_portal/DEPLOYMENT.md`](apps/training_portal/DEPLOYMENT.md).
 
 From the page a student can upload a dataset `.zip`, choose PyTorch or
@@ -303,18 +306,18 @@ python -c "import tensorflow as tf; print('tf', tf.__version__)"
 ### 3. Start the AI PC training portal
 
 ```bash
-python apps/training_portal/server.py --host 0.0.0.0 --port 8000
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080
 ```
 
 Smoke-check from another shell on the AI PC:
 
 ```bash
-curl -s http://127.0.0.1:8000/api/health
-curl -s http://127.0.0.1:8000/api/recipes
+curl -s http://127.0.0.1:8080/api/health
+curl -s http://127.0.0.1:8080/api/recipes
 ```
 
 Students reach it through the gateway port for their team (`8081`–`8090`). To
-expose `:8000` at `140.112.194.42:808X`, follow
+expose `:8080` at `140.112.194.42:808X`, follow
 [`apps/training_portal/DEPLOYMENT.md`](apps/training_portal/DEPLOYMENT.md)
 (stable IP, run-as-service, firewall, and the gateway port-forward table).
 
@@ -333,7 +336,7 @@ To import a new dataset, upload a `.zip` (one folder per class) from the portal'
 
 ```bash
 curl -F "file=@dataset.zip" -F "target=train" \
-  http://127.0.0.1:8000/api/dataset/upload
+  http://127.0.0.1:8080/api/dataset/upload
 ```
 
 ### 5. Train a source model from the web GUI
@@ -343,7 +346,7 @@ In the portal: choose **Framework** (TensorFlow/PyTorch), pick a **recipe**
 Equivalent API call:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/train \
+curl -s -X POST http://127.0.0.1:8080/api/train \
   -H 'Content-Type: application/json' \
   -d '{"recipe":"tf_mobilenet","epochs":15}'
 ```
@@ -358,7 +361,7 @@ In the portal's **Quantize** panel choose a source `.keras`, format
 (`int8` recommended) and granularity, then **Start quantization**. Equivalent:
 
 ```bash
-curl -s -X POST http://127.0.0.1:8000/api/quantize \
+curl -s -X POST http://127.0.0.1:8080/api/quantize \
   -H 'Content-Type: application/json' \
   -d '{"model_name":"MobileNetV2_finetuned","quant_format":"int8","quant_granularity":"per-channel"}'
 ```
@@ -375,8 +378,8 @@ python firmware/pc/tools/quantize_keras_model.py \
 List and download from the portal's **Generated artifacts** table, or:
 
 ```bash
-curl -s http://127.0.0.1:8000/api/artifacts
-curl -s -OJ "http://127.0.0.1:8000/api/artifacts/download?path=firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite"
+curl -s http://127.0.0.1:8080/api/artifacts
+curl -s -OJ "http://127.0.0.1:8080/api/artifacts/download?path=firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite"
 ```
 
 ### 8. Flash path A — ESP32-S3 connected to the AI PC (direct)
@@ -439,7 +442,7 @@ cd firmware/esp && idf.py set-target esp32s3 && idf.py build
 | Step | Expected output | Success criteria |
 |------|-----------------|------------------|
 | Env | `portal deps OK`, `tf 2.10.1` | imports succeed |
-| Portal start | `listening : http://0.0.0.0:8000` | `/api/health` returns `{"status":"ok"}` |
+| Portal start | `listening : http://0.0.0.0:8080` | `/api/health` returns `{"status":"ok"}` |
 | Dataset | per-class image counts > 0 | all 6 classes present |
 | Train | `.keras` under `model_finetune/models/` | job status `succeeded`, reload check passes |
 | Quantize | `*_int8_per-channel.tflite` + `*_quantization_report.json` | report accuracy above threshold; job `succeeded` |
@@ -455,7 +458,7 @@ These cannot be fully validated without the classroom hardware/network:
   inference require the physical board. On Linux, serial access usually needs the
   user in the `dialout` group (`sudo usermod -aG dialout $USER` then re-login) —
   a one-time admin step, not run automatically here.
-- **Gateway port forwarding** — the `8081`–`8090` → AI PC `:8000` mapping is
+- **Gateway port forwarding** — the `8081`–`8090` → AI PC `:8080` mapping is
   configured on the classroom gateway, outside this repo.
 - **Browser → localhost helper** — the portal page (gateway origin) calling
   `http://127.0.0.1:8765` is cross-origin + public→localhost. Works with both
