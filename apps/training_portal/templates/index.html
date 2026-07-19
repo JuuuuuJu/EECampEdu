@@ -27,6 +27,7 @@
     border:1px solid var(--border); border-radius:6px; }
   .row { display:flex; gap:10px; flex-wrap:wrap; }
   .row > div { flex:1; min-width:120px; }
+  .row.compact > div { min-width:170px; }
   button { cursor:pointer; padding:9px 14px; border-radius:6px; border:1px solid var(--border);
            background:var(--accent); color:#06283d; font-weight:600; margin-top:12px; }
   button.secondary { background:var(--panel2); color:var(--text); }
@@ -105,6 +106,18 @@
        quantization report.</p>
     <label>Source .keras model</label>
     <select id="quantModel"></select>
+    <div class="row compact">
+      <div><button class="secondary" id="refreshModelsBtn">Refresh model list</button></div>
+      <div>
+        <label>Upload source model as</label>
+        <select id="uploadModelFramework">
+          <option value="tf">TensorFlow folder</option>
+          <option value="pytorch">PyTorch folder</option>
+        </select>
+      </div>
+    </div>
+    <input type="file" id="sourceModelFile" accept=".keras,.h5" />
+    <button class="secondary" id="uploadModelBtn">Upload source model</button>
     <div class="row">
       <div>
         <label>Quant format</label>
@@ -171,6 +184,7 @@
 <script>
 const ORIGIN = window.location.origin;   // e.g. http://140.112.194.42:8081 (the gateway)
 let RECIPES = [];
+let KERAS_MODELS = [];
 let currentJobId = null;
 let logOffset = 0;
 let logTimer = null;
@@ -195,10 +209,10 @@ async function init(){
   } catch(e){}
   const r = await api("/api/recipes");
   RECIPES = r.recipes;
+  KERAS_MODELS = r.available_keras_models || [];
   fillSelect($("quantFormat"), r.quant_formats);
   fillSelect($("quantGranularity"), r.quant_granularities);
-  fillSelect($("quantModel"), r.available_keras_models,
-             r.available_keras_models.length ? null : "(train a model first)");
+  populateQuantModels();
   populateRecipes();
   refreshArtifacts();
   refreshJobs();
@@ -210,7 +224,48 @@ function fillSelect(sel, values, emptyLabel){
   if((!values || !values.length) && emptyLabel){
     const o = document.createElement("option"); o.textContent = emptyLabel; o.value=""; sel.appendChild(o); return;
   }
-  (values||[]).forEach(v => { const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
+  (values||[]).forEach(v => {
+    const o=document.createElement("option");
+    if(typeof v === "object"){
+      o.value = v.id;
+      o.textContent = v.label || v.id;
+      o.title = v.relative_path || v.id;
+    } else {
+      o.value = v;
+      o.textContent = v;
+    }
+    sel.appendChild(o);
+  });
+}
+
+function populateQuantModels(){
+  const previous = $("quantModel").value;
+  const sel = $("quantModel");
+  sel.innerHTML = "";
+  if(!KERAS_MODELS.length){
+    const o = document.createElement("option");
+    o.value = "";
+    o.textContent = "(train or upload a .keras model first)";
+    sel.appendChild(o);
+    return;
+  }
+  KERAS_MODELS.forEach(m => {
+    const o = document.createElement("option");
+    o.value = m.id || m;
+    o.textContent = m.label || m.id || m;
+    o.title = m.modified ? `${m.id}\nmodified: ${m.modified}` : (m.id || m);
+    sel.appendChild(o);
+  });
+  if(previous && Array.from(sel.options).some(o => o.value === previous)){
+    sel.value = previous;
+  }
+}
+
+async function refreshModelList(){
+  const r = await api("/api/recipes");
+  RECIPES = r.recipes;
+  KERAS_MODELS = r.available_keras_models || [];
+  populateQuantModels();
 }
 
 function populateRecipes(){
@@ -266,6 +321,39 @@ $("trainBtn").onclick = async () => {
 };
 
 // ---------- quantization ----------
+$("refreshModelsBtn").onclick = async () => {
+  setMsg($("quantMsg"), "Refreshing source model list…", "warn");
+  try {
+    await refreshModelList();
+    setMsg($("quantMsg"), `Found ${KERAS_MODELS.length} source model(s).`, "ok");
+  } catch(e){
+    setMsg($("quantMsg"), "Refresh failed: "+e.message, "bad");
+  }
+};
+
+$("uploadModelBtn").onclick = async () => {
+  const f = $("sourceModelFile").files[0];
+  if(!f){ setMsg($("quantMsg"), "Choose a .keras/.h5 source model first.", "bad"); return; }
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("framework", $("uploadModelFramework").value);
+  setMsg($("quantMsg"), "Uploading source model…", "warn");
+  $("uploadModelBtn").disabled = true;
+  try {
+    const r = await api("/api/models/upload", { method:"POST", body: fd });
+    KERAS_MODELS = r.available_keras_models || [];
+    populateQuantModels();
+    const uploadedId = `${r.framework}/${r.model}`;
+    if(Array.from($("quantModel").options).some(o => o.value === uploadedId)){
+      $("quantModel").value = uploadedId;
+    }
+    setMsg($("quantMsg"), `Uploaded ${uploadedId}.`, "ok");
+  } catch(e){
+    setMsg($("quantMsg"), "Upload failed: "+e.message, "bad");
+  }
+  $("uploadModelBtn").disabled = false;
+};
+
 $("quantBtn").onclick = async () => {
   if(!$("quantModel").value){ setMsg($("quantMsg"), "No .keras model available — train first.", "bad"); return; }
   const body = {

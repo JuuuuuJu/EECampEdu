@@ -225,6 +225,25 @@ conda activate eecampedu
 python apps/training_portal/server.py --host 0.0.0.0 --port 8080
 ```
 
+For SSH deployment, run it in the background so the portal stays alive after the
+SSH window closes:
+
+```bash
+cd ~/EECampEdu
+conda activate eecampedu
+mkdir -p apps/training_portal/runs
+nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 \
+  > apps/training_portal/runs/server.log 2>&1 &
+```
+
+Check health, inspect logs, or stop the background server:
+
+```bash
+curl http://127.0.0.1:8080/api/health
+tail -f apps/training_portal/runs/server.log
+pkill -f "apps/training_portal/server.py"
+```
+
 The classroom gateway forwards each team's public port to its AI PC's `:8080`:
 
 ```text
@@ -307,6 +326,14 @@ python -c "import tensorflow as tf; print('tf', tf.__version__)"
 
 ```bash
 python apps/training_portal/server.py --host 0.0.0.0 --port 8080
+```
+
+Background form for classroom deployment:
+
+```bash
+mkdir -p apps/training_portal/runs
+nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 \
+  > apps/training_portal/runs/server.log 2>&1 &
 ```
 
 Smoke-check from another shell on the AI PC:
