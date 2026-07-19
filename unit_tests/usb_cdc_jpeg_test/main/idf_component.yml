@@ -1,4 +1,0 @@
-dependencies:
-  espressif/esp_tinyusb: "^2.1.1"
-  idf:
-    version: ">=4.4.0"

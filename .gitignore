@@ -21,6 +21,27 @@ model_finetune/__pycache__/
 model_finetune/models/*.tflite
 model_finetune/models/*_saved_model/
 
+# Generated / trained model artifacts (regenerable by train -> quantize).
+# The mini_resnet pretrained base weight is an INPUT seed and is kept (negated below).
+model_finetune/models/**/*.keras
+model_finetune/models/**/*.onnx
+model_finetune/models/**/*.pth
+model_finetune/models/**/*.h5
+!model_finetune/models/pytorch/mini_resnet_pretrained_weights.pth
+
+# Uploaded / generated datasets (students provide their own six class folders).
+# Keep the dataset README, config templates, and .gitkeep placeholders only.
+model_finetune/dataset/train/
+model_finetune/dataset/validation/
+model_finetune/dataset/test/
+model_finetune/dataset/sign_mnist/
+model_finetune/new_test_data/
+model_finetune/dataset/class_map.json
+!model_finetune/dataset/**/.gitkeep
+
+# Uploaded dataset zips anywhere
+*.zip
+
 # Logs and local editor files
 *.log
 .vscode/

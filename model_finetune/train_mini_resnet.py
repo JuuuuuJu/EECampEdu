@@ -8,6 +8,8 @@ import tensorflow as tf
 from PIL import Image
 import matplotlib.pyplot as plt
 
+import class_map  # shared class-order loader (same folder)
+
 # Clean execution engine setup
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 os.environ['TF_USE_LEGACY_KERAS'] = '1'
@@ -214,9 +216,12 @@ else:
 # ==========================================
 # 4. FINE-TUNING DATA PREPARATION (4 CLASSES)
 # ==========================================
-print("\n=== Step 3: Preparing Local 4-Class Gesture Dataset ===")
-class_names = ['up', 'down', 'right', 'left']
-label_map = {'up': 0, 'down': 1, 'right': 2, 'left': 3}
+print("\n=== Step 3: Preparing Local Gesture Dataset ===")
+# Default 4-class order; overridden by model_finetune/dataset/class_map.json when a
+# student uploads their own class folders (arbitrary names supported).
+class_names = class_map.load_class_order(default=['up', 'down', 'right', 'left'])
+label_map = {name: index for index, name in enumerate(class_names)}
+print(f"Class order: {class_names}")
 
 def load_local_dataset(directory):
     x_data, y_data = [], []
@@ -330,7 +335,7 @@ ft_inputs = tf.keras.Input(shape=(IMG_SIZE[0], IMG_SIZE[1], 1))
 ft_x = ft_resnet_base(ft_inputs, training=False)
 ft_x = tf.keras.layers.Dropout(0.5)(ft_x)
 ft_outputs = tf.keras.layers.Dense(
-    4, 
+    len(class_names),
     activation='softmax',
     kernel_regularizer=tf.keras.regularizers.l2(0.01)
 )(ft_x)

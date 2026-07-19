@@ -63,10 +63,11 @@
   <!-- 1. Dataset upload -->
   <section class="card">
     <h2><span class="step">1.</span>Import dataset (.zip)</h2>
-    <p class="note">Zip layout: class folders may be direct or nested, e.g. <code>up/*.jpg</code>,
-       <code>dataset/up/*.jpg</code>, <code>train/up/*.jpg</code>, or
-       <code>dataset/train/up/*.jpg</code>. If both <code>train</code> and
-       <code>validation</code> are present, both are imported automatically.</p>
+    <p class="note">Exactly <b>six</b> class folders, <b>any names</b> (e.g. <code>n1/*.jpg</code> …
+       <code>n6/*.jpg</code>). Folders may be direct or nested (<code>dataset/n1/…</code>,
+       <code>train/n1/…</code>). If both <code>train</code> and <code>validation</code> are
+       present, both import at once (same six names). The class order is saved to
+       <code>class_map.json</code> and used everywhere.</p>
     <label>Dataset zip</label>
     <input type="file" id="datasetFile" accept=".zip" />
     <label>Import into</label>
@@ -76,6 +77,17 @@
     </select>
     <button id="uploadBtn">Upload &amp; import</button>
     <div class="msg" id="uploadMsg"></div>
+  </section>
+
+  <!-- 1b. Class -> output action mapping -->
+  <section class="card">
+    <h2><span class="step">1b.</span>Map classes → robot actions</h2>
+    <p class="note">Each trained class (model output index) drives one robot-arm action.
+       The ESP firmware uses only the index; this mapping is applied on the student PC
+       control app. Saved to <code>class_map.json</code>.</p>
+    <div id="classMapRows"><div class="note">Import a dataset first to list classes.</div></div>
+    <button id="saveClassMapBtn">Save action mapping</button>
+    <div class="msg" id="classMapMsg"></div>
   </section>
 
   <!-- 2. Training -->
@@ -202,6 +214,8 @@ async function api(path, opts){
 }
 
 // ---------- init ----------
+let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
+
 async function init(){
   try {
     const h = await api("/api/health");
@@ -214,10 +228,42 @@ async function init(){
   fillSelect($("quantGranularity"), r.quant_granularities);
   populateQuantModels();
   populateRecipes();
+  refreshClassMap();
   refreshArtifacts();
   refreshJobs();
   setInterval(refreshJobs, 5000);
 }
+
+async function refreshClassMap(){
+  try {
+    const m = await api("/api/class-map");
+    OUTPUT_ACTIONS = m.output_actions || OUTPUT_ACTIONS;
+    const host = $("classMapRows"); host.innerHTML = "";
+    if(m.default){
+      host.innerHTML = '<div class="note">Import a dataset first to list classes.</div>';
+      return;
+    }
+    (m.classes || []).forEach(c => {
+      const row = document.createElement("div"); row.className = "row compact";
+      const opts = ['<option value="">(none)</option>']
+        .concat(OUTPUT_ACTIONS.map(a => `<option value="${a}" ${c.action===a?"selected":""}>${a}</option>`))
+        .join("");
+      row.innerHTML = `<div><label>#${c.index} · ${c.name}</label>
+        <select data-class="${c.name}">${opts}</select></div>`;
+      host.appendChild(row);
+    });
+  } catch(e){}
+}
+
+$("saveClassMapBtn").onclick = async () => {
+  const actions = {};
+  document.querySelectorAll('#classMapRows select[data-class]').forEach(s => { actions[s.dataset.class] = s.value; });
+  setMsg($("classMapMsg"), "Saving…", "warn");
+  try {
+    await api("/api/class-map", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({actions}) });
+    setMsg($("classMapMsg"), "Action mapping saved to class_map.json.", "ok");
+  } catch(e){ setMsg($("classMapMsg"), "Save failed: "+e.message, "bad"); }
+};
 
 function fillSelect(sel, values, emptyLabel){
   sel.innerHTML = "";
@@ -301,7 +347,9 @@ $("uploadBtn").onclick = async () => {
     const r = await api("/api/dataset/upload", { method:"POST", body: fd });
     const per = Object.entries(r.per_class).map(([k,v]) => k+":"+v).join("  ");
     const detail = r.imports ? r.imports.map(x => `${x.target}:${x.total_images}`).join("  ") : r.target;
-    setMsg($("uploadMsg"), `Imported ${r.total_images} images into ${detail}. (${per})`, "ok");
+    setMsg($("uploadMsg"), `Imported ${r.total_images} images into ${detail}. Classes: ${(r.class_order||[]).join(", ")}`, "ok");
+    if(r.class_order){ $("classNames").textContent = r.class_order.join(", "); }
+    refreshClassMap();
   } catch(e){ setMsg($("uploadMsg"), "Upload failed: "+e.message, "bad"); }
   $("uploadBtn").disabled = false;
 };

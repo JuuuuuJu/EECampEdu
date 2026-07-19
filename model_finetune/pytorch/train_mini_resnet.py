@@ -18,6 +18,11 @@ PRETRAIN_BATCH_SIZE = 256
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# Make the shared class-order loader (model_finetune/class_map.py) importable.
+import sys as _sys
+_sys.path.insert(0, os.path.normpath(os.path.join(SCRIPT_DIR, "..")))
+import class_map  # noqa: E402  shared class-order loader
+
 SIGN_MINIST_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../dataset/sign_mnist"))
 DATASET_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../dataset/train"))
 REAL_LIFE_DIR = os.path.normpath(os.path.join(SCRIPT_DIR, "../new_test_data"))
@@ -520,9 +525,12 @@ def main():
     # ==========================================
     # 4. FINE-TUNING DATA PREPARATION (4 CLASSES)
     # ==========================================
-    print("\n=== Step 3: Preparing Local 4-Class Gesture Dataset ===")
-    class_names = ['up', 'down', 'right', 'left']
-    label_map = {'up': 0, 'down': 1, 'right': 2, 'left': 3}
+    print("\n=== Step 3: Preparing Local Gesture Dataset ===")
+    # Default 4-class order; overridden by model_finetune/dataset/class_map.json
+    # when a student uploads their own class folders (arbitrary names supported).
+    class_names = class_map.load_class_order(default=['up', 'down', 'right', 'left'])
+    label_map = {name: index for index, name in enumerate(class_names)}
+    print(f"  Class order: {class_names}")
 
     def load_local_dataset(directory):
         x_data, y_data = [], []
@@ -605,7 +613,7 @@ def main():
         param.requires_grad = False
 
     # Construct fine-tuning model
-    ft_model = FineTuneModel(ft_resnet_base, IMG_SIZE, num_classes=4).to(DEVICE)
+    ft_model = FineTuneModel(ft_resnet_base, IMG_SIZE, num_classes=len(class_names)).to(DEVICE)
 
     # --- Phase 2a: Warmup classification head ---
     print("  [Phase 2a] Warmup training classification head for 10 epochs...")

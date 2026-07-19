@@ -28,9 +28,12 @@ The portal is a thin, safe launcher around scripts that already live in the repo
 | Train · Mini ResNet (PyTorch) | `model_finetune/pytorch/train_mini_resnet.py` |
 | Quantize | `firmware/pc/tools/quantize_keras_model.py` |
 
-Features: upload a dataset `.zip`, pick framework + recipe, start training,
-start quantization, watch **live job logs**, and list/download generated
-artifacts (`.keras`, `.pth`, `.onnx`, `.tflite`, quantization report `.json`).
+Features: upload a dataset `.zip` (exactly six class folders, **any names**),
+map each class to a robot action (`up/down/left/right/clamp/release`, saved to
+`class_map.json`), pick framework + recipe, start training, start quantization,
+watch **live job logs**, and list/download generated artifacts (`.keras`,
+`.pth`, `.onnx`, `.tflite`, quantization report `.json`). See the repo README
+section *Arbitrary Class Names & Robot-Action Mapping* for the full flow.
 
 ## Run (on the AI PC)
 

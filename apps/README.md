@@ -9,6 +9,8 @@
   the CLI. See [`training_portal/README.md`](training_portal/README.md).
 - `local_flash_helper/` — student-PC localhost helper that flashes the ESP32-S3
   from the browser. See [`local_flash_helper/README.md`](local_flash_helper/README.md).
+- `local_camera_app/` — student-PC localhost app: live gesture result + class→action
+  mapping + ESP2 forward. See [`local_camera_app/README.md`](local_camera_app/README.md).
 
 ## Current App
 
