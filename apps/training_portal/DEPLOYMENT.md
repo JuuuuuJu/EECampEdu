@@ -4,13 +4,17 @@ How to make each team's training portal reachable at
 `http://140.112.194.42:808X` from student PCs.
 
 The public address `140.112.194.42` is **not** an AI PC — it is the classroom
-**gateway**. Each AI PC only ever serves plain `:8000`; the gateway maps a
+**gateway**. Each AI PC only ever serves plain `:8080`; the gateway maps a
 distinct public port (`8081`–`8090`) to each team's AI PC.
 
 ```
- Student PC ──http──► 140.112.194.42:808X ──(port forward)──► AI-PC_X (LAN IP):8000
+ Student PC ──http──► 140.112.194.42:808X ──(port forward)──► AI-PC_X (LAN IP):8080
  (browser)            classroom GATEWAY                        training portal (Flask)
 ```
+
+Current classroom setup: Team 1 is already wired as
+`140.112.194.42:8081 -> AIPC1:8080`. For Team 1 testing, open
+`http://140.112.194.42:8081` from the student PC browser.
 
 The work is two parts. **Part A** is done on each AI PC (you can do it).
 **Part B** is done on the gateway (needs gateway/IT admin).
@@ -48,7 +52,7 @@ just localhost.
 ```bash
 conda activate eecampedu
 cd ~/EECampEdu
-nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8000 \
+nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 \
       > ~/portal.log 2>&1 &
 ```
 
@@ -62,7 +66,7 @@ Description=EECampEdu training portal
 After=network-online.target
 
 [Service]
-ExecStart=/home/eecamp/miniconda3/envs/eecampedu/bin/python /home/eecamp/EECampEdu/apps/training_portal/server.py --host 0.0.0.0 --port 8000
+ExecStart=/home/eecamp/miniconda3/envs/eecampedu/bin/python /home/eecamp/EECampEdu/apps/training_portal/server.py --host 0.0.0.0 --port 8080
 WorkingDirectory=/home/eecamp/EECampEdu
 Restart=always
 
@@ -77,22 +81,22 @@ systemctl --user enable --now portal.service
 
 Adjust the two absolute paths if your env or checkout lives elsewhere.
 
-### A3. Open the AI PC firewall for TCP 8000 — needs sudo
+### A3. Open the AI PC firewall for TCP 8080 — needs sudo
 
-If a host firewall (`ufw`) is active, inbound `:8000` is blocked until allowed.
+If a host firewall (`ufw`) is active, inbound `:8080` is blocked until allowed.
 This needs `sudo`, so run it yourself:
 
 ```bash
 sudo ufw status                                              # if 'inactive', skip this step
-sudo ufw allow from 192.168.1.0/24 to any port 8000 proto tcp   # tightest: only the LAN the gateway is on
-# or simply:  sudo ufw allow 8000/tcp
+sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp   # tightest: only the LAN the gateway is on
+# or simply:  sudo ufw allow 8080/tcp
 ```
 
 ### A4. Verify
 
 ```bash
-curl -s http://127.0.0.1:8000/api/health        # on the AI PC itself
-curl -s http://<AIPC_LAN_IP>:8000/api/health    # from another PC on the same LAN
+curl -s http://127.0.0.1:8080/api/health        # on the AI PC itself
+curl -s http://<AIPC_LAN_IP>:8080/api/health    # from another PC on the same LAN
 ```
 
 Both should return `{"status":"ok", ...}`. If the LAN one fails, the problem is
@@ -108,30 +112,30 @@ mapping table:
 
 | Team | Public endpoint | Forward to (AI PC wired IP : port) |
 |------|-----------------|-----------------------------------|
-| 1 | `140.112.194.42:8081` | `AIPC1_IP:8000` |
-| 2 | `140.112.194.42:8082` | `AIPC2_IP:8000` |
-| 3 | `140.112.194.42:8083` | `AIPC3_IP:8000` |
-| 4 | `140.112.194.42:8084` | `AIPC4_IP:8000` |
-| 5 | `140.112.194.42:8085` | `AIPC5_IP:8000` |
-| 6 | `140.112.194.42:8086` | `AIPC6_IP:8000` |
-| 7 | `140.112.194.42:8087` | `AIPC7_IP:8000` |
-| 8 | `140.112.194.42:8088` | `AIPC8_IP:8000` |
-| 9 | `140.112.194.42:8089` | `AIPC9_IP:8000` |
-| 10 | `140.112.194.42:8090` | `AIPC10_IP:8000` |
+| 1 | `140.112.194.42:8081` | `AIPC1_IP:8080` |
+| 2 | `140.112.194.42:8082` | `AIPC2_IP:8080` |
+| 3 | `140.112.194.42:8083` | `AIPC3_IP:8080` |
+| 4 | `140.112.194.42:8084` | `AIPC4_IP:8080` |
+| 5 | `140.112.194.42:8085` | `AIPC5_IP:8080` |
+| 6 | `140.112.194.42:8086` | `AIPC6_IP:8080` |
+| 7 | `140.112.194.42:8087` | `AIPC7_IP:8080` |
+| 8 | `140.112.194.42:8088` | `AIPC8_IP:8080` |
+| 9 | `140.112.194.42:8089` | `AIPC9_IP:8080` |
+| 10 | `140.112.194.42:8090` | `AIPC10_IP:8080` |
 
 Implement the mapping with whichever fits the gateway:
 
 **Option 1 — Router UI (simplest).** Open the **Port Forwarding / Virtual
 Server** page; add one rule per team: External port `808X` (TCP) → Internal IP
-`AIPC_X`, internal port `8000`.
+`AIPC_X`, internal port `8080`.
 
 **Option 2 — Linux gateway (iptables DNAT):**
 
 ```bash
 # as root on 140.112.194.42
 sysctl -w net.ipv4.ip_forward=1
-iptables -t nat -A PREROUTING  -p tcp --dport 8081 -j DNAT --to-destination AIPC1_IP:8000
-iptables -t nat -A POSTROUTING -p tcp -d AIPC1_IP --dport 8000 -j MASQUERADE
+iptables -t nat -A PREROUTING  -p tcp --dport 8081 -j DNAT --to-destination AIPC1_IP:8080
+iptables -t nat -A POSTROUTING -p tcp -d AIPC1_IP --dport 8080 -j MASQUERADE
 # repeat 8082→AIPC2 … 8090→AIPC10
 ```
 
@@ -142,9 +146,9 @@ the student subnet; with it, replies just return via the gateway.
 
 ```nginx
 # one server block per team
-server { listen 8081; location / { proxy_pass http://AIPC1_IP:8000;
+server { listen 8081; location / { proxy_pass http://AIPC1_IP:8080;
          proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; } }
-server { listen 8082; location / { proxy_pass http://AIPC2_IP:8000; } }
+server { listen 8082; location / { proxy_pass http://AIPC2_IP:8080; } }
 # …
 ```
 
@@ -164,8 +168,8 @@ curl -s http://140.112.194.42:8081/api/health     # team 1
 Then open `http://140.112.194.42:808X/` in a browser — the portal page should
 load. Walk failures back:
 
-- Works on `AIPC_IP:8000` but not `140.112.194.42:808X` → gateway rule/firewall (Part B).
-- Fails even on `AIPC_IP:8000` → AI PC firewall, or server not bound to `0.0.0.0` (Part A).
+- Works on `AIPC_IP:8080` but not `140.112.194.42:808X` → gateway rule/firewall (Part B).
+- Fails even on `AIPC_IP:8080` → AI PC firewall, or server not bound to `0.0.0.0` (Part A).
 
 ---
 
@@ -175,7 +179,7 @@ load. Walk failures back:
   local flash helper on `http://127.0.0.1:8765`. If the portal is served over
   HTTPS, browsers block calls to `http://127.0.0.1` (mixed content) and
   browser-based flashing breaks. Plain `http` through the gateway is supported.
-- **One `:8000` per AI PC.** Every AI PC uses the same internal port; the
+- **One `:8080` per AI PC.** Every AI PC uses the same internal port; the
   *gateway* assigns each a distinct public port. Do not give each AI PC a
   different internal port.
 - **Wired vs Wi‑Fi.** If an AI PC has both, forward to the **wired** IP (the one
@@ -186,9 +190,9 @@ load. Walk failures back:
 | Action | Where | Privilege |
 |--------|-------|-----------|
 | Static IP / DHCP reservation | AI PC or LAN router | sudo / router admin |
-| Allow inbound TCP 8000 | AI PC | **sudo** (`ufw`) |
+| Allow inbound TCP 8080 | AI PC | **sudo** (`ufw`) |
 | `loginctl enable-linger` | AI PC | sudo (only for boot-before-login) |
-| Port-forward `808X → AIPC:8000` | **Gateway 140.112.194.42** | **gateway / campus IT admin** |
+| Port-forward `808X → AIPC:8080` | **Gateway 140.112.194.42** | **gateway / campus IT admin** |
 | Open `8081–8090` inbound | Gateway | gateway admin |
 
 The gateway port-forwarding (Part B) is the one piece outside the AI PC's

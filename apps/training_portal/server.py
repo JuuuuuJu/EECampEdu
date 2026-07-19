@@ -16,7 +16,7 @@ Design constraints (see apps/training_portal/README.md):
 
 Start (on the AI PC):
     conda activate eecampedu
-    python apps/training_portal/server.py --host 0.0.0.0 --port 8000
+    python apps/training_portal/server.py --host 0.0.0.0 --port 8080
 """
 
 import argparse
@@ -754,7 +754,7 @@ def create_app():
 def main():
     parser = argparse.ArgumentParser(description="EECampEdu AI PC training portal web server.")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host. Default: 0.0.0.0")
-    parser.add_argument("--port", type=int, default=8000, help="Bind port. Default: 8000")
+    parser.add_argument("--port", type=int, default=8080, help="Bind port. Default: 8080")
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode.")
     args = parser.parse_args()
 

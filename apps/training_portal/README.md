@@ -13,6 +13,9 @@ gateway as:
 | … | … |
 | 10 | http://140.112.194.42:8090 |
 
+Current classroom setup: Team 1 is already reachable at
+`http://140.112.194.42:8081`, forwarded to that AI PC's `:8080` portal.
+
 ## What it does
 
 The portal is a thin, safe launcher around scripts that already live in the repo
@@ -33,11 +36,11 @@ artifacts (`.keras`, `.pth`, `.onnx`, `.tflite`, quantization report `.json`).
 
 ```bash
 conda activate eecampedu
-python apps/training_portal/server.py --host 0.0.0.0 --port 8000
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080
 ```
 
-The AI PC listens on `0.0.0.0:8000`; the classroom gateway forwards each team's
-public port (8081–8090) to its AI PC's `:8000`. Students then open their team URL.
+The AI PC listens on `0.0.0.0:8080`; the classroom gateway forwards each team's
+public port (8081–8090) to its AI PC's `:8080`. Students then open their team URL.
 
 For the full classroom network setup (stable IP, run-as-service, firewall, and
 the gateway port-forwarding table), see [`DEPLOYMENT.md`](DEPLOYMENT.md).
