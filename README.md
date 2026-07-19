@@ -273,6 +273,25 @@ conda activate eecampedu
 python apps/local_flash_helper/flash_helper.py   # listens on 127.0.0.1:8765
 ```
 
+On Windows student PCs, keep the helper running in the background:
+
+```powershell
+cd EECampEdu
+conda activate eecampedu
+Start-Process python -ArgumentList "apps\local_flash_helper\flash_helper.py" -WindowStyle Hidden
+```
+
+Check or stop the helper on the student PC:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/health
+Invoke-RestMethod http://127.0.0.1:8765/ports
+
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -like "*apps\local_flash_helper\flash_helper.py*" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId }
+```
+
 The portal's Flash panel calls that helper, which downloads the selected
 `.tflite` and runs `python -m esptool` locally (default model-partition offset
 `0x310000`). See [`apps/training_portal/README.md`](apps/training_portal/README.md)
@@ -429,6 +448,16 @@ The usual classroom case. On the **student PC** (board plugged in):
 ```bash
 conda activate eecampedu
 python apps/local_flash_helper/flash_helper.py   # http://127.0.0.1:8765
+```
+
+Windows background form:
+
+```powershell
+cd EECampEdu
+conda activate eecampedu
+Start-Process python -ArgumentList "apps\local_flash_helper\flash_helper.py" -WindowStyle Hidden
+Invoke-RestMethod http://127.0.0.1:8765/health
+Invoke-RestMethod http://127.0.0.1:8765/ports
 ```
 
 In the portal's **Flash** panel: set the helper URL, click **Check helper & list
