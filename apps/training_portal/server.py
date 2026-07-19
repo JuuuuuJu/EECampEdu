@@ -58,8 +58,31 @@ PYTORCH_MODELS_DIR = MODEL_FINETUNE_DIR / "models" / "pytorch"
 ARTIFACT_MODELS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "models"
 ARTIFACT_REPORTS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "reports"
 
-# The gesture class order the training scripts expect (see model_finetune/README.md).
+# Fallback gesture class order when no dataset has been imported yet. Students may
+# upload their own six class folders with ARBITRARY names; the imported order is
+# recorded in model_finetune/dataset/class_map.json and used across the pipeline.
 CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
+
+# Shared class-order / action-mapping helper (model_finetune/class_map.py).
+sys.path.insert(0, str(MODEL_FINETUNE_DIR))
+try:
+    import class_map as class_map_lib
+except Exception:  # pragma: no cover - portal still runs without it
+    class_map_lib = None
+
+CLASS_MAP_PATH = DATASET_DIR / "class_map.json"
+NUM_CLASSES = 6
+# Robot-arm output actions a class may be mapped to (matches ESP2 output firmware).
+OUTPUT_ACTIONS = ["up", "down", "left", "right", "clamp", "release"]
+
+
+def _current_class_order():
+    """Saved class order if a dataset was imported, else the fallback default."""
+    if class_map_lib is not None:
+        order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
+        if order:
+            return order
+    return list(CLASS_NAMES)
 
 # --------------------------------------------------------------------------- #
 # Allowlist: the ONLY scripts this portal is permitted to run.
@@ -96,6 +119,18 @@ TRAINING_RECIPES = {
 }
 
 QUANTIZE_SCRIPT = "firmware/pc/tools/quantize_keras_model.py"
+# Only formats/granularities that the stock TensorFlow Lite converter can actually
+# produce AND that TFLite Micro can run are offered — this is what keeps an
+# unsupported, unflashable model from ever being generated (see Q6 below).
+# Deliberately NOT offered (verified against TF 2.10.1's Keras->TFLite PTQ path):
+#   * per-group granularity — stock TFLite exposes only per-tensor and per-channel
+#     (the sole knob is converter._experimental_disable_per_channel; no group/block
+#     op set or attribute exists). Blockwise/sub-channel quant is a newer LiteRT
+#     feature absent from this flow.
+#   * int32 format — not a deployable TFLite type. inference_input/output_type is
+#     restricted to {float32, int8, uint8} (int16 only via its experimental ops
+#     set); int32 exists only for internal bias accumulators, never as a model
+#     format. It would be PC-comparison-only, so it is excluded rather than faked.
 QUANT_FORMATS = ["int8", "int16", "float32"]
 QUANT_GRANULARITIES = ["per-channel", "per-tensor"]
 
@@ -445,52 +480,69 @@ def _detect_split_name(path, base_dir):
     return None
 
 
+def _immediate_class_dirs(directory):
+    """Names of immediate subfolders of `directory` that directly hold images.
+
+    Class-folder names are ARBITRARY (e.g. n1..n6); a folder qualifies as a class
+    folder if it contains at least one supported image anywhere beneath it.
+    """
+    names = []
+    for child in sorted(directory.iterdir()):
+        if not child.is_dir():
+            continue
+        if _class_image_count(directory, child.name) > 0:
+            names.append(child.name)
+    return names
+
+
 def _find_class_roots(base_dir):
-    """Find directories that directly contain gesture class subfolders.
+    """Find directories whose immediate image-holding subfolders form a class set.
 
-    Accepted zip layouts include:
-        up/ ok/ thumb/ ...
-        dataset/up/ ok/ thumb/ ...
-        train/up/ ... and validation/up/ ...
-        dataset/train/up/ ... and dataset/validation/up/ ...
+    Class names are not assumed — any six sibling folders that each contain images
+    are treated as the class set. Split wrappers (train/validation) are skipped as
+    class roots. Accepted layouts include:
+        n1/ n2/ ... n6/
+        dataset/n1/ ... n6/
+        train/n1/ ... and validation/n1/ ...
+        dataset/train/n1/ ... and dataset/validation/n1/ ...
 
-    Returns candidates sorted by confidence. Each candidate contains:
-        root: directory with class folders
-        split: "train", "validation", or None
-        total_images: image count under known class folders
+    Returns candidates, each: {root, split, class_names, num_classes, total_images}.
     """
     base_dir = Path(base_dir)
+    split_words = TRAIN_SPLIT_NAMES | VALIDATION_SPLIT_NAMES
     candidates = []
     for directory in [base_dir, *[p for p in base_dir.rglob("*") if p.is_dir()]]:
-        counts = {class_name: _class_image_count(directory, class_name) for class_name in CLASS_NAMES}
-        present = [class_name for class_name, count in counts.items() if count > 0]
-        if len(present) < 2:
+        class_names = _immediate_class_dirs(directory)
+        if len(class_names) < 2:
             continue
-        total = sum(counts.values())
-        split = _detect_split_name(directory, base_dir)
+        # A wrapper whose children are the split folders is not itself a class root.
+        if {name.lower() for name in class_names} & split_words:
+            continue
+        total = sum(_class_image_count(directory, name) for name in class_names)
         candidates.append({
             "root": directory,
-            "split": split,
+            "split": _detect_split_name(directory, base_dir),
+            "class_names": class_names,
+            "num_classes": len(class_names),
             "total_images": total,
-            "present_classes": len(present),
         })
+    # Prefer candidates with exactly NUM_CLASSES, then split-labeled, then more images.
     candidates.sort(
         key=lambda item: (
+            item["num_classes"] == NUM_CLASSES,
             item["split"] is not None,
-            item["present_classes"],
             item["total_images"],
-            -len(item["root"].relative_to(base_dir).parts),
         ),
         reverse=True,
     )
     return candidates
 
 
-def _copy_class_images(class_root, target):
+def _copy_class_images(class_root, target, class_names):
     dest = DATASET_DIR / target
     dest.mkdir(parents=True, exist_ok=True)
     counts = {}
-    for class_name in CLASS_NAMES:
+    for class_name in class_names:
         src_class = class_root / class_name
         if not src_class.is_dir():
             continue
@@ -513,13 +565,34 @@ def _copy_class_images(class_root, target):
     return {"target": target, "total_images": total, "per_class": counts}
 
 
+def _write_class_map(class_names):
+    """Persist the imported class order, preserving prior action mappings if unchanged."""
+    class_order = sorted(class_names)  # deterministic index assignment
+    actions = {}
+    if class_map_lib is not None:
+        existing = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
+        if existing and set(existing.get("class_order", [])) == set(class_order):
+            actions = {c["name"]: c["action"] for c in existing.get("classes", []) if c.get("action")}
+        return class_map_lib.save_class_map(class_order, actions=actions, path=CLASS_MAP_PATH)
+    # Fallback writer if the shared module is unavailable.
+    payload = {
+        "version": 1,
+        "class_order": class_order,
+        "num_classes": len(class_order),
+        "classes": [{"index": i, "name": n, "action": None} for i, n in enumerate(class_order)],
+    }
+    CLASS_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    CLASS_MAP_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return payload
+
+
 def _import_dataset(zip_path, target):
     """Extract an uploaded dataset zip into model_finetune/dataset/<target>.
 
-    If the zip contains explicit train/validation folders, both splits are
-    imported in one upload. Otherwise, the discovered class root is imported
-    into the UI-selected target folder. Existing per-class images are kept
-    unless a same-named file is overwritten. Returns a summary dict.
+    Requires EXACTLY six class folders (arbitrary names). If the zip contains
+    explicit train/validation folders, both splits are imported in one upload and
+    must share the same six class names. Writes model_finetune/dataset/class_map.json
+    with the discovered class order. Returns a summary dict.
     """
     if target not in ("train", "validation"):
         raise ValueError("target must be 'train' or 'validation'")
@@ -529,38 +602,50 @@ def _import_dataset(zip_path, target):
     try:
         _extract_zip_safely(zip_path, staging)
         candidates = _find_class_roots(staging)
-        if not candidates:
+        six_class = [c for c in candidates if c["num_classes"] == NUM_CLASSES]
+        if not six_class:
+            found = candidates[0]["num_classes"] if candidates else 0
+            example = candidates[0]["class_names"] if candidates else []
             raise ValueError(
-                "Zip does not contain gesture class folders "
-                f"({', '.join(CLASS_NAMES)}). Accepted layouts include "
-                "<class>/*.jpg, dataset/<class>/*.jpg, train/<class>/*.jpg, "
-                "or dataset/train/<class>/*.jpg."
+                f"Expected exactly {NUM_CLASSES} class folders, found {found}"
+                + (f" ({', '.join(example)})" if example else "")
+                + ". Zip layout: six folders (any names), each with images, "
+                "optionally under train/ and validation/."
             )
 
         best_by_split = {}
-        for candidate in candidates:
+        for candidate in six_class:
             split = candidate["split"]
             if split and split not in best_by_split:
                 best_by_split[split] = candidate
 
         imports = []
         if best_by_split:
+            name_sets = {tuple(sorted(c["class_names"])) for c in best_by_split.values()}
+            if len(name_sets) > 1:
+                raise ValueError("train and validation folders have different class names.")
+            class_names = sorted(next(iter(best_by_split.values()))["class_names"])
             for split in ("train", "validation"):
                 candidate = best_by_split.get(split)
                 if candidate:
-                    imports.append(_copy_class_images(candidate["root"], split))
+                    imports.append(_copy_class_images(candidate["root"], split, class_names))
         else:
-            imports.append(_copy_class_images(candidates[0]["root"], target))
+            class_names = sorted(six_class[0]["class_names"])
+            imports.append(_copy_class_images(six_class[0]["root"], target, class_names))
+
+        class_map_payload = _write_class_map(class_names)
 
         total = sum(item["total_images"] for item in imports)
-        merged_counts = {class_name: 0 for class_name in CLASS_NAMES}
+        merged_counts = {class_name: 0 for class_name in class_names}
         for item in imports:
             for class_name, count in item["per_class"].items():
-                merged_counts[class_name] += count
+                merged_counts[class_name] = merged_counts.get(class_name, 0) + count
         return {
             "target": "+".join(item["target"] for item in imports),
             "total_images": total,
+            "class_order": class_names,
             "per_class": merged_counts,
+            "class_map": class_map_payload,
             "imports": imports,
         }
     finally:
@@ -650,10 +735,57 @@ def create_app():
         return jsonify({
             "status": "ok",
             "repo_root": str(REPO_ROOT),
-            "class_names": CLASS_NAMES,
+            "class_names": _current_class_order(),
             "active_job": active.id if active else None,
             "time": _now_iso(),
         })
+
+    @app.get("/api/class-map")
+    def get_class_map():
+        """Return the current class order + per-class output-action mapping."""
+        payload = None
+        if class_map_lib is not None:
+            payload = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
+        if payload is None:
+            payload = {
+                "version": 1,
+                "class_order": list(CLASS_NAMES),
+                "num_classes": len(CLASS_NAMES),
+                "classes": [{"index": i, "name": n, "action": None} for i, n in enumerate(CLASS_NAMES)],
+                "default": True,  # no dataset imported yet
+            }
+        payload["output_actions"] = OUTPUT_ACTIONS
+        return jsonify(payload)
+
+    @app.post("/api/class-map")
+    def set_class_map():
+        """Save the student's class -> output-action mapping.
+
+        Body: {"actions": {"<class name>": "<action>", ...}}. The class ORDER is
+        fixed by the imported dataset and cannot be changed here; only actions are
+        editable, and each must be one of OUTPUT_ACTIONS (or empty to clear).
+        """
+        if class_map_lib is None:
+            abort(500, "class_map module unavailable on the server.")
+        order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
+        if not order:
+            abort(400, "No dataset imported yet — upload six class folders first.")
+        data = request.get_json(silent=True) or {}
+        actions_in = data.get("actions", {})
+        if not isinstance(actions_in, dict):
+            abort(400, "'actions' must be an object of {class_name: action}.")
+        actions = {}
+        for name, action in actions_in.items():
+            if name not in order:
+                abort(400, f"Unknown class '{name}'.")
+            if action in (None, ""):
+                continue
+            if action not in OUTPUT_ACTIONS:
+                abort(400, f"action '{action}' must be one of {OUTPUT_ACTIONS}.")
+            actions[name] = action
+        payload = class_map_lib.save_class_map(order, actions=actions, path=CLASS_MAP_PATH)
+        payload["output_actions"] = OUTPUT_ACTIONS
+        return jsonify({"ok": True, **payload})
 
     @app.get("/api/recipes")
     def recipes():

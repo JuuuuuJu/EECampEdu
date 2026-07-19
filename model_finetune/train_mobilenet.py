@@ -10,6 +10,8 @@ import numpy as np
 import tensorflow as tf
 from PIL import Image
 
+import class_map  # shared class-order loader (same folder)
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 TRAIN_DIR = SCRIPT_DIR / "dataset" / "train"
 VALIDATION_DIR = SCRIPT_DIR / "dataset" / "validation"
@@ -17,7 +19,10 @@ MODELS_DIR = SCRIPT_DIR / "models" / "tf"
 MODEL_PATH = MODELS_DIR / "MobileNetV2_finetuned.keras"
 ONNX_PATH = MODELS_DIR / "MobileNetV2_finetuned.onnx"
 IMG_SIZE = (96, 96)
-CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
+# Default gesture classes; overridden by model_finetune/dataset/class_map.json when
+# a student uploads their own six class folders (arbitrary names supported).
+DEFAULT_CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
+CLASS_NAMES = class_map.load_class_order(default=DEFAULT_CLASS_NAMES)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 
 

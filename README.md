@@ -18,13 +18,35 @@ ESP1 no longer drives servos directly. ESP1 runs camera/model inference and prin
 
 ```text
 EECampEdu/
-  model_finetune/   Model training, fine-tuning, datasets, and source model handoff.
+  model_finetune/   Training scripts, class_map.py (shared class order), source-model handoff.
+                    Datasets and generated models are git-ignored (see "Generated vs tracked").
   firmware/         ESP1 firmware, ESP2 output firmware, quantization, flashing, benchmark, camera, USB.
-  apps/             Windows Dear ImGui / SDL3 integration app, AI PC training portal (browser GUI), and student-PC flash helper.
-  docs/unit_tests/  Unit-test guides for model, deploy, camera, USB, input, and output teams.
+  apps/
+    training_portal/     AI PC browser GUI: dataset upload, class mapping, train, quantize, artifacts.
+    local_flash_helper/  Student-PC localhost helper: flash the .tflite to the ESP32-S3.
+    local_camera_app/    Student-PC localhost app: live gesture result + class->action + ESP2 forward.
+    esp32_cam_input_app/ Native Dear ImGui / SDL3 app: USB-CDC live camera preview + controls.
+  docs/             Guides and notes.
 ```
 
 All paths are relative to this repository root. Do not hardcode local drive letters in committed scripts.
+
+### Generated vs tracked
+
+The repo keeps **source, scripts, READMEs, and config templates** only. These are
+git-ignored and regenerated locally (never commit them):
+
+```text
+model_finetune/dataset/{train,validation,test,sign_mnist}/   uploaded/imported datasets
+model_finetune/dataset/class_map.json                        generated at dataset import
+model_finetune/models/**/*.{keras,onnx,pth,h5}               trained models (except the pretrained seed)
+firmware/pc/artifacts/                                        generated .tflite + quantization reports
+apps/training_portal/runs/                                    uploaded zips, job logs, web-run metadata
+*.zip, *.log, build/, __pycache__/
+```
+
+Kept as an input seed: `model_finetune/models/pytorch/mini_resnet_pretrained_weights.pth`.
+Class-map template: `model_finetune/class_map.example.json`.
 
 ## System Flow
 
@@ -198,6 +220,14 @@ per-channel  recommended for accuracy
 per-tensor   simpler shared scale per tensor; supported for int8
 ```
 
+> **Not offered — verified infeasible on this path (TensorFlow 2.10.1 Keras→TFLite PTQ):**
+> `per-group` granularity and a full-`int32` format were evaluated and intentionally
+> excluded. Stock TFLite exposes only per-tensor / per-channel granularity (no
+> blockwise/group op set), and int32 is not a deployable TFLite type
+> (`inference_input/output_type` ∈ {float32, int8, uint8}; int32 is used only for
+> internal bias accumulators). Because the portal and `quantize_keras_model.py`
+> only accept the formats/granularities above, an unsupported model can never be
+> generated or flashed.
 
 Generated deploy artifacts use the selected format suffix, for example:
 
@@ -298,6 +328,50 @@ The portal's Flash panel calls that helper, which downloads the selected
 and [`apps/local_flash_helper/README.md`](apps/local_flash_helper/README.md).
 The web dependency (`Flask`) is part of `firmware/pc/requirements.txt`, so no
 separate environment is needed.
+
+## Arbitrary Class Names & Robot-Action Mapping
+
+Students may upload their own **six** gesture folders with **any names** (e.g.
+`n1..n6`) — the fixed `up/ok/thumb/palm/rock/stone` set is only a fallback.
+
+How it flows through the pipeline:
+
+1. **Import** (portal step 1): the upload must contain exactly six class folders
+   (any names). The discovered class **order** is saved to
+   `model_finetune/dataset/class_map.json` (git-ignored). Wrong counts are
+   rejected.
+2. **Map to actions** (portal step 1b): assign each class an output action —
+   `up / down / left / right / clamp / release` — saved into the same file.
+3. **Train**: `train_mobilenet.py` / `train_mini_resnet.py` / the PyTorch trainer
+   read the saved class order (`model_finetune/class_map.py`, fallback to their
+   defaults if no dataset was imported). The model head size follows the class
+   count.
+4. **Quantize**: the class order is written into the quantization report
+   (`class_order`), so calibration/validation use the right labels.
+5. **Benchmark**: `run_benchmark_png.py` reads `class_order` from the report (and
+   falls back to `class_map.json`) for label accuracy.
+6. **Firmware**: the ESP32-S3 uses **only the output index + scores** — no class
+   names are compiled in. The index→action mapping is applied on the student PC.
+
+The mapping file schema is documented in `model_finetune/class_map.example.json`.
+
+## Student-PC Camera / Control App
+
+Live camera preview, reading the inference `RESULT` line, and driving the robot
+arm all need the board's USB port, which is on the **student PC** — so they run
+locally, never on the AI PC:
+
+```bash
+conda activate eecampedu
+python apps/local_camera_app/preview_app.py   # http://127.0.0.1:8770
+```
+
+It lists serial ports, connects to ESP1 (and optionally ESP2), maps the predicted
+index → class → action via `class_map.json`, and forwards the action to ESP2.
+Live JPEG-over-USB-CDC preview is provided by the native app
+[`apps/esp32_cam_input_app`](apps/esp32_cam_input_app/); see
+[`apps/local_camera_app/README.md`](apps/local_camera_app/README.md) for the
+three-app split (AI PC portal · student flash helper · student camera/control).
 
 ## AI PC Full-Test Workflow (Linux)
 
@@ -604,5 +678,11 @@ Full integration test order:
 4. Flash the selected TFLite model into the ESP1 model partition.
 5. Build and flash ESP2 output firmware.
 6. Run deploy benchmark with --esp2-port to verify accuracy, output similarity, latency, and servo command forwarding.
-7. Run camera + USB + ImGui App integration for live preview and real gesture-to-output behavior.
+7. Run live gesture-to-output: the native ImGui app (camera + USB preview) or the
+   student-PC web app `apps/local_camera_app/preview_app.py` (gesture result +
+   class->action forwarding to ESP2).
 ```
+
+The browser-driven version of steps 1–4 (upload → class mapping → train →
+quantize → flash) is in **AI PC Full-Test Workflow** above; the full chain is
+**train → quantize → flash → benchmark → camera preview / gesture output**.

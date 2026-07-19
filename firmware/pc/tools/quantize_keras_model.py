@@ -25,6 +25,16 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 TFLITE_EXPORT_FORMATS = ["float32", "int8", "int16"]
 INT_QUANT_GRANULARITY_CHOICES = ["per-channel", "per-tensor"]
 
+# Prefer the student's saved class order (model_finetune/dataset/class_map.json)
+# so arbitrary class-folder names flow into calibration/validation and the report.
+import sys as _sys
+_sys.path.insert(0, str(PROJECT_ROOT / "model_finetune"))
+try:
+    import class_map as _class_map
+    SAVED_CLASS_ORDER = _class_map.load_class_order(default=None)
+except Exception:
+    SAVED_CLASS_ORDER = None
+
 
 def display_path(path):
     try:
@@ -111,7 +121,10 @@ def evaluate_source_model(model, validation_dir, image_size, preprocess_mode, mi
     if not validation_dir.exists():
         print(f"[WARN] Source validation skipped: {validation_dir} does not exist.")
         return None
-    if output_classes not in (len(CLASS_NAMES), len(FOUR_CLASS_NAMES)):
+    known_counts = {len(CLASS_NAMES), len(FOUR_CLASS_NAMES)}
+    if SAVED_CLASS_ORDER:
+        known_counts.add(len(SAVED_CLASS_ORDER))
+    if output_classes not in known_counts:
         print(f"[WARN] Source validation skipped: unsupported output class count {output_classes}.")
         return None
 
@@ -549,6 +562,10 @@ def load_source_model(tf, model_path, image_size):
 
 def class_names_for_output(output_shape):
     classes = int(output_shape[-1]) if output_shape else len(CLASS_NAMES)
+    # The student's saved class order wins whenever its length matches the model
+    # output (supports arbitrary six-class folder names like n1..n6).
+    if SAVED_CLASS_ORDER and len(SAVED_CLASS_ORDER) == classes:
+        return list(SAVED_CLASS_ORDER)
     if classes == len(FOUR_CLASS_NAMES):
         return FOUR_CLASS_NAMES
     if classes == len(CLASS_NAMES):
