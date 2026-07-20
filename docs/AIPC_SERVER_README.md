@@ -1,114 +1,102 @@
-# AI PC Server Guide — teaching staff
+# AI PC Server Guide
 
-The AI PC runs the **training portal** (train / quantize / serve artifacts +
-firmware for browser flashing). One AI PC per team; the classroom gateway
-forwards `140.112.194.42:808X` → that AI PC's `:8080`.
+The AI PC runs the web portal for one team. The gateway forwards the public team port to this machine's `:8080`.
 
-## 1. Environment (once)
+Example: `https://140.112.194.42:8081` -> `https://<team-ai-pc>:8080`.
+
+## Environment
 
 ```bash
-python scripts/setup_env.py --skip-native     # creates the 'eecampedu' conda env
+python scripts/setup_env.py --skip-native
 conda activate eecampedu
 ```
 
-If conda blocks on Anaconda channel Terms of Service, either accept them or use
-conda-forge: `conda create -n eecampedu -c conda-forge --override-channels python=3.10`
-then `python -m pip install -r firmware/pc/requirements.txt`.
+Use ESP-IDF separately when building firmware artifacts.
 
-## 2. Background service — training portal server
+## Team Login
 
-Serve **HTTPS on port 8080** (browser Web Serial flashing needs a secure context):
+Default development passwords are `eecamp01` ... `eecamp10` for `team01` ... `team10`.
+For real class use, set passwords outside git:
 
 ```bash
+export EECAMP_PORTAL_SECRET='change-this-session-secret'
+export EECAMP_TEAM_PASSWORDS='{"team01":"...","team02":"..."}'
+```
+
+## Background Service 1: Training Portal
+
+Recommended: HTTPS on port 8080, because browser Web Serial flashing needs a secure context.
+
+```bash
+cd ~/EECampEdu
 conda activate eecampedu
-# foreground:
-python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https
-# background (survives the SSH session):
 mkdir -p apps/training_portal/runs
 nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https \
   > apps/training_portal/runs/server.log 2>&1 &
 ```
 
-`--https` self-signs a cert under `runs/certs/` on first run (students accept the
-warning once). Drop `--https` for plain HTTP (no browser flashing).
-
-| | |
-|---|---|
-| Health | `curl -sk https://127.0.0.1:8080/api/health` |
-| Log | `apps/training_portal/runs/server.log` (+ per-job logs in `runs/jobs/<id>/`) |
-| Stop | `pkill -f "training_portal/server.py"` |
-| Restart | stop, then re-run the nohup command |
-
-Reboot-proof (optional): a `systemctl --user` unit — see
-`apps/training_portal/DEPLOYMENT.md`.
-
-## 3. Train / quantize
-
-Do it from the portal **Deploy** tab, or via API/CLI:
+Check / log / stop:
 
 ```bash
-# train (background job in the portal); direct CLI equivalent:
-python model_finetune/train_mobilenet.py
-# quantize a trained .keras to int8 TFLite + report:
-python firmware/pc/tools/quantize_keras_model.py --quant-format int8 --quant-granularity per-channel
+curl -sk https://127.0.0.1:8080/api/health
+tail -f apps/training_portal/runs/server.log
+pkill -f "apps/training_portal/server.py"
 ```
 
-Outputs: `.keras` under `model_finetune/models/`, deploy `.tflite` + report under
-`firmware/pc/artifacts/`. The portal lists/serves these for browser flashing.
+Restart after changing Python, HTML, CSS, JS, README-served text, env vars, or certificates. Existing job logs remain under `apps/training_portal/runs/jobs/`.
 
-### On-device benchmark (server-side)
+## Portal Pages
 
-The Deploy tab's **Run benchmark** button starts an allowlisted background job
-(`firmware/pc/benchmark/run_benchmark_png.py`) with UI-selected model, dataset,
-and serial port; the live log streams to the portal and a summary (accuracy,
-latencies, throughput, score similarity) is shown. It runs **on the AI PC**, so
-the ESP32-S3 must be connected to the **AI PC's** USB — if the board is on a
-student PC, the portal reports that no AI-PC serial port is available (there is no
-student-PC benchmark helper; only browser flashing works from the student PC).
-Endpoints: `GET /api/serial-ports`, `GET /api/benchmark/options`, `POST /api/benchmark`.
+- `/model_finetune`: dataset upload, class-to-action mapping, TensorFlow/PyTorch training, and browser-side OV2640 preview. OV2640 is like flashing: the browser borrows the serial port from the student PC; the AI PC server does not directly own that camera USB port.
+- `/deploy`: quantization, model flashing, AI-PC-side benchmark.
+- `/output`: output teaching firmware flash + LED/PWM controls.
+- `/firmware`: full main board firmware flash.
 
-## 4. Provide firmware artifacts for flashing
+The UI is a top menu with routes, not a terminal tutorial.
 
-The portal flashes ESP-IDF **build output** over Web Serial; build once on the AI
-PC (needs ESP-IDF, e.g. `get_idf` / `source /opt/esp/idf/export.sh`):
+## Build Firmware Artifacts For Browser Flashing
+
+The portal reads ESP-IDF `build/flasher_args.json`. If missing, the page tells you to build first.
 
 ```bash
-cd firmware/main_board          && idf.py set-target esp32s3 && idf.py build   # Deploy / Main-board tab
-cd firmware/teaching_output_demo && idf.py set-target esp32s3 && idf.py build   # Output demo tab
+cd firmware/main_board
+idf.py set-target esp32s3
+idf.py build
+
+cd ../teaching_output_demo
+idf.py set-target esp32s3
+idf.py build
 ```
 
-The portal reads each `build/flasher_args.json`; if missing it shows
-“…build … first.” Offsets are never shown to students (developer-mode toggle
-reveals them).
+## Train And Quantize
 
-## 5. Student-PC helper services (not on the AI PC)
+Students start jobs from `/model_finetune` and `/deploy`. The server only runs allowlisted project scripts; it does not expose arbitrary shell execution.
 
-These Python services run on the **student PC** (they need the board's USB port),
-not the AI PC. They are optional — the portal flashes from the browser directly.
+Generated files:
 
-**Camera / control app** (`apps/local_camera_app/preview_app.py`, port 8770):
+```text
+model_finetune/models/             source models: .keras, .pth, .onnx
+firmware/pc/artifacts/models/      deployable .tflite
+firmware/pc/artifacts/reports/     quantization reports
+apps/training_portal/runs/jobs/    live job logs
+```
 
-| | |
-|---|---|
-| Start | `python apps/local_camera_app/preview_app.py` |
-| Background | `nohup python apps/local_camera_app/preview_app.py > ~/camera_app.log 2>&1 &` |
-| Health | `curl http://127.0.0.1:8770/health` |
-| Log | `~/camera_app.log` |
-| Stop | `pkill -f local_camera_app/preview_app.py` |
+## Benchmark
 
-**Flash helper** (`apps/local_flash_helper/flash_helper.py`, port 8765) — **fallback
-only**, for PCs where browser Web Serial is unavailable:
+Benchmark is started from `/deploy` and runs on the AI PC. The ESP32-S3 must be physically connected to the AI PC USB port. If the board is plugged into a student's PC, browser flashing can work, but AI-PC-side benchmark cannot access that serial port.
 
-| | |
-|---|---|
-| Start | `python apps/local_flash_helper/flash_helper.py` |
-| Health | `curl http://127.0.0.1:8765/health` |
-| Stop | `pkill -f local_flash_helper/flash_helper.py` |
+## Background Service 2: Local Camera / Control App
 
-## Notes
+This is optional and runs on the PC that physically owns the USB hardware. The portal now has a browser-side OV2640 preview path; use this helper only when testing live gesture/result forwarding outside the portal.
 
-- No arbitrary shell execution: the portal only runs an allowlist of project
-  scripts, and only lists/serves artifacts + firmware images.
-- Datasets, models, build output, and `runs/` are git-ignored.
-- Full classroom networking (gateway port-forwarding, HTTPS): see
-  `apps/training_portal/DEPLOYMENT.md`.
+```bash
+conda activate eecampedu
+nohup python apps/local_camera_app/preview_app.py > camera_app.log 2>&1 &
+curl http://127.0.0.1:8770/health
+tail -f camera_app.log
+pkill -f "local_camera_app/preview_app.py"
+```
+
+## Flash Helper
+
+`apps/local_flash_helper` is fallback-only. Normal portal flashing uses browser Web Serial directly and does not require a helper or `127.0.0.1`.

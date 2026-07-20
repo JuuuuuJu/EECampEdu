@@ -36,9 +36,13 @@ from flask import (
     Flask,
     abort,
     jsonify,
+    redirect,
+    render_template,
     request,
     send_file,
     send_from_directory,
+    session,
+    url_for,
 )
 from werkzeug.exceptions import HTTPException
 
@@ -174,6 +178,31 @@ SERIAL_PORT_RE = re.compile(r"^(/dev/[A-Za-z0-9._\-]+|COM[0-9]+)$")
 # request is resolved and confirmed to live inside one of these roots (no traversal).
 ARTIFACT_ROOTS = [TF_MODELS_DIR, PYTORCH_MODELS_DIR, ARTIFACT_MODELS_DIR, ARTIFACT_REPORTS_DIR]
 ARTIFACT_EXTENSIONS = {".keras", ".pth", ".onnx", ".tflite", ".json", ".h5"}
+# Classroom authentication. One AI PC usually serves one team, but the portal
+# supports team01..team10 accounts so the same code can be reused across machines.
+# Configure real passwords outside git:
+#   export EECAMP_TEAM_PASSWORDS='{"team01":"...","team02":"..."}'
+# Fallback passwords are intentionally classroom-simple and should be overridden.
+def _load_team_passwords():
+    raw = os.environ.get("EECAMP_TEAM_PASSWORDS", "").strip()
+    if raw:
+        try:
+            data = json.loads(raw)
+            return {str(k): str(v) for k, v in data.items() if re.match(r"^team\d{2}$", str(k))}
+        except ValueError:
+            pass
+    prefix = os.environ.get("EECAMP_TEAM_PASSWORD_PREFIX", "eecamp")
+    return {f"team{i:02d}": f"{prefix}{i:02d}" for i in range(1, 11)}
+
+TEAM_PASSWORDS = _load_team_passwords()
+PUBLIC_PATH_PREFIXES = ("/login", "/api/health", "/static/", "/favicon.ico")
+TOPIC_ROUTES = {
+    "/": "model",
+    "/model_finetune": "model",
+    "/deploy": "deploy",
+    "/output": "output",
+    "/firmware": "mainfw",
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -771,6 +800,19 @@ def build_training_command(recipe_key, params):
     return recipe, cmd
 
 
+
+def build_model_preview_command(params=None):
+    """Build the allowlisted PC-webcam model preview command.
+
+    This launches the existing OpenCV ONNX demo as a background job. It is
+    intentionally not a generic command runner; only this known script is
+    reachable from the portal. It needs a local camera/display on the machine
+    running the server.
+    """
+    script = (REPO_ROOT / "model_finetune" / "pytorch" / "webcam_demo.py").resolve()
+    if not script.is_file():
+        raise ValueError("Model preview script missing: model_finetune/pytorch/webcam_demo.py")
+    return [sys.executable, str(script)]
 def build_quantize_command(params):
     script = (REPO_ROOT / QUANTIZE_SCRIPT).resolve()
     if not script.is_file():
@@ -881,6 +923,7 @@ def build_benchmark_command(params):
 # --------------------------------------------------------------------------- #
 def create_app():
     app = Flask(__name__, template_folder=str(TEMPLATES_DIR))
+    app.secret_key = os.environ.get("EECAMP_PORTAL_SECRET", "dev-only-change-me")
     # 2 GiB cap on uploaded dataset zips.
     app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
     jobs = JobManager()
@@ -895,15 +938,54 @@ def create_app():
     def _json_unexpected(exc):  # pragma: no cover - safety net for 500s
         return jsonify({"error": "Internal server error.", "status": 500}), 500
 
+    def _logged_in_team():
+        team = session.get("team")
+        return team if team in TEAM_PASSWORDS else None
+
+    @app.before_request
+    def _require_login():
+        path = request.path
+        if any(path.startswith(prefix) for prefix in PUBLIC_PATH_PREFIXES):
+            return None
+        if _logged_in_team() is None:
+            if path.startswith("/api/"):
+                return jsonify({"error": "login required", "status": 401}), 401
+            return redirect(url_for("login", next=path))
+        return None
+
+    @app.get("/login")
+    def login():
+        return render_template("login.html", teams=sorted(TEAM_PASSWORDS), next=request.args.get("next", "/"))
+
+    @app.post("/login")
+    def login_post():
+        team = request.form.get("team", "")
+        password = request.form.get("password", "")
+        nxt = request.form.get("next", "/") or "/"
+        if team in TEAM_PASSWORDS and TEAM_PASSWORDS[team] == password:
+            session["team"] = team
+            return redirect(nxt if nxt.startswith("/") else "/")
+        return render_template("login.html", teams=sorted(TEAM_PASSWORDS), next=nxt, error="Invalid team account or password."), 401
+
+    @app.post("/logout")
+    def logout():
+        session.clear()
+        return redirect(url_for("login"))
+
     @app.get("/")
+    @app.get("/model_finetune")
+    @app.get("/deploy")
+    @app.get("/output")
+    @app.get("/firmware")
     def index():
-        return send_from_directory(str(TEMPLATES_DIR), "index.html")
+        return render_template("index.html", team=_logged_in_team(), topic=TOPIC_ROUTES.get(request.path, "dashboard"))
 
     @app.get("/api/health")
     def health():
         active = jobs.active_job()
         return jsonify({
             "status": "ok",
+            "team": _logged_in_team(),
             "repo_root": str(REPO_ROOT),
             "class_names": _current_class_order(),
             "active_job": active.id if active else None,
@@ -1158,6 +1240,51 @@ def create_app():
             return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
         return jsonify(job.to_dict()), 202
 
+    @app.post("/api/model/preview")
+    def model_preview():
+        """Start the allowlisted webcam demo as a background job.
+
+        The demo is useful when the AI PC itself has a webcam/display. For the
+        OV2640 classroom camera, use the dedicated camera firmware/app path.
+        """
+        data = request.get_json(silent=True) or request.form.to_dict()
+        try:
+            cmd = build_model_preview_command(data)
+        except ValueError as exc:
+            abort(400, str(exc))
+        try:
+            job = jobs.start("model_preview", "model:webcam_demo", cmd)
+        except JobBusyError as exc:
+            return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
+        return jsonify(job.to_dict()), 202
+
+    @app.post("/api/model/ov2640/capture")
+    def model_ov2640_capture():
+        """Placeholder endpoint for the OV2640-as-webcam teaching path.
+
+        Capturing labeled training images from the OV2640 requires the camera
+        firmware/app stream to be connected. The portal exposes a stable API
+        shape now, but does not pretend to capture images when no board stream
+        is attached.
+        """
+        data = request.get_json(silent=True) or request.form.to_dict()
+        class_name = str(data.get("class_name") or "").strip()
+        source = str(data.get("source") or "ov2640").strip()
+        try:
+            count = _safe_int(data.get("count", 1), "count", 1, 500)
+        except ValueError as exc:
+            abort(400, str(exc))
+        if source != "ov2640":
+            return jsonify({
+                "ok": False,
+                "message": "PC webcam capture is handled by the model preview demo; OV2640 dataset capture needs the camera firmware stream.",
+            }), 501
+        return jsonify({
+            "ok": False,
+            "class_name": class_name,
+            "count": count,
+            "message": "OV2640 dataset capture API is reserved for the camera stream integration. Flash/run the camera firmware path first; this portal will not ask students to type CLI commands.",
+        }), 501
     @app.get("/api/serial-ports")
     def serial_ports():
         ports = _list_serial_ports()

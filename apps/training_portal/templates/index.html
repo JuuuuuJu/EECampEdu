@@ -57,20 +57,22 @@
 <body>
 <header>
   <h1>EECampEdu — AI PC Portal</h1>
-  <p>One tab per class day: Output · Model · Deploy · plus main board firmware.
+  <p>Topic routes: <code>/model_finetune</code> · <code>/deploy</code> · <code>/output</code> · <code>/firmware</code>.
+     <span style="margin-left:14px;color:var(--muted)">Team: <b>{{ team }}</b></span>
+     <form method="post" action="/logout" style="display:inline;margin-left:10px"><button class="secondary" style="margin:0;padding:3px 8px">Logout</button></form>
      <label style="display:inline;margin-left:14px;color:var(--muted)"><input type="checkbox" id="devMode" style="width:auto"> developer mode (show flash offsets)</label></p>
 </header>
 
 <nav class="tabs" id="tabs">
-  <button data-tab="output" class="active">Output demo</button>
-  <button data-tab="model">Model demo</button>
-  <button data-tab="deploy">Deploy &amp; benchmark</button>
-  <button data-tab="mainfw">Main board firmware</button>
+  <button data-topic="model" data-path="/model_finetune">Model finetune</button>
+  <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
+  <button data-topic="output" data-path="/output">Output demo</button>
+  <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
 </nav>
 
 <main>
   <!-- ==================== OUTPUT DEMO ==================== -->
-  <section class="pane active" id="pane-output">
+  <section class="pane" id="pane-output">
     <div class="card">
       <h2>Output class — hardware</h2>
       <p class="note">Board: <b>ESP32-S3</b> with an LED on <code>GPIO38</code> (onboard on most dev boards).
@@ -111,16 +113,22 @@
   <!-- ==================== MODEL DEMO ==================== -->
   <section class="pane" id="pane-model">
     <div class="card">
-      <h2>Model class — PC webcam gesture recognition</h2>
-      <p class="note">Board: <b>none required</b> — just a PC <b>webcam</b>. This demo runs the model on
-         your own PC so you can see gesture predictions <i>before</i> deploying to hardware.</p>
-      <p class="note">The webcam demo needs your local camera, so it runs on your PC, not in this browser
-         tab. Run this command in a terminal on the PC (it uses ONNX via OpenCV — no TensorFlow/PyTorch needed):</p>
-      <pre class="log" id="modelCmd" style="height:auto">conda activate eecampedu
-python model_finetune/pytorch/webcam_demo.py</pre>
-      <button class="secondary" id="copyModelCmd">Copy command</button>
+      <h2>Model class — capture → train → preview</h2>
+      <p class="note">Training runs on the AI PC. OV2640 preview uses the browser to borrow the ESP32-S3 serial port, the same idea as browser flashing.</p>
+      <div class="row compact">
+        <div><button id="modelPreviewBtn">Start AI-PC webcam preview</button></div>
+        <div><button class="secondary" id="cameraConnectBtn">Connect OV2640 preview</button></div>
+        <div><button class="secondary" id="cameraStopBtn" disabled>Stop preview</button></div>
+      </div>
       <div class="msg" id="modelMsg"></div>
-      <label style="margin-top:12px">Model file (ONNX) for the demo</label>
+      <p class="note">OV2640 preview opens the board through Web Serial, sends <code>f3</code> JPEG, <code>s1</code> QQVGA, then <code>d1</code> stream, and renders incoming <code>---START_IMAGE---</code> JPEG frames. Students do not run Python.</p>
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <img id="cameraPreview" alt="OV2640 preview" style="max-width:100%;max-height:420px;object-fit:contain;display:none" />
+        <div class="note" id="cameraPlaceholder">No OV2640 frame yet.</div>
+      </div>
+      <label style="margin-top:12px">Camera / model messages</label>
+      <pre class="log" id="cameraLog">Connect OV2640 preview after the main board firmware is flashed.</pre>
+      <label style="margin-top:12px">Model file (ONNX) for preview</label>
       <div id="modelOnnx" class="note">Looking for a trained ONNX model…</div>
     </div>
   </section>
@@ -267,6 +275,8 @@ python model_finetune/pytorch/webcam_demo.py</pre>
 
 <script>
 const ORIGIN = window.location.origin;
+const INITIAL_TOPIC = "{{ topic }}";
+const TEAM = "{{ team }}";
 let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTimer = null, benchJobId = null;
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 
@@ -283,17 +293,24 @@ async function api(path, opts){
   return body!=null?body:{};
 }
 
-// ---------- tabs ----------
+// ---------- topic routes ----------
+const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/":"model"};
+const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware"};
+function activateTopic(topic, push){
+  topic = topic || "model";
+  document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
+  document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+  const pane=$("pane-"+topic); if(pane) pane.classList.add('active');
+  if(push && PATH_BY_TOPIC[topic] && window.location.pathname !== PATH_BY_TOPIC[topic]) history.pushState({topic}, "", PATH_BY_TOPIC[topic]);
+  if(topic==="mainfw") loadFirmware("main_board", MAINFW);
+  if(topic==="output") loadFirmware("output_demo", OUTFW);
+  if(topic==="model") refreshModelDemo();
+  if(topic==="deploy"){ refreshReports(); loadBenchOptions(); }
+}
 function initTabs(){
-  document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => {
-    document.querySelectorAll('#tabs button').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
-    btn.classList.add('active'); const p=$("pane-"+btn.dataset.tab); if(p) p.classList.add('active');
-    if(btn.dataset.tab==="mainfw") loadFirmware("main_board", MAINFW);
-    if(btn.dataset.tab==="output") loadFirmware("output_demo", OUTFW);
-    if(btn.dataset.tab==="model") refreshModelDemo();
-    if(btn.dataset.tab==="deploy"){ refreshReports(); loadBenchOptions(); }
-  });
+  document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
+  window.onpopstate = () => activateTopic(TOPIC_BY_PATH[window.location.pathname] || INITIAL_TOPIC || "model", false);
+  activateTopic(TOPIC_BY_PATH[window.location.pathname] || INITIAL_TOPIC || "model", false);
 }
 
 async function init(){
@@ -502,7 +519,13 @@ function parseBenchSummary(text, status){
   tb.innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
   setMsg($("benchMsg"), "Benchmark finished.", status==="failed"?"bad":"ok");
 }
-$("copyModelCmd").onclick = () => copyText($("modelCmd").textContent, $("modelMsg"), "Command copied.");
+$("modelPreviewBtn").onclick = async () => {
+  setMsg($("modelMsg"), "Starting AI-PC webcam preview job...", "warn");
+  try { const job = await api("/api/model/preview", {method:"POST"}); currentJobId = job.id; attachLog(job.id); refreshJobs(); setMsg($("modelMsg"), "Preview job started on the AI PC. Watch Live job log.", "ok"); }
+  catch(e){ setMsg($("modelMsg"), "Preview failed: "+e.message, "bad"); }
+};
+$("cameraConnectBtn").onclick = async () => connectCameraPreview();
+$("cameraStopBtn").onclick = async () => { await releaseCamera("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
 function copyText(text, msgEl, okMsg){
   const done=()=>setMsg(msgEl, okMsg, "ok");
   const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"Copy failed — select manually.","bad"); } document.body.removeChild(ta); };
@@ -533,11 +556,24 @@ function binaryString(ab){ const b=new Uint8Array(ab); let s=""; for(let i=0;i<b
 let esp = { port:null, transport:null, loader:null, chip:null, meta:null };
 // Raw-serial control connection (Output demo LED/PWM). Also released centrally.
 let ctrlPort=null, ctrlWriter=null, ctrlReader=null;
+let camPort=null, camWriter=null, camReader=null, camStop=false, camObjectUrl=null;
 
 // Firmware flash targets (used by Output demo + Main board tabs).
 const OUTFW  = { target:"output_demo", meta:null, imagesEl:"outFwImages",  statusEl:"outFwStatus",  logEl:"outFwLog",  flashBtn:"outFwFlashBtn",  refreshBtn:"outFwRefreshBtn" };
 const MAINFW = { target:"main_board",  meta:null, imagesEl:"mainFwImages", statusEl:"mainFwStatus", logEl:"mainFwLog", flashBtn:"mainFwFlashBtn", refreshBtn:"mainFwRefreshBtn" };
 
+async function releaseCamera(logId){
+  if(!camPort && !camReader && !camWriter){ return; }
+  camStop = true;
+  const log = (s)=>{ if(logId) appendLog(logId, s); };
+  try { if(camReader){ try{ await camReader.cancel(); }catch(_){} try{ camReader.releaseLock(); }catch(_){} } } catch(_){}
+  try { if(camWriter){ try{ await camWriter.write(new TextEncoder().encode("d0\n")); }catch(_){} try{ camWriter.releaseLock(); }catch(_){} } } catch(_){}
+  try { await releasePortLocks(camPort); } catch(e){ log("Camera cleanup warning: "+(e.message||e)+"\n"); }
+  camPort=null; camWriter=null; camReader=null;
+  if($("cameraStopBtn")) $("cameraStopBtn").disabled = true;
+  if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !webSerialSupport().ok;
+  log("Camera serial port released.\n");
+}
 // Force-release any leftover stream locks on a raw SerialPort, then close it.
 async function releasePortLocks(port){
   if(!port) return;
@@ -563,12 +599,14 @@ async function releaseSerial(logId){
   catch(e){ log("Serial cleanup warning: disconnect — "+(e.message||e)+"\n"); }
   try { await releasePortLocks(esp.port); }
   catch(e){ log("Serial cleanup warning: locks — "+(e.message||e)+"\n"); }
-  // 3) tear down the raw-serial control connection if any.
+  // 3) tear down the raw-serial control/camera connections if any.
   try {
     if(ctrlReader){ try{ await ctrlReader.cancel(); }catch(_){} try{ ctrlReader.releaseLock(); }catch(_){} }
     if(ctrlWriter){ try{ ctrlWriter.releaseLock(); }catch(_){} }
     await releasePortLocks(ctrlPort);
   } catch(e){ log("Serial cleanup warning: control — "+(e.message||e)+"\n"); }
+  try { await releaseCamera(logId); }
+  catch(e){ log("Serial cleanup warning: camera — "+(e.message||e)+"\n"); }
   // 4) clear all connection state.
   esp.port=null; esp.transport=null; esp.loader=null; esp.chip=null;
   ctrlPort=null; ctrlWriter=null; ctrlReader=null;
@@ -586,6 +624,8 @@ function syncFlashButtons(){
   if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
   ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
+  if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
+  if($("cameraStopBtn")) $("cameraStopBtn").disabled = !camPort;
 }
 
 // Shared connect + bootloader sync with a manual-boot retry (no_reset).
@@ -611,6 +651,84 @@ async function espConnect({ terminal, statusEl, logId }){
   return esp.chip;
 }
 
+
+// ---------- OV2640 browser preview (Web Serial raw CDC) ----------
+async function cameraWrite(cmd){
+  if(!camWriter) throw new Error("camera port not connected");
+  await camWriter.write(new TextEncoder().encode(cmd + "\n"));
+  appendLog("cameraLog", "> " + cmd + "\n");
+}
+function renderCameraFrame(base64Data, meta){
+  const img=$("cameraPreview"), ph=$("cameraPlaceholder");
+  try {
+    const raw = atob(base64Data.replace(/\s+/g,""));
+    const bytes = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
+    const mime = Number(meta.format)===4 || Number(meta.format)===3 ? "image/jpeg" : "image/bmp";
+    if(camObjectUrl) URL.revokeObjectURL(camObjectUrl);
+    camObjectUrl = URL.createObjectURL(new Blob([bytes], {type:mime}));
+    img.src = camObjectUrl;
+    img.style.display="block";
+    if(ph) ph.style.display="none";
+    setMsg($("modelMsg"), `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes`, "ok");
+  } catch(e){ appendLog("cameraLog", "[camera] frame decode failed: "+(e.message||e)+"\n"); }
+}
+async function cameraReadLoop(){
+  const decoder = new TextDecoder();
+  let textBuf="", receiving=false, frameLines=[], meta={};
+  try {
+    while(camPort && !camStop){
+      const {value, done} = await camReader.read();
+      if(done) break;
+      textBuf += decoder.decode(value, {stream:true});
+      let idx;
+      while((idx=textBuf.indexOf("\n")) >= 0){
+        const line = textBuf.slice(0, idx).trim();
+        textBuf = textBuf.slice(idx + 1);
+        if(!line) continue;
+        if(line.startsWith("---START_IMAGE:")){
+          const p=line.split(":");
+          meta={format:Number(p[1]||4), width:Number(p[2]||0), height:Number(p[3]||0), size:Number(p[4]||0)};
+          receiving=true;
+          frameLines=[];
+        } else if(line.startsWith("---END_IMAGE---")){
+          if(receiving) renderCameraFrame(frameLines.join(""), meta);
+          receiving=false;
+          frameLines=[];
+        } else if(receiving){
+          frameLines.push(line);
+        } else if(line.startsWith("RESULT,") || /READY|ERROR|CAMERA|TFLM|INPUT|CROP/i.test(line)){
+          appendLog("cameraLog", line + "\n");
+        }
+      }
+    }
+  } catch(e){ if(!camStop) appendLog("cameraLog", "[camera] read stopped: "+(e.message||e)+"\n"); }
+}
+async function connectCameraPreview(){
+  const sup=webSerialSupport();
+  if(!sup.ok){ setMsg($("modelMsg"), "OV2640 preview needs Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
+  await releaseSerial("cameraLog");
+  $("cameraLog").textContent="";
+  setMsg($("modelMsg"), "Opening serial chooser for OV2640 preview...", "warn");
+  try {
+    camStop=false;
+    camPort = await navigator.serial.requestPort();
+    await camPort.open({baudRate:115200, bufferSize:1048576});
+    camWriter = camPort.writable.getWriter();
+    camReader = camPort.readable.getReader();
+    $("cameraConnectBtn").disabled=true;
+    $("cameraStopBtn").disabled=false;
+    cameraReadLoop();
+    await cameraWrite("f3"); await new Promise(r=>setTimeout(r,250));
+    await cameraWrite("s1"); await new Promise(r=>setTimeout(r,250));
+    await cameraWrite("d1");
+    setMsg($("modelMsg"), "OV2640 preview connected. Waiting for JPEG frames...", "ok");
+  } catch(e){
+    const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "Port selection cancelled." : "OV2640 connect failed: "+(e.message||e);
+    setMsg($("modelMsg"), msg, "bad");
+    await releaseCamera("cameraLog");
+  }
+}
 // ---------- FLASH MODEL (.tflite) ----------
 const modelTerminal = makeTerminal("modelFlashLog", (line)=>{ const s=String(line);
   if(/Erasing/i.test(s)) setMsg($("flashStatus"),"Erasing…","warn");

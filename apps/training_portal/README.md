@@ -132,18 +132,17 @@ apps/training_portal/runs/
 | GET | `/api/firmware/meta` | Main board firmware flash plan from `flasher_args.json` (or "not built" message) |
 | GET | `/api/firmware/download?name=…` | Download one firmware `.bin` (allowlisted to the build dir) |
 
-## Tabs
+## Pages
 
-The GUI is split into four tabs so the flows stay separate: **Train** (dataset +
-class mapping + training), **Quantize**, **Flash model**, **Flash firmware**.
+The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`.
 Train/Quantize run as background jobs (shared job log / artifacts / history
-panels); the two flash tabs run in the browser via Web Serial.
+panels); the flash and OV2640 preview flows run in the browser via Web Serial.
 
 ## Flashing (browser Web Serial)
 
 The ESP32-S3 is plugged into the **student PC** and flashed **from the browser**
 via the Web Serial API — no install, no Python, no `127.0.0.1`. Students use
-**Chrome or Edge**. Two separate tabs:
+**Chrome or Edge**. Separate page sections:
 
 - **Flash model** — updates only the `.tflite` in the model partition. Select a
   model → **Connect ESP32-S3** → **Flash model**. The page downloads the artifact
@@ -158,7 +157,7 @@ via the Web Serial API — no install, no Python, no `127.0.0.1`. Students use
   (header checkbox) is on.
 
 Both use the vendored [esptool-js](static/vendor/esptool-js/) (offline, pinned);
-each tab has its own status line + flash log (connect → bootloader → erase →
+each page section has its own status line + flash log (connect → bootloader → erase →
 write → verify → done).
 
 Requirements & notes:

@@ -1,84 +1,59 @@
-# Student Guide — EECampEdu Portal
+# Student Guide
 
-Everything happens in your **browser**. Use **Chrome or Edge**.
+Use **Chrome or Edge**. Your instructor gives you a team URL and account.
 
-## Open the portal
+Example:
 
-Open your team's address (ask your instructor for the exact one), e.g.:
-
-```
+```text
 https://140.112.194.42:8081
 ```
 
-If you see a certificate warning, click **Advanced → Proceed** once. The portal
-has four tabs — one per class day.
+If the browser shows a certificate warning, choose **Advanced -> Proceed** once. After login, use the top menu to open each page.
 
----
+## Model Finetune Page
 
-## Output demo (GPIO / LED / PWM)
+Purpose: collect/check gesture data, train a model, and preview camera/model behavior.
 
-**Hardware:** ESP32-S3 board with its onboard LED, plugged into your PC's USB.
+1. Upload a dataset zip when provided. Accepted layout: class folders such as `up/`, `ok/`, `thumb/`, or any six custom names.
+2. Map each class to a robot action: `up`, `down`, `left`, `right`, `clamp`, `release`.
+3. Choose TensorFlow or PyTorch and a model recipe.
+4. Click **Start training** and watch the live job log.
+5. For OV2640 preview, plug the ESP32-S3 main board into your PC, then click **Connect OV2640 preview**. The browser borrows the serial port, sends camera stream commands, and displays incoming JPEG frames. No Python or terminal command is needed.
 
-1. **Flash output demo firmware** → *Connect & flash output firmware*, pick the
-   board in the browser's port dialog, wait for “succeeded”.
-2. **Connect for control**, then:
-   - **LED ON / LED OFF** — digital output.
-   - **Brightness slider** — PWM brightness (0–255); drag it and watch the LED.
-   - **Blink** — repeating blink.
+Expected result: a trained source model appears in the artifact list, and OV2640 preview shows frames when the main board firmware is running camera stream support.
 
-*Expect:* the LED turns on/off and dims/brightens as you drag the slider.
+## Deploy Page
 
----
+Purpose: quantize, flash model, and benchmark deployment quality.
 
-## Model demo (PC webcam)
+1. Pick a trained `.keras` model.
+2. Choose a deployable quantization format, usually `int8 / per-channel`.
+3. Click **Start quantization** and wait for a `.tflite` artifact and report.
+4. Plug in the ESP32-S3 main board, then use **Flash model**. The model partition offset is hidden.
+5. If the board is connected to the AI PC, click **Run benchmark**. The portal shows label accuracy, model latency, device compute latency, throughput/FPS, Top-1 match, MAE, Max Error, and Cosine Similarity.
 
-**Hardware:** none — just your PC **webcam**.
+Expected result: model flashing succeeds and benchmark results appear in the page log/table.
 
-The demo uses your local camera, so it runs on your PC (not in the browser).
-Copy the command from the **Model demo** tab and run it in a terminal:
+## Output Page
 
-```
-conda activate eecampedu
-python model_finetune/pytorch/webcam_demo.py
-```
+Purpose: test GPIO/PWM output independently from the full robot arm.
 
-*Expect:* a webcam window that shows the predicted gesture live.
+1. Flash the output demo firmware from the page.
+2. Connect for control.
+3. Use LED ON/OFF, brightness slider, blink, and status controls.
 
----
+Expected result: LED digital output and PWM brightness respond immediately.
 
-## Deploy & benchmark (ESP32-S3)
+## Firmware Page
 
-**Hardware:** ESP32-S3 main board, plugged into your PC's USB.
+Purpose: flash the full ESP32-S3 main board firmware.
 
-1. (If needed) **Quantize** a trained model → produces a `.tflite`.
-2. **Flash model** → *Connect ESP32-S3* → *Flash model*. This updates only the
-   model — not the firmware.
-3. **Run benchmark** → pick the model, dataset, and serial port, then click
-   **Run benchmark**. The live log appears in *Live job log*, and a summary
-   (images processed, label accuracy, latencies, throughput/FPS, and score
-   similarity — Top-1, MAE, Max Error, Cosine) shows in the Results table.
+Use this for a new board or when the instructor updates camera/USB/inference firmware. The page flashes the ESP-IDF build images automatically; students do not type offsets or esptool commands.
 
-*Expect:* “Flash succeeded — model updated”, and benchmark numbers in the table.
+## Flashing / Serial Checklist
 
-> The benchmark runs on the **AI PC server**, so the board must be plugged into
-> the **AI PC** for it. If your board is on your **own PC**, the AI PC can't reach
-> it — from your PC you can still do **Flash model** in the browser, but not this
-> benchmark. The portal tells you when no AI-PC board is detected.
-
----
-
-## Main board firmware
-
-Use this once to put the full main board firmware (camera + inference) on a new
-board: **Connect & flash firmware** → pick the board → wait for “succeeded”.
-This is separate from flashing a model.
-
----
-
-## If flashing doesn't connect
-
-- Use **Chrome or Edge** (Web Serial is not in Firefox/Safari).
-- The portal must be **https://** (or the instructor enabled it for your PC).
-- Close any other serial monitor (Arduino IDE, `idf.py monitor`, PuTTY).
-- Hold **BOOT**, click connect, tap **RESET/EN**, release BOOT after ~1s.
-- Use a **data** USB cable (not charge-only).
+- Use Chrome or Edge over HTTPS.
+- Close Arduino Serial Monitor, `idf.py monitor`, PuTTY, or any other program using the port.
+- If auto-reset fails while flashing: hold BOOT, click connect, tap RESET/EN, release BOOT after about 1 second.
+- Use a data-capable USB cable.
+- After one serial workflow finishes, wait for the status to say done/released before starting the next one.
