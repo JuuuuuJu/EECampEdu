@@ -38,7 +38,7 @@ git-ignored and regenerated locally (never commit them):
 
 ```text
 model_finetune/dataset/{train,validation,test,sign_mnist}/   uploaded/imported datasets
-model_finetune/dataset/class_map.json                        generated at dataset import
+model_finetune/dataset/class_mapping.json                        generated at dataset import
 model_finetune/models/**/*.{keras,onnx,pth,h5}               trained models (except the pretrained seed)
 firmware/pc/artifacts/                                        generated .tflite + quantization reports
 apps/training_portal/runs/                                    uploaded zips, job logs, web-run metadata
@@ -46,7 +46,7 @@ apps/training_portal/runs/                                    uploaded zips, job
 ```
 
 Kept as an input seed: `model_finetune/models/pytorch/mini_resnet_pretrained_weights.pth`.
-Class-map template: `model_finetune/class_map.example.json`.
+Class-map template: `model_finetune/class_mapping.example.json`.
 
 ## System Flow
 
@@ -322,12 +322,89 @@ Get-CimInstance Win32_Process |
   ForEach-Object { Stop-Process -Id $_.ProcessId }
 ```
 
-The portal's Flash panel calls that helper, which downloads the selected
-`.tflite` and runs `python -m esptool` locally (default model-partition offset
-`0x310000`). See [`apps/training_portal/README.md`](apps/training_portal/README.md)
+Once the helper is running, the student never types an address. The portal's
+**Flash** panel auto-connects to the helper at `http://127.0.0.1:8765` in the
+background, checks its health, lists serial ports, and auto-selects the most
+likely ESP32-S3 port. Students see a plain status line — e.g. *"Flash helper
+connected · ESP32-S3 detected on /dev/ttyUSB0"*, or *"No ESP32-S3 found — plug in
+the board and click Refresh ports"*. The student flow is simply: **pick the
+TFLite model → confirm the detected port → click Flash model**. A **Refresh
+ports** button re-scans; the helper URL and flash offset are tucked under an
+**Advanced** section and are not shown by default. Behind the scenes the helper
+downloads the selected `.tflite` and runs `python -m esptool` locally (default
+model-partition offset `0x310000`). All helper errors surface as clean text.
+See [`apps/training_portal/README.md`](apps/training_portal/README.md)
 and [`apps/local_flash_helper/README.md`](apps/local_flash_helper/README.md).
 The web dependency (`Flask`) is part of `firmware/pc/requirements.txt`, so no
 separate environment is needed.
+
+### Running the flash helper on the AI PC (background)
+
+If you would rather **not** have students run the helper, connect the ESP32-S3
+to the **AI PC** and run the helper there in the background. Two ways (Linux,
+no sudo):
+
+**Quick (per boot) — nohup:**
+
+```bash
+conda activate eecampedu
+cd ~/EECampEdu
+mkdir -p apps/training_portal/runs
+nohup python apps/local_flash_helper/flash_helper.py --host 127.0.0.1 --port 8765 \
+  > apps/training_portal/runs/flash_helper.log 2>&1 &
+```
+
+**Auto-start on boot — user systemd service:**
+
+```bash
+mkdir -p ~/.config/systemd/user
+cat > ~/.config/systemd/user/flash-helper.service <<'EOF'
+[Unit]
+Description=EECampEdu flash helper
+After=network-online.target
+
+[Service]
+ExecStart=/home/eecamp/miniconda3/envs/eecampedu/bin/python /home/eecamp/EECampEdu/apps/local_flash_helper/flash_helper.py --host 127.0.0.1 --port 8765
+WorkingDirectory=/home/eecamp/EECampEdu
+Restart=always
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user daemon-reload
+systemctl --user enable --now flash-helper.service
+# optional: start before login (one-time, needs sudo): sudo loginctl enable-linger $USER
+```
+
+Check health / list ports / stop:
+
+```bash
+curl http://127.0.0.1:8765/health
+curl http://127.0.0.1:8765/ports
+pkill -f "apps/local_flash_helper/flash_helper.py"     # nohup
+systemctl --user stop flash-helper.service             # systemd
+```
+
+**Important — how to trigger flashing when the helper is on the AI PC.** The
+portal page runs in the **student's** browser, so its "Local flash helper URL"
+of `http://127.0.0.1:8765` points at the *student's* PC, not the AI PC. With the
+helper on the AI PC, drive flashing from the AI PC instead:
+
+```bash
+# 1) pick the artifact from the portal, then POST to the local helper on the AI PC:
+curl -X POST http://127.0.0.1:8765/flash -H 'Content-Type: application/json' -d '{
+  "artifact_url": "http://127.0.0.1:8080/api/artifacts/download?path=firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite",
+  "port": "/dev/ttyACM0" }'
+
+# or run esptool directly (default model-partition offset 0x310000):
+python -m esptool --chip esp32s3 --port /dev/ttyACM0 --baud 460800 \
+  write-flash --flash-size keep 0x310000 model.tflite
+```
+
+Alternatively, open the portal in a browser **on the AI PC** and keep the helper
+URL at `127.0.0.1:8765`. Keep the helper bound to `127.0.0.1` (do **not** expose
+`8765` to the student network). Serial access needs your user in the `dialout`
+group (`sudo usermod -aG dialout $USER`, then re-login — one-time admin step).
 
 ## Arbitrary Class Names & Robot-Action Mapping
 
@@ -338,7 +415,7 @@ How it flows through the pipeline:
 
 1. **Import** (portal step 1): the upload must contain exactly six class folders
    (any names). The discovered class **order** is saved to
-   `model_finetune/dataset/class_map.json` (git-ignored). Wrong counts are
+   `model_finetune/dataset/class_mapping.json` (git-ignored). Wrong counts are
    rejected.
 2. **Map to actions** (portal step 1b): assign each class an output action —
    `up / down / left / right / clamp / release` — saved into the same file.
@@ -349,11 +426,11 @@ How it flows through the pipeline:
 4. **Quantize**: the class order is written into the quantization report
    (`class_order`), so calibration/validation use the right labels.
 5. **Benchmark**: `run_benchmark_png.py` reads `class_order` from the report (and
-   falls back to `class_map.json`) for label accuracy.
+   falls back to `class_mapping.json`) for label accuracy.
 6. **Firmware**: the ESP32-S3 uses **only the output index + scores** — no class
    names are compiled in. The index→action mapping is applied on the student PC.
 
-The mapping file schema is documented in `model_finetune/class_map.example.json`.
+The mapping file schema is documented in `model_finetune/class_mapping.example.json`.
 
 ## Student-PC Camera / Control App
 
@@ -367,7 +444,7 @@ python apps/local_camera_app/preview_app.py   # http://127.0.0.1:8770
 ```
 
 It lists serial ports, connects to ESP1 (and optionally ESP2), maps the predicted
-index → class → action via `class_map.json`, and forwards the action to ESP2.
+index → class → action via `class_mapping.json`, and forwards the action to ESP2.
 Live JPEG-over-USB-CDC preview is provided by the native app
 [`apps/esp32_cam_input_app`](apps/esp32_cam_input_app/); see
 [`apps/local_camera_app/README.md`](apps/local_camera_app/README.md) for the
@@ -443,20 +520,21 @@ expose `:8080` at `140.112.194.42:808X`, follow
 
 ### 4. Import or verify dataset structure
 
-The training scripts read `model_finetune/dataset/train/<class>/*.jpg` with class
-order `up, ok, thumb, palm, rock, stone`. Verify the layout:
+The training scripts read `model_finetune/dataset/train/<class>/*.jpg` for the six
+classes recorded in `model_finetune/dataset/class_mapping.json`. Verify the layout:
 
 ```bash
-for c in up ok thumb palm rock stone; do \
+for c in $(python -c "import json;print(*json.load(open('model_finetune/dataset/class_mapping.json'))['class_order'])" 2>/dev/null); do \
   echo "$c: $(ls model_finetune/dataset/train/$c 2>/dev/null | wc -l) images"; done
 ```
 
-To import a new dataset, upload a `.zip` (one folder per class) from the portal's
-**Import dataset** panel, or `POST` it:
+To import a new dataset, upload **one `.zip`** (exactly six class folders, any
+names) from the portal's **Import dataset** panel, or `POST` it. The layout is
+auto-detected: an existing `train/`+`validation/` split is kept as-is, otherwise
+the six folders are auto-split into train/validation:
 
 ```bash
-curl -F "file=@dataset.zip" -F "target=train" \
-  http://127.0.0.1:8080/api/dataset/upload
+curl -F "file=@dataset.zip" http://127.0.0.1:8080/api/dataset/upload
 ```
 
 ### 5. Train a source model from the web GUI
@@ -534,9 +612,10 @@ Invoke-RestMethod http://127.0.0.1:8765/health
 Invoke-RestMethod http://127.0.0.1:8765/ports
 ```
 
-In the portal's **Flash** panel: set the helper URL, click **Check helper & list
-ports**, pick the port and a `.tflite`, then **Flash model**. The helper
-downloads the artifact from the portal and runs
+In the portal's **Flash** panel: the page auto-detects the helper and the
+ESP32-S3 port, so students just pick the `.tflite` model, confirm the detected
+port, and click **Flash model** (use **Refresh ports** if the board was plugged
+in late). The helper downloads the artifact from the portal and runs
 `python -m esptool ... write-flash --flash-size keep 0x310000 model.tflite`
 locally. CLI fallback without the browser:
 
@@ -652,35 +731,6 @@ USB CDC Port      -> ESP1 COM port
 ESP2 Output Port  -> ESP2 COM port
 Auto-forward RESULT checked
 Gesture -> Output Mapping set in the ESP2 Output panel
-```
-
-## Unit Tests
-
-Dedicated unit-test guides:
-
-```text
-docs/unit_tests/model_unit_test.md
-docs/unit_tests/deploy_unit_test.md
-docs/unit_tests/camera_unit_test.md
-docs/unit_tests/usb_unit_test.md
-docs/unit_tests/input_unit_test.md
-docs/unit_tests/output_unit_test.md
-```
-
-Use one mode at a time for unit tests. Use `RuntimeMode::kCameraUsbMsc` only for full camera + USB + UI integration.
-
-Full integration test order:
-
-```text
-1. Train/fine-tune source model in model_finetune/.
-2. Export the source model into deployable TFLite under firmware/pc/artifacts/models; use int8 unless there is a specific experiment reason.
-3. Build and flash ESP1 firmware.
-4. Flash the selected TFLite model into the ESP1 model partition.
-5. Build and flash ESP2 output firmware.
-6. Run deploy benchmark with --esp2-port to verify accuracy, output similarity, latency, and servo command forwarding.
-7. Run live gesture-to-output: the native ImGui app (camera + USB preview) or the
-   student-PC web app `apps/local_camera_app/preview_app.py` (gesture result +
-   class->action forwarding to ESP2).
 ```
 
 The browser-driven version of steps 1–4 (upload → class mapping → train →

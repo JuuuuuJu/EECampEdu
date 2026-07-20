@@ -25,7 +25,7 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 TFLITE_EXPORT_FORMATS = ["float32", "int8", "int16"]
 INT_QUANT_GRANULARITY_CHOICES = ["per-channel", "per-tensor"]
 
-# Prefer the student's saved class order (model_finetune/dataset/class_map.json)
+# Prefer the student's saved class order (model_finetune/dataset/class_mapping.json)
 # so arbitrary class-folder names flow into calibration/validation and the report.
 import sys as _sys
 _sys.path.insert(0, str(PROJECT_ROOT / "model_finetune"))

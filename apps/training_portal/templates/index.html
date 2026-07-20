@@ -54,45 +54,39 @@
 </head>
 <body>
 <header>
-  <h1>🤖 EECampEdu — AI PC Training Portal</h1>
-  <p>Train &amp; quantize gesture models from your browser. Classes:
-     <code id="classNames">up, ok, thumb, palm, rock, stone</code></p>
+  <h1>EECampEdu — AI PC Training Portal</h1>
+  <p>Train &amp; quantize gesture models from your browser.</p>
 </header>
 
 <main>
   <!-- 1. Dataset upload -->
   <section class="card">
     <h2><span class="step">1.</span>Import dataset (.zip)</h2>
-    <p class="note">Exactly <b>six</b> class folders, <b>any names</b> (e.g. <code>n1/*.jpg</code> …
-       <code>n6/*.jpg</code>). Folders may be direct or nested (<code>dataset/n1/…</code>,
-       <code>train/n1/…</code>). If both <code>train</code> and <code>validation</code> are
-       present, both import at once (same six names). The class order is saved to
-       <code>class_map.json</code> and used everywhere.</p>
+    <p class="note">Upload <b>one zip</b> with exactly <b>six</b> class folders, <b>any names</b>
+       (e.g. <code>n1/*.jpg</code> … <code>n6/*.jpg</code>). It auto-detects the layout:
+       if the zip already has <code>train/</code> and <code>validation/</code>, both import
+       as-is; otherwise the six folders are <b>auto-split</b> into train/validation. The
+       class order is saved to <code>class_mapping.json</code> and used everywhere.</p>
     <label>Dataset zip</label>
     <input type="file" id="datasetFile" accept=".zip" />
-    <label>Import into</label>
-    <select id="datasetTarget">
-      <option value="train">dataset/train (training)</option>
-      <option value="validation">dataset/validation (validation)</option>
-    </select>
     <button id="uploadBtn">Upload &amp; import</button>
     <div class="msg" id="uploadMsg"></div>
   </section>
 
-  <!-- 1b. Class -> output action mapping -->
+  <!-- 2. Class -> output action mapping -->
   <section class="card">
-    <h2><span class="step">1b.</span>Map classes → robot actions</h2>
+    <h2><span class="step">2.</span>Map classes to robot actions</h2>
     <p class="note">Each trained class (model output index) drives one robot-arm action.
        The ESP firmware uses only the index; this mapping is applied on the student PC
-       control app. Saved to <code>class_map.json</code>.</p>
+       control app. Saved to <code>class_mapping.json</code>.</p>
     <div id="classMapRows"><div class="note">Import a dataset first to list classes.</div></div>
     <button id="saveClassMapBtn">Save action mapping</button>
     <div class="msg" id="classMapMsg"></div>
   </section>
 
-  <!-- 2. Training -->
+  <!-- 3. Training -->
   <section class="card">
-    <h2><span class="step">2.</span>Train a model</h2>
+    <h2><span class="step">3.</span>Train a model</h2>
     <label>Framework</label>
     <select id="framework">
       <option value="tensorflow">TensorFlow</option>
@@ -111,9 +105,9 @@
     <div class="msg" id="trainMsg"></div>
   </section>
 
-  <!-- 3. Quantization -->
+  <!-- 4. Quantization -->
   <section class="card">
-    <h2><span class="step">3.</span>Quantize for ESP32-S3</h2>
+    <h2><span class="step">4.</span>Quantize for ESP32-S3</h2>
     <p class="note">Converts a trained <code>.keras</code> model into a deployable int8 TFLite +
        quantization report.</p>
     <label>Source .keras model</label>
@@ -145,25 +139,30 @@
     <div class="msg" id="quantMsg"></div>
   </section>
 
-  <!-- 4. Flash helper (student PC) -->
+  <!-- 5. Flash helper (student PC) -->
   <section class="card">
-    <h2><span class="step">4.</span>Flash ESP32-S3 (your PC)</h2>
-    <p class="note">The board is plugged into <b>your</b> PC, so flashing uses the local helper
-       running on <code>127.0.0.1:8765</code>. Start it with
-       <code>python apps/local_flash_helper/flash_helper.py</code>.</p>
-    <label>Local flash helper URL</label>
-    <input type="text" id="helperUrl" value="http://127.0.0.1:8765" />
-    <div class="row">
-      <div><label>Serial port</label><select id="flashPort"></select></div>
-      <div><label>Flash offset</label><input type="text" id="flashOffset" value="0x310000" /></div>
-    </div>
-    <label>TFLite artifact</label>
+    <h2><span class="step">5.</span>Flash ESP32-S3 (your PC)</h2>
+    <p class="note">Plug the ESP32-S3 into <b>your PC</b>. The board is detected automatically —
+       pick the model, confirm the port, and click <b>Flash model</b>.</p>
+    <div class="msg" id="helperStatus">Connecting to flash helper…</div>
+    <label>TFLite model</label>
     <select id="flashArtifact"></select>
     <div class="row">
-      <div><button class="secondary" id="helperCheckBtn">Check helper &amp; list ports</button></div>
-      <div><button id="flashBtn">Flash model</button></div>
+      <div><label>Detected port</label><select id="flashPort"></select></div>
+      <div style="flex:0 0 auto">
+        <label>&nbsp;</label>
+        <button class="secondary" id="refreshPortsBtn" style="margin-top:0">Refresh ports</button>
+      </div>
     </div>
+    <button id="flashBtn">Flash model</button>
     <div class="msg" id="flashMsg"></div>
+    <details style="margin-top:12px">
+      <summary class="note" style="cursor:pointer">Advanced (only if the helper runs elsewhere)</summary>
+      <label>Local flash helper URL</label>
+      <input type="text" id="helperUrl" value="http://127.0.0.1:8765" />
+      <label>Flash offset</label>
+      <input type="text" id="flashOffset" value="0x310000" />
+    </details>
   </section>
 
   <!-- Job log -->
@@ -202,15 +201,40 @@ let logOffset = 0;
 let logTimer = null;
 
 function $(id){ return document.getElementById(id); }
-function setMsg(el, text, cls){ el.textContent = text; el.className = "msg " + (cls||""); }
+// Robust text setter: accepts an element or an id, and no-ops if the target is
+// missing (so a removed/renamed element can never crash a flow).
+function setText(target, text){
+  const el = (typeof target === "string") ? $(target) : target;
+  if(el) el.textContent = text;
+}
+function setMsg(target, text, cls){
+  const el = (typeof target === "string") ? $(target) : target;
+  if(!el) return;
+  el.textContent = text;
+  el.className = "msg " + (cls||"");
+}
 function fmtSize(n){ if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(1)+" MB"; }
 
 async function api(path, opts){
   const res = await fetch(ORIGIN + path, opts);
   const text = await res.text();
-  let body; try { body = JSON.parse(text); } catch(e){ body = { error: text }; }
-  if(!res.ok){ throw new Error(body.error || body.message || (res.status+" error")); }
-  return body;
+  let body; try { body = JSON.parse(text); } catch(e){ body = null; }
+  if(!res.ok){
+    // Prefer a clean JSON error message; never surface a raw HTML error page.
+    let msg = (body && (body.error || body.message)) || cleanError(text) || (res.status + " " + (res.statusText||"error"));
+    throw new Error(msg);
+  }
+  return body != null ? body : {};
+}
+
+// Strip an HTML error page down to a short readable message.
+function cleanError(text){
+  if(!text) return "";
+  if(/<[a-z!]/i.test(text)){
+    const t = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+    return t.slice(0, 200) || "";
+  }
+  return text.trim().slice(0, 200);
 }
 
 // ---------- init ----------
@@ -219,7 +243,7 @@ let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 async function init(){
   try {
     const h = await api("/api/health");
-    $("classNames").textContent = h.class_names.join(", ");
+    setText("classNames", (h.class_names || []).join(", "));
   } catch(e){}
   const r = await api("/api/recipes");
   RECIPES = r.recipes;
@@ -232,6 +256,7 @@ async function init(){
   refreshArtifacts();
   refreshJobs();
   setInterval(refreshJobs, 5000);
+  checkHelper();   // auto-detect the local flash helper + ESP32-S3 port in the background
 }
 
 async function refreshClassMap(){
@@ -261,7 +286,7 @@ $("saveClassMapBtn").onclick = async () => {
   setMsg($("classMapMsg"), "Saving…", "warn");
   try {
     await api("/api/class-map", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({actions}) });
-    setMsg($("classMapMsg"), "Action mapping saved to class_map.json.", "ok");
+    setMsg($("classMapMsg"), "Action mapping saved to class_mapping.json.", "ok");
   } catch(e){ setMsg($("classMapMsg"), "Save failed: "+e.message, "bad"); }
 };
 
@@ -340,15 +365,14 @@ $("uploadBtn").onclick = async () => {
   if(!f){ setMsg($("uploadMsg"), "Choose a .zip first.", "bad"); return; }
   const fd = new FormData();
   fd.append("file", f);
-  fd.append("target", $("datasetTarget").value);
   setMsg($("uploadMsg"), "Uploading & extracting…", "warn");
   $("uploadBtn").disabled = true;
   try {
     const r = await api("/api/dataset/upload", { method:"POST", body: fd });
-    const per = Object.entries(r.per_class).map(([k,v]) => k+":"+v).join("  ");
     const detail = r.imports ? r.imports.map(x => `${x.target}:${x.total_images}`).join("  ") : r.target;
-    setMsg($("uploadMsg"), `Imported ${r.total_images} images into ${detail}. Classes: ${(r.class_order||[]).join(", ")}`, "ok");
-    if(r.class_order){ $("classNames").textContent = r.class_order.join(", "); }
+    const mode = r.mode === "auto-split" ? " (auto-split)" : (r.mode === "provided-split" ? " (from zip)" : "");
+    setMsg($("uploadMsg"), `Imported ${r.total_images} images — ${detail}${mode}. Classes: ${(r.class_order||[]).join(", ")}`, "ok");
+    if(r.class_order){ setText("classNames", r.class_order.join(", ")); }
     refreshClassMap();
   } catch(e){ setMsg($("uploadMsg"), "Upload failed: "+e.message, "bad"); }
   $("uploadBtn").disabled = false;
@@ -500,46 +524,116 @@ async function refreshJobs(){
   } catch(e){}
 }
 
-// ---------- flash helper (talks to student-PC localhost helper) ----------
-$("helperCheckBtn").onclick = async () => {
-  const base = $("helperUrl").value.replace(/\/$/, "");
-  setMsg($("flashMsg"), "Contacting local helper…", "warn");
-  try {
-    const h = await (await fetch(base + "/health")).json();
-    const p = await (await fetch(base + "/ports")).json();
-    const sel = $("flashPort"); sel.innerHTML = "";
-    (p.ports||[]).forEach(port => {
-      const o=document.createElement("option"); o.value=port.device;
-      o.textContent = port.device + (port.description ? " — "+port.description : "");
-      sel.appendChild(o);
-    });
-    if(!(p.ports||[]).length){ const o=document.createElement("option"); o.value=""; o.textContent="(no serial ports found)"; sel.appendChild(o); }
-    setMsg($("flashMsg"), `Helper OK (esptool ${h.esptool_version||"?"}). Found ${(p.ports||[]).length} port(s).`, "ok");
-  } catch(e){
-    setMsg($("flashMsg"),
-      "Cannot reach local helper. Start it on your PC and ensure the browser may call 127.0.0.1. ("+e.message+")", "bad");
+// ---------- flash helper (auto-talks to the student-PC localhost helper) ----------
+const HELPER_URL_DEFAULT = "http://127.0.0.1:8765";
+function helperBase(){
+  const el = $("helperUrl");
+  const url = (el && el.value.trim()) ? el.value.trim() : HELPER_URL_DEFAULT;
+  return url.replace(/\/$/, "");
+}
+
+// Fetch JSON from the local helper, always surfacing a clean text message on error.
+async function helperJson(path, opts){
+  const res = await fetch(helperBase() + path, opts);
+  const text = await res.text();
+  let body; try { body = JSON.parse(text); } catch(e){ body = null; }
+  if(!res.ok){
+    throw new Error((body && (body.error || body.message)) || cleanError(text) || (res.status + " error"));
   }
-};
+  return body != null ? body : {};
+}
+
+// Heuristic: does a serial port look like an ESP32-S3 USB bridge?
+function looksLikeEsp(port){
+  const s = ((port.device||"") + " " + (port.description||"") + " " + (port.hwid||"")).toLowerCase();
+  return /(ttyusb|ttyacm|cp210|ch340|ch910|wch|cdc|espressif|silicon\s*labs|usb\s*serial|usb\s*jtag|303a|10c4|1a86)/.test(s);
+}
+
+let HELPER_OK = false;
+
+async function checkHelper(){
+  setMsg($("helperStatus"), "Connecting to flash helper…", "warn");
+  let health;
+  try {
+    health = await helperJson("/health");
+  } catch(e){
+    HELPER_OK = false;
+    setMsg($("helperStatus"),
+      "Flash helper not detected. Start it on your PC, then click Refresh ports.", "bad");
+    fillPorts([]);
+    return;
+  }
+  HELPER_OK = true;
+  let ports = [];
+  try { ports = (await helperJson("/ports")).ports || []; } catch(e){ ports = []; }
+  const chosen = fillPorts(ports);
+  if(!ports.length){
+    setMsg($("helperStatus"),
+      "Flash helper connected. No ESP32-S3 found — plug in the board and click Refresh ports.", "warn");
+  } else if(chosen){
+    setMsg($("helperStatus"), `Flash helper connected · ESP32-S3 detected on ${chosen}`, "ok");
+  } else {
+    setMsg($("helperStatus"),
+      `Flash helper connected · ${ports.length} serial port(s) found — confirm the port below.`, "warn");
+  }
+}
+
+// Populate the port dropdown and auto-select the most likely ESP32-S3 port.
+// Returns the auto-selected device (string) or "" if none was confidently chosen.
+function fillPorts(ports){
+  const sel = $("flashPort");
+  if(!sel) return "";
+  sel.innerHTML = "";
+  if(!ports.length){
+    const o = document.createElement("option");
+    o.value = ""; o.textContent = "(no serial ports — click Refresh ports)";
+    sel.appendChild(o);
+    return "";
+  }
+  ports.forEach(p => {
+    const o = document.createElement("option");
+    o.value = p.device;
+    o.textContent = p.device + (p.description ? " — " + p.description : "");
+    sel.appendChild(o);
+  });
+  const match = ports.find(looksLikeEsp);
+  if(match){ sel.value = match.device; return match.device; }
+  sel.value = ports[0].device;   // fall back to first port, but report it as unconfirmed
+  return "";
+}
+
+$("refreshPortsBtn").onclick = checkHelper;
 
 $("flashBtn").onclick = async () => {
-  const base = $("helperUrl").value.replace(/\/$/, "");
   const artifactPath = $("flashArtifact").value;
   const port = $("flashPort").value;
-  if(!artifactPath){ setMsg($("flashMsg"), "Select a .tflite artifact.", "bad"); return; }
-  if(!port){ setMsg($("flashMsg"), "Select a serial port (check helper first).", "bad"); return; }
+  if(!HELPER_OK){ setMsg($("flashMsg"), "Flash helper not running — start it, then click Refresh ports.", "bad"); return; }
+  if(!artifactPath){ setMsg($("flashMsg"), "Select a TFLite model first (quantize one if the list is empty).", "bad"); return; }
+  if(!port){ setMsg($("flashMsg"), "No serial port detected — plug in the ESP32-S3 and click Refresh ports.", "bad"); return; }
   const artifactUrl = ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(artifactPath);
-  setMsg($("flashMsg"), "Downloading model to your PC and flashing… (do not unplug)", "warn");
+  const offsetEl = $("flashOffset");
+  const body = { artifact_url: artifactUrl, port: port };
+  if(offsetEl && offsetEl.value.trim()){ body.offset = offsetEl.value.trim(); }
+  setMsg($("flashMsg"), `Flashing ${artifactPath.split("/").pop()} to ${port}… do not unplug.`, "warn");
   $("flashBtn").disabled = true;
   try {
-    const res = await fetch(base + "/flash", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({ artifact_url: artifactUrl, port: port, offset: $("flashOffset").value })
+    // Flash can return the esptool log on both success (200) and failure (500),
+    // so parse defensively rather than throwing away the output.
+    const res = await fetch(helperBase() + "/flash", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)
     });
-    const r = await res.json();
-    $("log").textContent = (r.output || r.error || "(no output)");
-    if(res.ok && r.ok){ setMsg($("flashMsg"), "Flash succeeded.", "ok"); }
-    else { setMsg($("flashMsg"), "Flash failed (see log).", "bad"); }
-  } catch(e){ setMsg($("flashMsg"), "Flash request failed: "+e.message, "bad"); }
+    const text = await res.text();
+    let r; try { r = JSON.parse(text); } catch(e){ r = null; }
+    setText("log", (r && r.output) || cleanError(text) || "(no output)");
+    if(res.ok && r && r.ok){
+      setMsg($("flashMsg"), "Flash succeeded.", "ok");
+    } else {
+      const why = (r && (r.error || (r.ok === false ? "esptool reported an error — see the log below." : ""))) || cleanError(text) || "flash failed";
+      setMsg($("flashMsg"), "Flash failed: " + why, "bad");
+    }
+  } catch(e){
+    setMsg($("flashMsg"), "Could not reach the flash helper: " + e.message, "bad");
+  }
   $("flashBtn").disabled = false;
 };
 

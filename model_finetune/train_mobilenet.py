@@ -19,7 +19,7 @@ MODELS_DIR = SCRIPT_DIR / "models" / "tf"
 MODEL_PATH = MODELS_DIR / "MobileNetV2_finetuned.keras"
 ONNX_PATH = MODELS_DIR / "MobileNetV2_finetuned.onnx"
 IMG_SIZE = (96, 96)
-# Default gesture classes; overridden by model_finetune/dataset/class_map.json when
+# Default gesture classes; overridden by model_finetune/dataset/class_mapping.json when
 # a student uploads their own six class folders (arbitrary names supported).
 DEFAULT_CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 CLASS_NAMES = class_map.load_class_order(default=DEFAULT_CLASS_NAMES)

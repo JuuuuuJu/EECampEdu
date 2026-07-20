@@ -36,7 +36,7 @@ model_finetune/dataset/validation/
 model_finetune/dataset/test/
 model_finetune/dataset/sign_mnist/
 model_finetune/new_test_data/
-model_finetune/dataset/class_map.json
+model_finetune/dataset/class_mapping.json
 !model_finetune/dataset/**/.gitkeep
 
 # Uploaded dataset zips anywhere

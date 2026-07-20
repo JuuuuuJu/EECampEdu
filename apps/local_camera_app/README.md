@@ -35,7 +35,7 @@ Then open `http://127.0.0.1:8770/` for the live view.
 |--------|------|---------|
 | GET | `/health` | status + available actions |
 | GET | `/ports` | list local serial ports |
-| POST | `/class-map` | load the `class_map.json` downloaded from the portal |
+| POST | `/class-map` | load the `class_mapping.json` downloaded from the portal |
 | POST | `/connect` | `{esp1_port, esp2_port?, baud?}` — open serial + start reader |
 | GET | `/status` | latest gesture: index, scores, class name, mapped action |
 
@@ -45,7 +45,7 @@ the action string to ESP2.
 
 ## Class → action mapping
 
-The mapping comes from the training portal's `class_map.json` (the same file
+The mapping comes from the training portal's `class_mapping.json` (the same file
 that records the six class folder names). Download it from the portal
 (`/api/class-map`) and `POST` it here, or preload with `--class-map path.json`.
 Actions are `up/down/left/right/clamp/release`, index-aligned with the ESP2

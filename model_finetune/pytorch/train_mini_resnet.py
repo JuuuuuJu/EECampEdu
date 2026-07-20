@@ -526,7 +526,7 @@ def main():
     # 4. FINE-TUNING DATA PREPARATION (4 CLASSES)
     # ==========================================
     print("\n=== Step 3: Preparing Local Gesture Dataset ===")
-    # Default 4-class order; overridden by model_finetune/dataset/class_map.json
+    # Default 4-class order; overridden by model_finetune/dataset/class_mapping.json
     # when a student uploads their own class folders (arbitrary names supported).
     class_names = class_map.load_class_order(default=['up', 'down', 'right', 'left'])
     label_map = {name: index for index, name in enumerate(class_names)}
