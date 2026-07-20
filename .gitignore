@@ -57,6 +57,10 @@ model_finetune/dataset/**/*.csv
 .vscode/
 .idea/
 
+# Teaching firmware generated config (keep only sdkconfig.defaults* sources)
+firmware/teaching_output_demo/sdkconfig
+firmware/teaching_output_demo/sdkconfig.old
+
 # Local PC app builds
 apps/*/build/
 

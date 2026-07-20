@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>EECampEdu AI PC Training Portal</title>
+<title>EECampEdu AI PC Portal</title>
 <style>
   :root { --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0;
           --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --bad:#ef4444;
@@ -14,134 +14,160 @@
   header { padding:18px 24px; background:var(--panel); border-bottom:1px solid var(--border); }
   header h1 { margin:0; font-size:20px; }
   header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
-  /* Tab bar */
   .tabs { max-width:1000px; margin:16px auto 0; padding:0 20px; display:flex; gap:6px; flex-wrap:wrap; }
   .tabs button { margin:0; cursor:pointer; background:var(--panel2); color:var(--text);
     border:1px solid var(--border); border-radius:8px 8px 0 0; padding:9px 16px; font-weight:600; font-size:13px; }
   .tabs button.active { background:var(--accent); color:#06283d; border-color:var(--accent); }
   main { max-width:1000px; margin:0 auto; padding:16px 20px 40px; }
-  .pane { display:none; }
-  .pane.active { display:block; }
+  .pane { display:none; } .pane.active { display:block; }
   .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
   .card h2 { margin:0 0 10px; font-size:15px; letter-spacing:.02em; }
   .card h2 .step { color:var(--accent); margin-right:6px; }
   label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
   input, select, button { font:inherit; }
   input[type=text], input[type=number], select, input[type=file] {
-    width:100%; padding:8px; background:var(--panel2); color:var(--text);
-    border:1px solid var(--border); border-radius:6px; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; }
-  .row > div { flex:1; min-width:120px; }
-  .row.compact > div { min-width:170px; }
+    width:100%; padding:8px; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:6px; }
+  input[type=range] { width:100%; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; } .row > div { flex:1; min-width:120px; } .row.compact > div { min-width:170px; }
   button { cursor:pointer; padding:9px 14px; border-radius:6px; border:1px solid var(--border);
            background:var(--accent); color:#06283d; font-weight:600; margin-top:12px; }
   button.secondary { background:var(--panel2); color:var(--text); }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  pre.log { background:#020617; color:#cbd5e1; padding:12px; border-radius:6px; height:280px;
+  pre.log { background:#020617; color:#cbd5e1; padding:12px; border-radius:6px; height:200px;
             overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; margin:0; }
+  pre.log.tall { height:280px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
   th { color:var(--muted); font-weight:600; }
   .status { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:600; }
-  .s-running { background:#0c4a6e; color:#7dd3fc; }
-  .s-succeeded { background:#14532d; color:#86efac; }
-  .s-failed { background:#7f1d1d; color:#fca5a5; }
-  .s-starting { background:#3f3f46; color:#e4e4e7; }
+  .s-running { background:#0c4a6e; color:#7dd3fc; } .s-succeeded { background:#14532d; color:#86efac; }
+  .s-failed { background:#7f1d1d; color:#fca5a5; } .s-starting { background:#3f3f46; color:#e4e4e7; }
   .msg { font-size:12px; margin-top:8px; min-height:16px; }
   .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); } .msg.warn { color:var(--warn); }
   .note { font-size:11px; color:var(--muted); margin-top:6px; }
   .pill { font-size:11px; color:var(--muted); }
   code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12px; }
   a { color:var(--accent); }
-  .tag { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
-         border:1px solid var(--border); border-radius:4px; padding:1px 5px; }
+  .tag { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:1px 5px; }
   .imglist { font-size:12px; margin:6px 0; }
   .imglist div { padding:3px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+  .big { font-size:30px; font-weight:700; }
 </style>
 </head>
 <body>
 <header>
-  <h1>EECampEdu — AI PC Training Portal</h1>
-  <p>Train, quantize, and flash gesture models from your browser.
+  <h1>EECampEdu — AI PC Portal</h1>
+  <p>One tab per class day: Output · Model · Deploy · plus main board firmware.
      <label style="display:inline;margin-left:14px;color:var(--muted)"><input type="checkbox" id="devMode" style="width:auto"> developer mode (show flash offsets)</label></p>
 </header>
 
 <nav class="tabs" id="tabs">
-  <button data-tab="train" class="active">1 · Train</button>
-  <button data-tab="quantize">2 · Quantize</button>
-  <button data-tab="flash-model">3 · Flash model</button>
-  <button data-tab="flash-fw">4 · Flash firmware</button>
+  <button data-tab="output" class="active">Output demo</button>
+  <button data-tab="model">Model demo</button>
+  <button data-tab="deploy">Deploy &amp; benchmark</button>
+  <button data-tab="mainfw">Main board firmware</button>
 </nav>
 
 <main>
-  <!-- ===================== TAB: TRAIN ===================== -->
-  <section class="pane active" id="pane-train">
-    <!-- Dataset upload -->
+  <!-- ==================== OUTPUT DEMO ==================== -->
+  <section class="pane active" id="pane-output">
     <div class="card">
-      <h2><span class="step">1a.</span>Import dataset (.zip)</h2>
-      <p class="note">Upload <b>one zip</b> with exactly <b>six</b> class folders, <b>any names</b>
-         (e.g. <code>n1/*.jpg</code> … <code>n6/*.jpg</code>). It auto-detects the layout:
-         if the zip already has <code>train/</code> and <code>validation/</code>, both import
-         as-is; otherwise the six folders are <b>auto-split</b> into train/validation. The
-         class order is saved to <code>class_mapping.json</code> and used everywhere.</p>
-      <label>Dataset zip</label>
+      <h2>Output class — hardware</h2>
+      <p class="note">Board: <b>ESP32-S3</b> with an LED on <code>GPIO38</code> (onboard on most dev boards).
+         Demonstrates <code>gpio_reset_pin</code> / <code>gpio_set_direction</code> / <code>gpio_set_level</code>,
+         a <code>while(1)</code> blink, and <b>LEDC PWM</b> brightness. Use <b>Chrome/Edge</b>.</p>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">1.</span>Flash output demo firmware</h2>
+      <p class="note">Flashes <code>firmware/teaching_output_demo</code>. Offsets come from the ESP-IDF build.</p>
+      <div id="outFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <div class="row">
+        <div><button id="outFwFlashBtn" disabled>Connect &amp; flash output firmware</button></div>
+        <div><button class="secondary" id="outFwRefreshBtn">Re-check build</button></div>
+      </div>
+      <div class="msg" id="outFwStatus"></div>
+      <label style="margin-top:12px">Flash log</label>
+      <pre class="log" id="outFwLog">Flash the output firmware first, then control the LED below.</pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">2.</span>Control the LED</h2>
+      <p class="note">After flashing, connect to the board's serial port to drive the LED live.</p>
+      <button class="secondary" id="ctrlConnectBtn">Connect for control</button>
+      <div class="row" style="margin-top:10px">
+        <div><button id="ledOnBtn" disabled>LED ON</button></div>
+        <div><button class="secondary" id="ledOffBtn" disabled>LED OFF</button></div>
+        <div><button class="secondary" id="ledBlinkBtn" disabled>Blink</button></div>
+      </div>
+      <label style="margin-top:12px">Brightness (PWM): <span id="pwmVal">128</span> / 255</label>
+      <input type="range" id="pwmSlider" min="0" max="255" value="128" disabled />
+      <div class="msg" id="ctrlStatus"></div>
+      <label style="margin-top:10px">Board messages</label>
+      <pre class="log" id="ctrlLog">Not connected.</pre>
+    </div>
+  </section>
+
+  <!-- ==================== MODEL DEMO ==================== -->
+  <section class="pane" id="pane-model">
+    <div class="card">
+      <h2>Model class — PC webcam gesture recognition</h2>
+      <p class="note">Board: <b>none required</b> — just a PC <b>webcam</b>. This demo runs the model on
+         your own PC so you can see gesture predictions <i>before</i> deploying to hardware.</p>
+      <p class="note">The webcam demo needs your local camera, so it runs on your PC, not in this browser
+         tab. Run this command in a terminal on the PC (it uses ONNX via OpenCV — no TensorFlow/PyTorch needed):</p>
+      <pre class="log" id="modelCmd" style="height:auto">conda activate eecampedu
+python model_finetune/pytorch/webcam_demo.py</pre>
+      <button class="secondary" id="copyModelCmd">Copy command</button>
+      <div class="msg" id="modelMsg"></div>
+      <label style="margin-top:12px">Model file (ONNX) for the demo</label>
+      <div id="modelOnnx" class="note">Looking for a trained ONNX model…</div>
+    </div>
+  </section>
+
+  <!-- ==================== DEPLOY & BENCHMARK ==================== -->
+  <section class="pane" id="pane-deploy">
+    <div class="card">
+      <h2>Deploy class — hardware</h2>
+      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: (optionally) train → quantize →
+         flash the model partition → review results. Flashing the <b>full firmware</b> is on the
+         “Main board firmware” tab.</p>
+    </div>
+
+    <!-- Dataset + training (prep) -->
+    <div class="card">
+      <h2><span class="step">A.</span>Dataset &amp; train (optional prep)</h2>
+      <label>Dataset zip (six class folders, any names)</label>
       <input type="file" id="datasetFile" accept=".zip" />
       <button id="uploadBtn">Upload &amp; import</button>
       <div class="msg" id="uploadMsg"></div>
-    </div>
-
-    <!-- Class -> action mapping -->
-    <div class="card">
-      <h2><span class="step">1b.</span>Map classes to robot actions</h2>
-      <p class="note">Each trained class (model output index) drives one robot-arm action.
-         The ESP firmware uses only the index; this mapping is applied on the student PC
-         control app. Saved to <code>class_mapping.json</code>. Classes:
-         <code id="classNames">—</code></p>
-      <div id="classMapRows"><div class="note">Import a dataset first to list classes.</div></div>
-      <button id="saveClassMapBtn">Save action mapping</button>
+      <div id="classMapRows" style="margin-top:10px"><div class="note">Import a dataset to map classes → robot actions.</div></div>
+      <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
       <div class="msg" id="classMapMsg"></div>
-    </div>
-
-    <!-- Training -->
-    <div class="card">
-      <h2><span class="step">1c.</span>Train a model</h2>
-      <label>Framework</label>
-      <select id="framework">
-        <option value="tensorflow">TensorFlow</option>
-        <option value="pytorch">PyTorch</option>
-      </select>
-      <label>Model recipe</label>
-      <select id="recipe"></select>
+      <div class="row" style="margin-top:12px">
+        <div><label>Framework</label><select id="framework"><option value="tensorflow">TensorFlow</option><option value="pytorch">PyTorch</option></select></div>
+        <div><label>Model recipe</label><select id="recipe"></select></div>
+      </div>
       <div class="note" id="recipeDesc"></div>
       <div class="row" id="tuning">
         <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
         <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default" /></div>
-        <div><label>Alpha (width)</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
+        <div><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
       </div>
       <label><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
       <button id="trainBtn">Start training</button>
       <div class="msg" id="trainMsg"></div>
     </div>
-  </section>
 
-  <!-- ===================== TAB: QUANTIZE ===================== -->
-  <section class="pane" id="pane-quantize">
+    <!-- Quantize -->
     <div class="card">
-      <h2><span class="step">2.</span>Quantize for ESP32-S3</h2>
-      <p class="note">Converts a trained <code>.keras</code> model into a deployable int8 TFLite +
-         quantization report. The result appears in <b>Generated artifacts</b> below and in the
-         <b>Flash model</b> tab.</p>
+      <h2><span class="step">B.</span>Quantize → TFLite</h2>
       <label>Source .keras model</label>
       <select id="quantModel"></select>
       <div class="row compact">
         <div><button class="secondary" id="refreshModelsBtn">Refresh model list</button></div>
-        <div>
-          <label>Upload source model as</label>
-          <select id="uploadModelFramework">
-            <option value="tf">TensorFlow folder</option>
-            <option value="pytorch">PyTorch folder</option>
-          </select>
-        </div>
+        <div><label>Upload source model as</label>
+          <select id="uploadModelFramework"><option value="tf">TensorFlow folder</option><option value="pytorch">PyTorch folder</option></select></div>
       </div>
       <input type="file" id="sourceModelFile" accept=".keras,.h5" />
       <button class="secondary" id="uploadModelBtn">Upload source model</button>
@@ -153,15 +179,12 @@
       <button id="quantBtn">Start quantization</button>
       <div class="msg" id="quantMsg"></div>
     </div>
-  </section>
 
-  <!-- ===================== TAB: FLASH MODEL ===================== -->
-  <section class="pane" id="pane-flash-model">
+    <!-- Flash model (Web Serial) -->
     <div class="card">
-      <h2><span class="step">3.</span>Flash model partition (.tflite)</h2>
-      <p class="note">Flash only the <b>model</b> into its flash partition — the main board firmware
-         is untouched. Plug the ESP32-S3 into <b>your PC</b>, use <b>Chrome</b> or <b>Edge</b>; the
-         browser asks you to pick the board's serial port. No install, no offsets.</p>
+      <h2><span class="step">C.</span>Flash model partition (.tflite)</h2>
+      <p class="note">Flashes only the model into its partition — the main board firmware is untouched.
+         Chrome/Edge; the browser asks you to pick the serial port. No offsets shown.</p>
       <label>TFLite model</label>
       <select id="flashArtifact"></select>
       <div class="row">
@@ -170,609 +193,550 @@
       </div>
       <div class="msg" id="flashStatus"></div>
       <div id="httpHelp" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:10px">
-        <p class="note" style="margin-top:0">This page is served over <b>HTTP</b>, so Chrome/Edge hide
-           serial flashing. Allow <b>this one site</b> once (per PC), then reload:</p>
+        <p class="note" style="margin-top:0">This page is served over <b>HTTP</b>, so Chrome/Edge hide serial flashing.
+           Ask your instructor for the <b>https://</b> address, or (per PC) allow this origin once:</p>
         <ol class="note" style="margin:0 0 6px 18px;line-height:1.7">
-          <li>Copy this address:
-            <code id="originCode"></code>
-            <button class="secondary" id="copyOriginBtn" style="margin:0;padding:2px 8px">Copy</button></li>
-          <li>In a new tab open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>
-              <br>(Microsoft Edge: <code>edge://flags/#unsafely-treat-insecure-origin-as-secure</code>) —
-              type it into the address bar.</li>
-          <li>Paste the address into the box, set the dropdown to <b>Enabled</b>, then click <b>Relaunch</b>.</li>
-          <li>Return here, reload, and click <b>Connect ESP32-S3</b>.</li>
+          <li>Copy: <code id="originCode"></code> <button class="secondary" id="copyOriginBtn" style="margin:0;padding:2px 8px">Copy</button></li>
+          <li>Open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> (Edge: <code>edge://flags/…</code>).</li>
+          <li>Paste the address, set <b>Enabled</b>, click <b>Relaunch</b>, reload this page.</li>
         </ol>
-        <p class="note" style="margin:0">If your school browser blocks this flag, ask your instructor to serve
-           the portal over HTTPS.</p>
       </div>
-      <label style="margin-top:14px">Flash log</label>
+      <label style="margin-top:12px">Flash log</label>
       <pre class="log" id="modelFlashLog">Click “Connect ESP32-S3” to begin.</pre>
     </div>
-  </section>
 
-  <!-- ===================== TAB: FLASH FIRMWARE ===================== -->
-  <section class="pane" id="pane-flash-fw">
+    <!-- Results / benchmark -->
     <div class="card">
-      <h2><span class="step">4.</span>Flash main board firmware</h2>
-      <p class="note">Flashes the <b>full ESP32-S3 main board firmware</b> (camera + USB + TFLite Micro
-         inference) built with ESP-IDF. This is separate from flashing a model — do this once to set up
-         a board, or to update the firmware. Offsets come from the ESP-IDF build metadata
-         (<code>flasher_args.json</code>); students never type them.</p>
-      <div id="fwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <h2><span class="step">D.</span>Results &amp; benchmark</h2>
+      <p class="note">PC-side quantization results (computed on the AI PC during quantization):</p>
+      <table><thead><tr><th>Model</th><th>Format</th><th>TFLite accuracy</th><th>Samples</th><th>Output variation</th></tr></thead>
+        <tbody id="reportsBody"><tr><td colspan="5" class="note">No quantization reports yet.</td></tr></tbody></table>
+
+      <h2 style="margin-top:18px">On-device benchmark (AI PC)</h2>
+      <p class="note">Runs on the <b>AI PC server</b> against an ESP32-S3 connected to the
+         <b>AI PC's</b> USB. The live log appears in <b>Live job log</b> below; a summary shows here.</p>
       <div class="row">
-        <div><button id="fwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
-        <div><button class="secondary" id="fwRefreshBtn">Re-check build</button></div>
+        <div><label>Model (.tflite)</label><select id="benchModel"></select></div>
+        <div><label>Dataset</label><select id="benchDataset"></select></div>
+        <div><label>Serial port (AI PC)</label><select id="benchPort"></select></div>
       </div>
-      <div class="msg" id="fwStatus"></div>
-      <label style="margin-top:14px">Flash log</label>
-      <pre class="log" id="fwFlashLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+      <div class="row compact">
+        <div><button id="benchRunBtn">Run benchmark</button></div>
+        <div><button class="secondary" id="benchRefreshBtn">Refresh ports/datasets</button></div>
+      </div>
+      <div class="msg" id="benchMsg"></div>
+      <div id="benchNote" class="note"></div>
+      <table style="margin-top:10px"><tbody id="benchSummary"></tbody></table>
     </div>
   </section>
 
-  <!-- ===================== SHARED (train/quantize jobs) ===================== -->
+  <!-- ==================== MAIN BOARD FIRMWARE ==================== -->
+  <section class="pane" id="pane-mainfw">
+    <div class="card">
+      <h2>Flash main board firmware</h2>
+      <p class="note">Flashes the <b>full ESP32-S3 main board firmware</b> (camera + USB + TFLite Micro).
+         Separate from flashing a model. Offsets come from the ESP-IDF build (<code>flasher_args.json</code>)
+         and are hidden unless developer mode is on.</p>
+      <div id="mainFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <div class="row">
+        <div><button id="mainFwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
+        <div><button class="secondary" id="mainFwRefreshBtn">Re-check build</button></div>
+      </div>
+      <div class="msg" id="mainFwStatus"></div>
+      <label style="margin-top:12px">Flash log</label>
+      <pre class="log" id="mainFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+    </div>
+  </section>
+
+  <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div class="card">
     <h2>Live job log <span class="pill" id="jobPill"></span></h2>
-    <pre class="log" id="log">No job selected. Start a training or quantization job.</pre>
+    <pre class="log tall" id="log">No job selected. Start a training or quantization job (Deploy tab).</pre>
   </div>
-
   <div class="card">
-    <h2>Generated artifacts
-      <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button>
-    </h2>
-    <table>
-      <thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
-      <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody>
-    </table>
+    <h2>Generated artifacts <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
+    <table><thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+      <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody></table>
   </div>
-
   <div class="card">
     <h2>Job history</h2>
-    <table>
-      <thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
-      <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody>
-    </table>
+    <table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
+      <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
   </div>
 </main>
 
 <script>
 const ORIGIN = window.location.origin;
-let RECIPES = [];
-let KERAS_MODELS = [];
-let currentJobId = null;
-let logOffset = 0;
-let logTimer = null;
+let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTimer = null, benchJobId = null;
+let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 
 function $(id){ return document.getElementById(id); }
-function setText(target, text){ const el=(typeof target==="string")?$(target):target; if(el) el.textContent=text; }
-function setMsg(target, text, cls){
-  const el=(typeof target==="string")?$(target):target;
-  if(!el) return; el.textContent=text; el.className="msg "+(cls||"");
-}
+function setText(t,x){ const el=(typeof t==="string")?$(t):t; if(el) el.textContent=x; }
+function setMsg(t,x,cls){ const el=(typeof t==="string")?$(t):t; if(!el) return; el.textContent=x; el.className="msg "+(cls||""); }
+function appendLog(id,s){ const el=$(id); if(!el) return; el.textContent+=s; el.scrollTop=el.scrollHeight; }
 function fmtSize(n){ if(n<1024) return n+" B"; if(n<1048576) return (n/1024).toFixed(1)+" KB"; return (n/1048576).toFixed(1)+" MB"; }
-function appendLog(id, s){ const el=$(id); if(!el) return; el.textContent += s; el.scrollTop = el.scrollHeight; }
-
+function cleanError(t){ if(!t) return ""; if(/<[a-z!]/i.test(t)) return t.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,200); return t.trim().slice(0,200); }
 async function api(path, opts){
-  const res = await fetch(ORIGIN + path, opts);
-  const text = await res.text();
+  const res = await fetch(ORIGIN+path, opts); const text = await res.text();
   let body; try { body = JSON.parse(text); } catch(e){ body = null; }
-  if(!res.ok){
-    let msg = (body && (body.error || body.message)) || cleanError(text) || (res.status + " " + (res.statusText||"error"));
-    throw new Error(msg);
-  }
-  return body != null ? body : {};
-}
-function cleanError(text){
-  if(!text) return "";
-  if(/<[a-z!]/i.test(text)){ return text.replace(/<[^>]*>/g," ").replace(/\s+/g," ").trim().slice(0,200); }
-  return text.trim().slice(0,200);
+  if(!res.ok) throw new Error((body&&(body.error||body.message))||cleanError(text)||(res.status+" error"));
+  return body!=null?body:{};
 }
 
 // ---------- tabs ----------
 function initTabs(){
-  document.querySelectorAll('#tabs button').forEach(btn => {
-    btn.onclick = () => {
-      document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      const pane = $("pane-" + btn.dataset.tab);
-      if(pane) pane.classList.add('active');
-      if(btn.dataset.tab === "flash-fw") refreshFirmware();
-    };
+  document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => {
+    document.querySelectorAll('#tabs button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active'); const p=$("pane-"+btn.dataset.tab); if(p) p.classList.add('active');
+    if(btn.dataset.tab==="mainfw") loadFirmware("main_board", MAINFW);
+    if(btn.dataset.tab==="output") loadFirmware("output_demo", OUTFW);
+    if(btn.dataset.tab==="model") refreshModelDemo();
+    if(btn.dataset.tab==="deploy"){ refreshReports(); loadBenchOptions(); }
   });
 }
 
-// ---------- init ----------
-let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
-
 async function init(){
   initTabs();
-  try { const h = await api("/api/health"); setText("classNames", (h.class_names || []).join(", ")); } catch(e){}
+  try { const h = await api("/api/health"); } catch(e){}
   const r = await api("/api/recipes");
-  RECIPES = r.recipes;
-  KERAS_MODELS = r.available_keras_models || [];
-  fillSelect($("quantFormat"), r.quant_formats);
-  fillSelect($("quantGranularity"), r.quant_granularities);
-  populateQuantModels();
-  populateRecipes();
-  refreshClassMap();
-  refreshArtifacts();
-  refreshJobs();
+  RECIPES = r.recipes; KERAS_MODELS = r.available_keras_models || [];
+  fillSelect($("quantFormat"), r.quant_formats); fillSelect($("quantGranularity"), r.quant_granularities);
+  populateQuantModels(); populateRecipes(); refreshClassMap(); refreshArtifacts(); refreshJobs();
   setInterval(refreshJobs, 5000);
-  initFlashPanel();       // model flash: Web Serial feature detection
-  refreshFirmware();      // firmware flash: load build metadata
-  $("devMode").onchange = renderFirmwareImages;   // re-render offsets when toggled
+  initFlashPanel();
+  loadFirmware("output_demo", OUTFW);   // default tab
+  loadBenchOptions();
+  $("devMode").onchange = () => { renderFwImages(OUTFW); renderFwImages(MAINFW); };
 }
 
+// ---------- class map ----------
 async function refreshClassMap(){
   try {
-    const m = await api("/api/class-map");
-    OUTPUT_ACTIONS = m.output_actions || OUTPUT_ACTIONS;
+    const m = await api("/api/class-map"); OUTPUT_ACTIONS = m.output_actions || OUTPUT_ACTIONS;
     const host = $("classMapRows"); host.innerHTML = "";
-    if(m.default){ host.innerHTML = '<div class="note">Import a dataset first to list classes.</div>'; return; }
-    (m.classes || []).forEach(c => {
-      const row = document.createElement("div"); row.className = "row compact";
-      const opts = ['<option value="">(none)</option>']
-        .concat(OUTPUT_ACTIONS.map(a => `<option value="${a}" ${c.action===a?"selected":""}>${a}</option>`)).join("");
-      row.innerHTML = `<div><label>#${c.index} · ${c.name}</label><select data-class="${c.name}">${opts}</select></div>`;
+    if(m.default){ host.innerHTML = '<div class="note">Import a dataset to map classes → robot actions.</div>'; return; }
+    (m.classes||[]).forEach(c => {
+      const row=document.createElement("div"); row.className="row compact";
+      const opts=['<option value="">(none)</option>'].concat(OUTPUT_ACTIONS.map(a=>`<option value="${a}" ${c.action===a?"selected":""}>${a}</option>`)).join("");
+      row.innerHTML=`<div><label>#${c.index} · ${c.name}</label><select data-class="${c.name}">${opts}</select></div>`;
       host.appendChild(row);
     });
   } catch(e){}
 }
-
 $("saveClassMapBtn").onclick = async () => {
-  const actions = {};
-  document.querySelectorAll('#classMapRows select[data-class]').forEach(s => { actions[s.dataset.class] = s.value; });
-  setMsg($("classMapMsg"), "Saving…", "warn");
-  try {
-    await api("/api/class-map", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({actions}) });
-    setMsg($("classMapMsg"), "Action mapping saved to class_mapping.json.", "ok");
-  } catch(e){ setMsg($("classMapMsg"), "Save failed: "+e.message, "bad"); }
+  const actions={}; document.querySelectorAll('#classMapRows select[data-class]').forEach(s=>actions[s.dataset.class]=s.value);
+  setMsg($("classMapMsg"),"Saving…","warn");
+  try { await api("/api/class-map",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({actions})});
+        setMsg($("classMapMsg"),"Action mapping saved.","ok"); }
+  catch(e){ setMsg($("classMapMsg"),"Save failed: "+e.message,"bad"); }
 };
 
-function fillSelect(sel, values, emptyLabel){
-  sel.innerHTML = "";
-  if((!values || !values.length) && emptyLabel){
-    const o = document.createElement("option"); o.textContent = emptyLabel; o.value=""; sel.appendChild(o); return;
-  }
-  (values||[]).forEach(v => {
-    const o=document.createElement("option");
-    if(typeof v === "object"){ o.value=v.id; o.textContent=v.label||v.id; o.title=v.relative_path||v.id; }
-    else { o.value=v; o.textContent=v; }
-    sel.appendChild(o);
-  });
+function fillSelect(sel, values, empty){
+  sel.innerHTML="";
+  if((!values||!values.length)&&empty){ const o=document.createElement("option"); o.textContent=empty; o.value=""; sel.appendChild(o); return; }
+  (values||[]).forEach(v=>{ const o=document.createElement("option");
+    if(typeof v==="object"){ o.value=v.id; o.textContent=v.label||v.id; } else { o.value=v; o.textContent=v; } sel.appendChild(o); });
 }
-
 function populateQuantModels(){
-  const previous = $("quantModel").value;
-  const sel = $("quantModel"); sel.innerHTML = "";
-  if(!KERAS_MODELS.length){
-    const o = document.createElement("option"); o.value=""; o.textContent="(train or upload a .keras model first)"; sel.appendChild(o); return;
-  }
-  KERAS_MODELS.forEach(m => {
-    const o = document.createElement("option");
-    o.value = m.id || m; o.textContent = m.label || m.id || m;
-    o.title = m.modified ? `${m.id}\nmodified: ${m.modified}` : (m.id || m);
-    sel.appendChild(o);
-  });
-  if(previous && Array.from(sel.options).some(o => o.value === previous)){ sel.value = previous; }
+  const prev=$("quantModel").value, sel=$("quantModel"); sel.innerHTML="";
+  if(!KERAS_MODELS.length){ const o=document.createElement("option"); o.value=""; o.textContent="(train or upload a .keras model first)"; sel.appendChild(o); return; }
+  KERAS_MODELS.forEach(m=>{ const o=document.createElement("option"); o.value=m.id||m; o.textContent=m.label||m.id||m; sel.appendChild(o); });
+  if(prev && Array.from(sel.options).some(o=>o.value===prev)) sel.value=prev;
 }
-
-async function refreshModelList(){
-  const r = await api("/api/recipes"); RECIPES = r.recipes; KERAS_MODELS = r.available_keras_models || []; populateQuantModels();
-}
-
+async function refreshModelList(){ const r=await api("/api/recipes"); RECIPES=r.recipes; KERAS_MODELS=r.available_keras_models||[]; populateQuantModels(); }
 function populateRecipes(){
-  const fw = $("framework").value;
-  const sel = $("recipe"); sel.innerHTML = "";
-  RECIPES.filter(r => r.framework === fw).forEach(r => {
-    const o = document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o);
-  });
+  const fw=$("framework").value, sel=$("recipe"); sel.innerHTML="";
+  RECIPES.filter(r=>r.framework===fw).forEach(r=>{ const o=document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o); });
   onRecipeChange();
 }
 function onRecipeChange(){
-  const r = RECIPES.find(x => x.key === $("recipe").value);
-  if(!r){ $("recipeDesc").textContent=""; return; }
-  $("recipeDesc").textContent = r.description;
-  const s = r.supports || [];
-  $("epochs").parentElement.style.display    = s.includes("epochs") ? "" : "none";
-  $("batchSize").parentElement.style.display = s.includes("batch_size") ? "" : "none";
-  $("alpha").parentElement.style.display     = s.includes("alpha") ? "" : "none";
-  $("exportOnnx").parentElement.style.display= s.includes("export_onnx") ? "" : "none";
+  const r=RECIPES.find(x=>x.key===$("recipe").value); if(!r){ $("recipeDesc").textContent=""; return; }
+  $("recipeDesc").textContent=r.description; const s=r.supports||[];
+  $("epochs").parentElement.style.display=s.includes("epochs")?"":"none";
+  $("batchSize").parentElement.style.display=s.includes("batch_size")?"":"none";
+  $("alpha").parentElement.style.display=s.includes("alpha")?"":"none";
+  $("exportOnnx").parentElement.style.display=s.includes("export_onnx")?"":"none";
 }
 
-// ---------- dataset upload ----------
+// ---------- dataset / train / quantize ----------
 $("uploadBtn").onclick = async () => {
-  const f = $("datasetFile").files[0];
-  if(!f){ setMsg($("uploadMsg"), "Choose a .zip first.", "bad"); return; }
-  const fd = new FormData(); fd.append("file", f);
-  setMsg($("uploadMsg"), "Uploading & extracting…", "warn");
-  $("uploadBtn").disabled = true;
-  try {
-    const r = await api("/api/dataset/upload", { method:"POST", body: fd });
-    const detail = r.imports ? r.imports.map(x => `${x.target}:${x.total_images}`).join("  ") : r.target;
-    const mode = r.mode === "auto-split" ? " (auto-split)" : (r.mode === "provided-split" ? " (from zip)" : "");
-    setMsg($("uploadMsg"), `Imported ${r.total_images} images — ${detail}${mode}. Classes: ${(r.class_order||[]).join(", ")}`, "ok");
-    if(r.class_order){ setText("classNames", r.class_order.join(", ")); }
-    refreshClassMap();
-  } catch(e){ setMsg($("uploadMsg"), "Upload failed: "+e.message, "bad"); }
-  $("uploadBtn").disabled = false;
+  const f=$("datasetFile").files[0]; if(!f){ setMsg($("uploadMsg"),"Choose a .zip first.","bad"); return; }
+  const fd=new FormData(); fd.append("file",f); setMsg($("uploadMsg"),"Uploading & extracting…","warn"); $("uploadBtn").disabled=true;
+  try { const r=await api("/api/dataset/upload",{method:"POST",body:fd});
+    const detail=r.imports?r.imports.map(x=>`${x.target}:${x.total_images}`).join("  "):r.target;
+    setMsg($("uploadMsg"),`Imported ${r.total_images} images — ${detail}. Classes: ${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap();
+  } catch(e){ setMsg($("uploadMsg"),"Upload failed: "+e.message,"bad"); } $("uploadBtn").disabled=false;
 };
-
-// ---------- training ----------
-$("framework").onchange = populateRecipes;
-$("recipe").onchange = onRecipeChange;
+$("framework").onchange = populateRecipes; $("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
-  const body = {
-    recipe: $("recipe").value,
-    epochs: $("epochs").value || undefined,
-    batch_size: $("batchSize").value || undefined,
-    alpha: $("alpha").value || undefined,
-    export_onnx: $("exportOnnx").checked,
-  };
-  await startJob("/api/train", body, $("trainMsg"), "training");
+  await startJob("/api/train",{ recipe:$("recipe").value, epochs:$("epochs").value||undefined,
+    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked }, $("trainMsg"), "training");
 };
-
-// ---------- quantization ----------
-$("refreshModelsBtn").onclick = async () => {
-  setMsg($("quantMsg"), "Refreshing source model list…", "warn");
-  try { await refreshModelList(); setMsg($("quantMsg"), `Found ${KERAS_MODELS.length} source model(s).`, "ok"); }
-  catch(e){ setMsg($("quantMsg"), "Refresh failed: "+e.message, "bad"); }
-};
+$("refreshModelsBtn").onclick = async () => { setMsg($("quantMsg"),"Refreshing…","warn");
+  try { await refreshModelList(); setMsg($("quantMsg"),`Found ${KERAS_MODELS.length} model(s).`,"ok"); } catch(e){ setMsg($("quantMsg"),"Refresh failed: "+e.message,"bad"); } };
 $("uploadModelBtn").onclick = async () => {
-  const f = $("sourceModelFile").files[0];
-  if(!f){ setMsg($("quantMsg"), "Choose a .keras/.h5 source model first.", "bad"); return; }
-  const fd = new FormData(); fd.append("file", f); fd.append("framework", $("uploadModelFramework").value);
-  setMsg($("quantMsg"), "Uploading source model…", "warn");
-  $("uploadModelBtn").disabled = true;
-  try {
-    const r = await api("/api/models/upload", { method:"POST", body: fd });
-    KERAS_MODELS = r.available_keras_models || []; populateQuantModels();
-    const uploadedId = `${r.framework}/${r.model}`;
-    if(Array.from($("quantModel").options).some(o => o.value === uploadedId)){ $("quantModel").value = uploadedId; }
-    setMsg($("quantMsg"), `Uploaded ${uploadedId}.`, "ok");
-  } catch(e){ setMsg($("quantMsg"), "Upload failed: "+e.message, "bad"); }
-  $("uploadModelBtn").disabled = false;
+  const f=$("sourceModelFile").files[0]; if(!f){ setMsg($("quantMsg"),"Choose a .keras/.h5 first.","bad"); return; }
+  const fd=new FormData(); fd.append("file",f); fd.append("framework",$("uploadModelFramework").value);
+  setMsg($("quantMsg"),"Uploading…","warn"); $("uploadModelBtn").disabled=true;
+  try { const r=await api("/api/models/upload",{method:"POST",body:fd}); KERAS_MODELS=r.available_keras_models||[]; populateQuantModels();
+    setMsg($("quantMsg"),`Uploaded ${r.framework}/${r.model}.`,"ok"); } catch(e){ setMsg($("quantMsg"),"Upload failed: "+e.message,"bad"); } $("uploadModelBtn").disabled=false;
 };
 $("quantBtn").onclick = async () => {
-  if(!$("quantModel").value){ setMsg($("quantMsg"), "No .keras model available — train first.", "bad"); return; }
-  const body = {
-    model_name: $("quantModel").value,
-    quant_format: $("quantFormat").value,
-    quant_granularity: $("quantGranularity").value,
-    skip_source_validation: $("skipValidation").checked,
-  };
-  await startJob("/api/quantize", body, $("quantMsg"), "quantization");
+  if(!$("quantModel").value){ setMsg($("quantMsg"),"No .keras model — train/upload first.","bad"); return; }
+  await startJob("/api/quantize",{ model_name:$("quantModel").value, quant_format:$("quantFormat").value,
+    quant_granularity:$("quantGranularity").value, skip_source_validation:$("skipValidation").checked }, $("quantMsg"), "quantization");
 };
-
 async function startJob(path, body, msgEl, kind){
-  setMsg(msgEl, "Starting "+kind+"…", "warn");
-  try {
-    const job = await api(path, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
-    setMsg(msgEl, "Started job "+job.id, "ok");
-    attachLog(job.id); refreshJobs();
-  } catch(e){ setMsg(msgEl, "Could not start: "+e.message+" (another job may be running)", "bad"); }
+  setMsg(msgEl,"Starting "+kind+"…","warn");
+  try { const job=await api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    setMsg(msgEl,"Started job "+job.id,"ok"); attachLog(job.id); refreshJobs();
+  } catch(e){ setMsg(msgEl,"Could not start: "+e.message+" (a job may be running)","bad"); }
 }
 
-// ---------- live job log (train/quantize) ----------
-function attachLog(jobId){
-  currentJobId = jobId; logOffset = 0; $("log").textContent = "";
-  if(logTimer) clearInterval(logTimer);
-  pollLog(); logTimer = setInterval(pollLog, 1500);
-}
+// ---------- job log / artifacts / jobs ----------
+function attachLog(id){ currentJobId=id; logOffset=0; $("log").textContent=""; if(logTimer) clearInterval(logTimer); pollLog(); logTimer=setInterval(pollLog,1500); }
 async function pollLog(){
   if(!currentJobId) return;
-  try {
-    const r = await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
-    if(r.data){ $("log").textContent += r.data; $("log").scrollTop = $("log").scrollHeight; }
-    logOffset = r.offset;
-    $("jobPill").textContent = `${currentJobId} — ${r.status}` + (r.returncode!==null ? ` (rc=${r.returncode})` : "");
-    if(r.status === "succeeded" || r.status === "failed"){
-      clearInterval(logTimer); logTimer = null; refreshArtifacts(); refreshJobs();
-    }
+  try { const r=await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
+    if(r.data){ $("log").textContent+=r.data; $("log").scrollTop=$("log").scrollHeight; } logOffset=r.offset;
+    $("jobPill").textContent=`${currentJobId} — ${r.status}`+(r.returncode!==null?` (rc=${r.returncode})`:"");
+    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; refreshArtifacts(); refreshJobs(); refreshReports();
+      if(currentJobId===benchJobId){ parseBenchSummary($("log").textContent, r.status); } }
   } catch(e){}
 }
-
-// ---------- artifacts ----------
 async function refreshArtifacts(){
-  try {
-    const r = await api("/api/artifacts");
-    const tb = $("artifactsBody"); tb.innerHTML = "";
-    if(!r.artifacts.length){ tb.innerHTML = '<tr><td colspan="5" class="note">No artifacts yet.</td></tr>'; }
-    r.artifacts.forEach(a => {
-      const tr = document.createElement("tr");
-      const dl = ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(a.path);
-      tr.innerHTML = `<td><span class="tag">${a.category}</span></td>
-        <td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`;
-      tb.appendChild(tr);
-    });
-    fillFlashArtifacts(r.artifacts);
+  try { const r=await api("/api/artifacts"); const tb=$("artifactsBody"); tb.innerHTML="";
+    if(!r.artifacts.length) tb.innerHTML='<tr><td colspan="5" class="note">No artifacts yet.</td></tr>';
+    r.artifacts.forEach(a=>{ const tr=document.createElement("tr"); const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
+      tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`; tb.appendChild(tr); });
+    fillFlashArtifacts(r.artifacts); fillModelOnnx(r.artifacts); fillBenchModels(r.artifacts);
   } catch(e){}
+}
+function fillBenchModels(list){
+  const sel=$("benchModel"); if(!sel) return; const prev=sel.value;
+  const tfl=(list||[]).filter(a=>a.name.toLowerCase().endsWith(".tflite")); sel.innerHTML="";
+  if(!tfl.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no .tflite yet — quantize first)"; sel.appendChild(o); return; }
+  tfl.forEach(a=>{ const o=document.createElement("option"); o.value=a.path; o.textContent=a.name; sel.appendChild(o); });
+  if(prev) sel.value=prev;
 }
 function fillFlashArtifacts(list){
-  const sel = $("flashArtifact"); const prev = sel.value;
-  const doFill = (items) => {
-    const tfl = items.filter(a => a.name.toLowerCase().endsWith(".tflite"));
-    sel.innerHTML = "";
+  const sel=$("flashArtifact"), prev=sel.value;
+  const fill=items=>{ const tfl=items.filter(a=>a.name.toLowerCase().endsWith(".tflite")); sel.innerHTML="";
     if(!tfl.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no .tflite yet — quantize first)"; sel.appendChild(o); return; }
-    tfl.forEach(a => { const o=document.createElement("option"); o.value=a.path; o.textContent=a.name; sel.appendChild(o); });
-    if(prev) sel.value = prev;
-  };
-  if(list){ doFill(list); } else { api("/api/artifacts").then(r => doFill(r.artifacts)).catch(()=>{}); }
+    tfl.forEach(a=>{ const o=document.createElement("option"); o.value=a.path; o.textContent=a.name; sel.appendChild(o); }); if(prev) sel.value=prev; };
+  if(list) fill(list); else api("/api/artifacts").then(r=>fill(r.artifacts)).catch(()=>{});
 }
-
-// ---------- job history ----------
 async function refreshJobs(){
-  try {
-    const r = await api("/api/jobs");
-    const tb = $("jobsBody"); tb.innerHTML = "";
-    if(!r.jobs.length){ tb.innerHTML = '<tr><td colspan="5" class="note">No jobs yet.</td></tr>'; return; }
-    r.jobs.forEach(j => {
-      const tr = document.createElement("tr"); tr.style.cursor = "pointer"; tr.onclick = () => attachLog(j.id);
-      tr.innerHTML = `<td>${j.id}</td><td>${j.kind}</td>
-        <td><span class="status s-${j.status}">${j.status}</span></td>
-        <td>${j.returncode===null?"":j.returncode}</td><td>${j.created_at}</td>`;
-      tb.appendChild(tr);
-    });
+  try { const r=await api("/api/jobs"); const tb=$("jobsBody"); tb.innerHTML="";
+    if(!r.jobs.length){ tb.innerHTML='<tr><td colspan="5" class="note">No jobs yet.</td></tr>'; return; }
+    r.jobs.forEach(j=>{ const tr=document.createElement("tr"); tr.style.cursor="pointer"; tr.onclick=()=>attachLog(j.id);
+      tr.innerHTML=`<td>${j.id}</td><td>${j.kind}</td><td><span class="status s-${j.status}">${j.status}</span></td><td>${j.returncode===null?"":j.returncode}</td><td>${j.created_at}</td>`; tb.appendChild(tr); });
   } catch(e){}
 }
 
-// ===================== Web Serial flashing (esptool-js, vendored offline) =====================
-const ESPTOOL_JS = "/static/vendor/esptool-js/bundle.js";  // pinned esptool-js@0.5.4
-
-function withTimeout(promise, ms, message){
-  let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); });
-  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+// ---------- deploy results ----------
+async function refreshReports(){
+  try { const r=await api("/api/reports"); const tb=$("reportsBody"); tb.innerHTML="";
+    if(!r.reports.length){ tb.innerHTML='<tr><td colspan="5" class="note">No quantization reports yet.</td></tr>'; return; }
+    r.reports.forEach(x=>{ const acc=(x.tflite_accuracy!=null)?(x.tflite_accuracy*100).toFixed(1)+"%":"—";
+      const tr=document.createElement("tr");
+      tr.innerHTML=`<td>${x.model||"—"}</td><td>${x.quant_format||"—"}${x.granularity&&x.granularity!=="not_applicable"?(" / "+x.granularity):""}</td>
+        <td>${acc}</td><td>${x.tflite_samples??"—"}</td><td>${x.output_variation!=null?Number(x.output_variation).toFixed(4):"—"}</td>`; tb.appendChild(tr); });
+  } catch(e){}
 }
-// Shared troubleshooting text for connect/bootloader failures.
-function serialTroubleshoot(){
-  return "Board not responding. Checklist: (1) use Chrome or Edge over HTTPS/localhost; "
-    + "(2) close any other serial monitor (Arduino/idf.py monitor/PuTTY); "
-    + "(3) hold BOOT, click connect, then tap RESET/EN and release BOOT after ~1s; "
-    + "(4) try a data-capable USB cable / different port.";
+// ---------- on-device benchmark (server-side job) ----------
+async function loadBenchOptions(){
+  try {
+    const o = await api("/api/benchmark/options");
+    const dsel = $("benchDataset"); dsel.innerHTML = "";
+    (o.datasets||[]).forEach(d=>{ const opt=document.createElement("option"); opt.value=d.id; opt.textContent=`${d.id} (${d.count} imgs)`; dsel.appendChild(opt); });
+    if(!(o.datasets||[]).length){ const opt=document.createElement("option"); opt.value=""; opt.textContent="(no benchmark dataset found)"; dsel.appendChild(opt); }
+    const psel = $("benchPort"); psel.innerHTML = "";
+    (o.ports||[]).forEach(p=>{ const opt=document.createElement("option"); opt.value=p.device; opt.textContent=p.device+(p.description?(" — "+p.description):""); psel.appendChild(opt); });
+    const note = $("benchNote");
+    if(!(o.ports||[]).length){
+      const opt=document.createElement("option"); opt.value=""; opt.textContent="(no serial port on the AI PC)"; psel.appendChild(opt);
+      note.innerHTML = "No ESP32-S3 serial port on the <b>AI PC</b>. If the board is plugged into <b>your own PC</b>, "
+        + "the AI PC can't reach it — from the student PC only <b>browser flashing</b> works, not this benchmark. "
+        + "Benchmark runs only when the board is connected to the AI PC.";
+    } else { note.textContent = ""; }
+  } catch(e){}
 }
-function webSerialSupport(){
-  if(navigator.serial) return { ok: true };
-  if(!window.isSecureContext){ return { ok: false, reason: "insecure-http" }; }
-  return { ok: false, reason: "unsupported-browser" };
-}
-function makeTerminal(logId, onLine){
-  return {
-    clean(){ const el=$(logId); if(el) el.textContent=""; },
-    writeLine(d){ appendLog(logId, d+"\n"); if(onLine) onLine(d); },
-    write(d){ appendLog(logId, d); if(onLine) onLine(d); },
-  };
-}
-function binaryString(arrayBuffer){
-  const buf = new Uint8Array(arrayBuffer); let s = "";
-  for(let i=0;i<buf.length;i++) s += String.fromCharCode(buf[i]);
-  return s;
-}
-async function safeDisconnectTransport(transport){
-  try { if(transport) await transport.disconnect(); } catch(_) {}
-}
-async function closeModelFlashSession(){
-  esp.loader = null;
-  esp.chip = null;
-  await safeDisconnectTransport(esp.transport);
-  esp.transport = null;
-}
-async function connectEspLoader(ESPLoader, Transport, port, terminal, logId){
-  const attempts = [
-    { mode: "default_reset", label: "auto reset" },
-    { mode: "no_reset", label: "manual boot/no-reset" },
-  ];
-  let lastError = null;
-  for(const attempt of attempts){
-    let transport = null;
-    try {
-      appendLog(logId, `\n[portal] Connecting with ${attempt.label}...\n`);
-      transport = new Transport(port, true);
-      const loader = new ESPLoader({ transport, baudrate: 115200, romBaudrate: 115200, terminal });
-      const chip = await withTimeout(loader.main(attempt.mode), 20000, serialTroubleshoot());
-      return { transport, loader, chip };
-    } catch(e){
-      lastError = e;
-      appendLog(logId, `[portal] ${attempt.label} failed: ${(e && e.message) || e}\n`);
-      await safeDisconnectTransport(transport);
-      if(attempt.mode === "default_reset"){
-        appendLog(logId, "[portal] Auto reset failed. Put the board in bootloader mode, then continue: hold BOOT, tap RESET/EN, release BOOT after ~1s.\n");
-        const proceed = window.confirm("Auto reset failed. Put the ESP32-S3 in bootloader mode now:\n\n1. Hold BOOT\n2. Tap RESET/EN\n3. Release BOOT after about 1 second\n\nThen click OK to retry without toggling DTR/RTS.");
-        if(!proceed) throw new Error("Manual boot retry cancelled.");
-      }
-    }
+$("benchRefreshBtn").onclick = loadBenchOptions;
+$("benchRunBtn").onclick = async () => {
+  const model=$("benchModel").value, dataset=$("benchDataset").value, port=$("benchPort").value;
+  if(!model){ setMsg($("benchMsg"),"Select a .tflite model (quantize first).","bad"); return; }
+  if(!dataset){ setMsg($("benchMsg"),"No benchmark dataset available on the AI PC.","bad"); return; }
+  if(!port){ setMsg($("benchMsg"),"No AI PC serial port — connect the ESP32-S3 to the AI PC.","bad"); return; }
+  setMsg($("benchMsg"),"Starting benchmark…","warn"); $("benchSummary").innerHTML="";
+  try {
+    const job=await api("/api/benchmark",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,dataset,port})});
+    benchJobId=job.id; setMsg($("benchMsg"),"Benchmark running — live log below.","ok"); attachLog(job.id); refreshJobs();
+  } catch(e){ setMsg($("benchMsg"),"Could not start: "+e.message+" (a job may be running)","bad"); }
+};
+function parseBenchSummary(text, status){
+  const rows=[]; let m;
+  const add=(re,label,fmt)=>{ if(m=text.match(re)) rows.push([label, fmt?fmt(m):m[1]]); };
+  add(/Images Processed\s*:\s*(\d+)/, "Images processed");
+  add(/Label Accuracy\s*:\s*(\d+)\/(\d+)\s*\(([\d.]+)%\)/, "Label accuracy", m=>`${m[1]}/${m[2]} (${m[3]}%)`);
+  add(/Average Model Latency\s*:\s*([\d.]+)\s*ms/, "Avg model latency", m=>m[1]+" ms");
+  add(/Average Preprocess Latency\s*:\s*([\d.]+)\s*ms/, "Avg preprocess latency", m=>m[1]+" ms");
+  add(/Average Device Compute\s*:\s*([\d.]+)\s*ms/, "Avg device compute", m=>m[1]+" ms");
+  add(/Model-only Throughput\s*:\s*([\d.]+)\s*FPS/, "Throughput (model)", m=>m[1]+" FPS");
+  add(/End-to-end UART Throughput\s*:\s*([\d.]+)\s*FPS/, "Throughput (end-to-end)", m=>m[1]+" FPS");
+  add(/Top-1 Match\s*:\s*(\d+)\/(\d+)\s*\(([\d.]+)%\)/, "Top-1 match", m=>`${m[1]}/${m[2]} (${m[3]}%)`);
+  add(/Average Score MAE\s*:\s*([\d.]+)/, "Score MAE");
+  add(/Max Score Error\s*:\s*([\d.]+)/, "Max error");
+  add(/Average Cosine\s*:\s*([\d.]+)/, "Cosine similarity");
+  const tb=$("benchSummary");
+  if(!rows.length){
+    const portFail=/Failed to open port|could not open port|\[ERROR\]|No such file or directory/i.test(text);
+    const why = portFail
+      ? "Benchmark could not reach an ESP32-S3 on the AI PC serial port. Connect the board to the AI PC (or, if it's on your own PC, only browser flashing is possible)."
+      : (status==="failed" ? "Benchmark failed — check the log." : "No summary parsed — check the log.");
+    tb.innerHTML=`<tr><td class="note">${why}</td></tr>`;
+    setMsg($("benchMsg"), portFail ? "No board on the AI PC serial port." : "Benchmark produced no summary.", "bad");
+    return;
   }
-  throw lastError || new Error(serialTroubleshoot());
+  tb.innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
+  setMsg($("benchMsg"), "Benchmark finished.", status==="failed"?"bad":"ok");
+}
+$("copyModelCmd").onclick = () => copyText($("modelCmd").textContent, $("modelMsg"), "Command copied.");
+function copyText(text, msgEl, okMsg){
+  const done=()=>setMsg(msgEl, okMsg, "ok");
+  const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"Copy failed — select manually.","bad"); } document.body.removeChild(ta); };
+  if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fb); else fb();
+}
+function fillModelOnnx(list){
+  const host=$("modelOnnx"); if(!host) return;
+  const onnx=(list||[]).filter(a=>a.name.toLowerCase().endsWith(".onnx"));
+  if(!onnx.length){ host.innerHTML='No ONNX model yet. Train a PyTorch recipe (or export ONNX) first; then it appears here.'; return; }
+  host.innerHTML = onnx.map(a=>{ const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
+    return `<a href="${dl}">${a.name}</a> (${fmtSize(a.size)})`; }).join("<br>");
+}
+function refreshModelDemo(){ refreshArtifacts(); }
+
+// ==================== Web Serial (esptool-js) ====================
+const ESPTOOL_JS = "/static/vendor/esptool-js/bundle.js";
+function withTimeout(p, ms, m){ let t; return Promise.race([p, new Promise((_,rej)=>t=setTimeout(()=>rej(new Error(m)),ms))]).finally(()=>clearTimeout(t)); }
+function serialTroubleshoot(){ return "Board not responding. Checklist: (1) Chrome/Edge over HTTPS or localhost; (2) close other serial monitors (Arduino/idf.py monitor/PuTTY); (3) hold BOOT, click connect, tap RESET/EN, release BOOT after ~1s; (4) use a data USB cable."; }
+function webSerialSupport(){ if(navigator.serial) return {ok:true}; if(!window.isSecureContext) return {ok:false,reason:"insecure-http"}; return {ok:false,reason:"unsupported-browser"}; }
+function makeTerminal(logId,onLine){ return { clean(){ const el=$(logId); if(el) el.textContent=""; },
+  writeLine(d){ appendLog(logId,d+"\n"); if(onLine) onLine(d); }, write(d){ appendLog(logId,d); if(onLine) onLine(d); } }; }
+function binaryString(ab){ const b=new Uint8Array(ab); let s=""; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return s; }
+
+// ======================================================================
+// Shared Web Serial state + ONE cleanup helper used by every flash flow.
+// ======================================================================
+// Flash (esptool-js) connection state. `meta` (model offset) is kept across flows.
+let esp = { port:null, transport:null, loader:null, chip:null, meta:null };
+// Raw-serial control connection (Output demo LED/PWM). Also released centrally.
+let ctrlPort=null, ctrlWriter=null, ctrlReader=null;
+
+// Firmware flash targets (used by Output demo + Main board tabs).
+const OUTFW  = { target:"output_demo", meta:null, imagesEl:"outFwImages",  statusEl:"outFwStatus",  logEl:"outFwLog",  flashBtn:"outFwFlashBtn",  refreshBtn:"outFwRefreshBtn" };
+const MAINFW = { target:"main_board",  meta:null, imagesEl:"mainFwImages", statusEl:"mainFwStatus", logEl:"mainFwLog", flashBtn:"mainFwFlashBtn", refreshBtn:"mainFwRefreshBtn" };
+
+// Force-release any leftover stream locks on a raw SerialPort, then close it.
+async function releasePortLocks(port){
+  if(!port) return;
+  try { if(port.readable && port.readable.locked){ const r=port.readable.getReader(); try{ await r.cancel(); }catch(_){} try{ r.releaseLock(); }catch(_){} } } catch(_){}
+  try { if(port.writable && port.writable.locked){ const w=port.writable.getWriter(); try{ await w.close(); }catch(_){} try{ w.releaseLock(); }catch(_){} } } catch(_){}
+  try { await port.close(); } catch(_){}
 }
 
-// ---------- FLASH MODEL (.tflite only) ----------
-let esp = { transport: null, loader: null, chip: null, meta: null };
-const modelTerminal = makeTerminal("modelFlashLog", (line) => {
-  const s = String(line);
-  if(/Erasing/i.test(s)) setMsg($("flashStatus"), "Erasing model partition…", "warn");
-  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("flashStatus"), "Writing model to flash…", "warn");
-  else if(/verified/i.test(s)) setMsg($("flashStatus"), "Verifying…", "warn");
-});
+// THE shared cleanup. Runs in every flash flow's finally() and before every new
+// flow. Fully releases the board's serial port so the next workflow can reuse it
+// without a page refresh. Never throws.
+async function releaseSerial(logId){
+  const log = (s)=>{ if(logId) appendLog(logId, s); };
+  if(!esp.transport && !esp.loader && !esp.port && !ctrlPort){ return; }
+  log("Releasing serial port...\n");
+  // 1) esptool-js post-flash reset (hard_reset) so the board reboots into the app.
+  try {
+    if(esp.loader && typeof esp.loader.after === "function") { await esp.loader.after("hard_reset"); }
+    else if(esp.loader && typeof esp.loader.hardReset === "function") { await esp.loader.hardReset(); }
+  } catch(e){ log("Serial cleanup warning: reset — "+(e.message||e)+"\n"); }
+  // 2) disconnect the esptool transport (closes the device, releases its reader).
+  try { if(esp.transport && typeof esp.transport.disconnect === "function") { await esp.transport.disconnect(); } }
+  catch(e){ log("Serial cleanup warning: disconnect — "+(e.message||e)+"\n"); }
+  try { await releasePortLocks(esp.port); }
+  catch(e){ log("Serial cleanup warning: locks — "+(e.message||e)+"\n"); }
+  // 3) tear down the raw-serial control connection if any.
+  try {
+    if(ctrlReader){ try{ await ctrlReader.cancel(); }catch(_){} try{ ctrlReader.releaseLock(); }catch(_){} }
+    if(ctrlWriter){ try{ ctrlWriter.releaseLock(); }catch(_){} }
+    await releasePortLocks(ctrlPort);
+  } catch(e){ log("Serial cleanup warning: control — "+(e.message||e)+"\n"); }
+  // 4) clear all connection state.
+  esp.port=null; esp.transport=null; esp.loader=null; esp.chip=null;
+  ctrlPort=null; ctrlWriter=null; ctrlReader=null;
+  log("Serial port released.\n");
+  // 5) return the whole UI to a clean disconnected state.
+  syncFlashButtons();
+}
 
+// Clean disconnected UI state for all flash/control flows.
+function syncFlashButtons(){
+  const sup = webSerialSupport().ok;
+  if($("connectBtn")) $("connectBtn").disabled = !sup;
+  if($("flashBtn")) $("flashBtn").disabled = true;   // model: must connect first
+  if($("outFwFlashBtn")) $("outFwFlashBtn").disabled = !(sup && OUTFW.meta && OUTFW.meta.available);
+  if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
+  ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
+  if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
+}
+
+// Shared connect + bootloader sync with a manual-boot retry (no_reset).
+// Cleans up first (req 4), requests the port (user gesture), then syncs.
+async function espConnect({ terminal, statusEl, logId }){
+  const { ESPLoader, Transport } = await import(ESPTOOL_JS);
+  await releaseSerial(logId);                                   // free any prior flow
+  setMsg($(statusEl), "Opening serial chooser…", "warn");
+  const port = await navigator.serial.requestPort();           // user gesture
+  esp.port = port;
+  esp.transport = new Transport(port, true);
+  esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal });
+  setMsg($(statusEl), "Connecting — entering bootloader…", "warn");
+  try {
+    esp.chip = await withTimeout(esp.loader.main("default_reset"), 20000, "auto bootloader entry timed out");
+  } catch(e){
+    // Manual bootloader retry: ask the student to force download mode, then re-sync.
+    appendLog(logId, "\n[portal] Auto reset failed. Hold BOOT, tap RESET/EN, release BOOT after ~1s…\n");
+    setMsg($(statusEl), "Hold BOOT, tap RESET/EN, release after ~1s — retrying…", "warn");
+    await new Promise(r=>setTimeout(r, 2500));
+    esp.chip = await withTimeout(esp.loader.main("no_reset"), 20000, serialTroubleshoot());
+  }
+  return esp.chip;
+}
+
+// ---------- FLASH MODEL (.tflite) ----------
+const modelTerminal = makeTerminal("modelFlashLog", (line)=>{ const s=String(line);
+  if(/Erasing/i.test(s)) setMsg($("flashStatus"),"Erasing…","warn");
+  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("flashStatus"),"Writing model…","warn");
+  else if(/verified/i.test(s)) setMsg($("flashStatus"),"Verifying…","warn"); });
 function initFlashPanel(){
-  const help = $("httpHelp"), originEl = $("originCode");
-  if(originEl) originEl.textContent = window.location.origin;
-  if(help) help.style.display = "none";
-  const sup = webSerialSupport();
-  if(sup.ok){ setMsg($("flashStatus"), "Ready. Click “Connect ESP32-S3” and pick the board's port.", ""); return; }
-  $("connectBtn").disabled = true; $("flashBtn").disabled = true;
-  if(sup.reason === "unsupported-browser"){
-    setMsg($("flashStatus"), "Web Serial is not supported in this browser. Please use Chrome or Edge.", "bad");
-  } else {
-    setMsg($("flashStatus"), "Flashing is blocked because this page is served over HTTP. One-time browser setup below enables it.", "warn");
-    if(help) help.style.display = "";
-  }
+  const help=$("httpHelp"), oc=$("originCode"); if(oc) oc.textContent=window.location.origin; if(help) help.style.display="none";
+  const sup=webSerialSupport();
+  if(sup.ok){ setMsg($("flashStatus"),"Ready. Click “Connect ESP32-S3”.",""); return; }
+  $("connectBtn").disabled=true; $("flashBtn").disabled=true;
+  if(sup.reason==="unsupported-browser") setMsg($("flashStatus"),"Web Serial not supported. Use Chrome or Edge.","bad");
+  else { setMsg($("flashStatus"),"Flashing needs HTTPS (secure context). See below.","warn"); if(help) help.style.display=""; }
 }
-
 $("connectBtn").onclick = async () => {
-  const sup = webSerialSupport();
-  if(!sup.ok){ setMsg($("flashStatus"), "Web Serial unavailable (use Chrome/Edge over HTTPS).", "bad"); return; }
-  setMsg($("flashStatus"), "Opening browser serial chooser…", "warn");
-  $("connectBtn").disabled = true;
+  const sup=webSerialSupport(); if(!sup.ok){ setMsg($("flashStatus"),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
+  $("connectBtn").disabled=true;
   try {
-    const { ESPLoader, Transport } = await import(ESPTOOL_JS);
-    if(!esp.meta){ try { esp.meta = await api("/api/flash-meta"); } catch(e){ esp.meta = { offset_int: 3211264 }; } }
-    await closeModelFlashSession();
-    const port = await navigator.serial.requestPort();
-    setMsg($("flashStatus"), "Connected. Entering bootloader…", "warn");
-    const connected = await connectEspLoader(ESPLoader, Transport, port, modelTerminal, "modelFlashLog");
-    esp.transport = connected.transport;
-    esp.loader = connected.loader;
-    esp.chip = connected.chip;
-    setMsg($("flashStatus"), `ESP32-S3 connected (${esp.chip}). Select a model and click Flash model.`, "ok");
-    $("flashBtn").disabled = false;
+    if(!esp.meta){ try{ esp.meta=await api("/api/flash-meta"); }catch(e){ esp.meta={offset_int:3211264}; } }
+    const chip=await espConnect({ terminal:modelTerminal, statusEl:"flashStatus", logId:"modelFlashLog" });
+    setMsg($("flashStatus"),`Connected (${chip}). Select a model and Flash.`,"ok"); $("flashBtn").disabled=false;
   } catch(e){
-    await closeModelFlashSession();
-    esp.transport = null;
-    const raw = e.message || String(e);
-    const msg = /No port selected|cancell/i.test(raw) ? "Port selection cancelled." : ("Connect failed: " + raw);
-    appendLog("modelFlashLog", "\n[portal] " + msg + "\n");
-    setMsg($("flashStatus"), msg, "bad");
+    const raw=e.message||String(e);
+    const m=/No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect failed: "+raw);
+    appendLog("modelFlashLog","\n[portal] "+m+"\n"); setMsg($("flashStatus"),m,"bad");
+    await releaseSerial("modelFlashLog");     // free the port on a failed connect
   }
-  $("connectBtn").disabled = false;
+  $("connectBtn").disabled=false;
 };
-
 $("flashBtn").onclick = async () => {
-  const artifactPath = $("flashArtifact").value;
-  if(!esp.loader){ setMsg($("flashStatus"), "Connect the ESP32-S3 first.", "bad"); return; }
-  if(!artifactPath){ setMsg($("flashStatus"), "Select a TFLite model first (quantize one if the list is empty).", "bad"); return; }
-  const offset = (esp.meta && esp.meta.offset_int) || 3211264;   // model partition; hidden from students
-  $("flashBtn").disabled = true; $("connectBtn").disabled = true;
-  try {
-    setMsg($("flashStatus"), "Downloading model from the portal…", "warn");
-    const resp = await fetch(ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(artifactPath));
-    if(!resp.ok) throw new Error("could not download model (" + resp.status + ")");
-    const data = binaryString(await resp.arrayBuffer());
-    appendLog("modelFlashLog", `\n[portal] flashing ${artifactPath.split("/").pop()} (${data.length} bytes)\n`);
-    setMsg($("flashStatus"), "Erasing model partition…", "warn");
-    await esp.loader.writeFlash({
-      fileArray: [{ data, address: offset }],
-      flashSize: "keep", flashMode: "keep", flashFreq: "keep", eraseAll: false, compress: true,
-      reportProgress: (i, written, total) => {
-        const pct = total ? Math.round(written/total*100) : 0;
-        setMsg($("flashStatus"), `Writing model to flash… ${pct}% (${written}/${total} bytes)`, "warn");
-      },
-    });
-    try { if(esp.loader.after) await esp.loader.after("hard_reset"); } catch(_){}
-    await closeModelFlashSession();
-    setMsg($("flashStatus"), "Flash succeeded — the ESP32-S3 is running the new model.", "ok");
-  } catch(e){
-    setMsg($("flashStatus"), "Flash failed: " + (e.message || e) + " (see log)", "bad");
-    await closeModelFlashSession();
-  }
-  $("flashBtn").disabled = false; $("connectBtn").disabled = false;
+  const path=$("flashArtifact").value;
+  if(!esp.loader){ setMsg($("flashStatus"),"Connect first.","bad"); return; }
+  if(!path){ setMsg($("flashStatus"),"Select a TFLite model.","bad"); return; }
+  const offset=(esp.meta&&esp.meta.offset_int)||3211264;
+  $("flashBtn").disabled=true; $("connectBtn").disabled=true;
+  try { setMsg($("flashStatus"),"Downloading model…","warn");
+    const resp=await fetch(ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(path)); if(!resp.ok) throw new Error("download failed ("+resp.status+")");
+    const data=binaryString(await resp.arrayBuffer()); appendLog("modelFlashLog",`\n[portal] flashing ${path.split("/").pop()} (${data.length} bytes)\n`);
+    await esp.loader.writeFlash({ fileArray:[{data,address:offset}], flashSize:"keep",flashMode:"keep",flashFreq:"keep",eraseAll:false,compress:true,
+      reportProgress:(i,w,t)=>{ const p=t?Math.round(w/t*100):0; setMsg($("flashStatus"),`Writing model… ${p}% (${w}/${t})`,"warn"); } });
+    setMsg($("flashStatus"),"Flash succeeded — model updated. You can flash again or flash firmware.","ok");
+  } catch(e){ setMsg($("flashStatus"),"Flash failed: "+(e.message||e)+" (see log)","bad"); }
+  finally { await releaseSerial("modelFlashLog"); }   // always release the port
 };
+if($("copyOriginBtn")) $("copyOriginBtn").onclick = () => copyText(window.location.origin, $("flashStatus"), "Address copied — paste into the flag box, then Relaunch.");
 
-if($("copyOriginBtn")){
-  $("copyOriginBtn").onclick = () => {
-    const text = window.location.origin;
-    const done = () => setMsg($("flashStatus"), "Address copied — paste it into the browser flag box, then Relaunch.", "ok");
-    const fallback = () => {
-      const ta = document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
-      document.body.appendChild(ta); ta.select();
-      try { document.execCommand("copy"); done(); } catch(e){ setMsg($("flashStatus"), "Select and copy the address shown.", "bad"); }
-      document.body.removeChild(ta);
-    };
-    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done).catch(fallback); }
-    else { fallback(); }
+// ---------- FIRMWARE FLASH (generic: output_demo + main_board) ----------
+async function loadFirmware(target, ids){
+  setMsg($(ids.statusEl),"Checking firmware build…","warn");
+  try { ids.meta = await api("/api/firmware/meta?target="+target); } catch(e){ ids.meta={available:false,message:"Query failed: "+e.message}; }
+  renderFwImages(ids);
+  const sup=webSerialSupport();
+  if(!ids.meta.available){ $(ids.flashBtn).disabled=true; setMsg($(ids.statusEl), ids.meta.message||"Not built.", "bad"); }
+  else if(!sup.ok){ $(ids.flashBtn).disabled=true; setMsg($(ids.statusEl), sup.reason==="insecure-http"
+      ? "Firmware is built, but flashing needs HTTPS (secure context)." : "Web Serial not supported — use Chrome or Edge.", "bad"); }
+  else { $(ids.flashBtn).disabled=false; setMsg($(ids.statusEl),"Firmware build found. Click Connect & flash.","ok"); }
+}
+function renderFwImages(ids){
+  const host=$(ids.imagesEl); if(!host) return;
+  if(!ids.meta||!ids.meta.available){ host.innerHTML='<div class="note">'+((ids.meta&&ids.meta.message)||"No firmware build.")+'</div>'; return; }
+  const dev=$("devMode").checked;
+  host.innerHTML=`<div class="note">Firmware images (${ids.meta.chip||"esp32s3"}):</div>`+
+    (ids.meta.images||[]).map(im=>`<div><span>${im.name}${dev?` <code>@ ${im.offset}</code>`:""}</span><span>${fmtSize(im.size)}</span></div>`).join("");
+}
+function makeFwFlash(ids){
+  return async () => {
+    if(!ids.meta||!ids.meta.available){ setMsg($(ids.statusEl), ids.meta&&ids.meta.message||"No build.","bad"); return; }
+    const sup=webSerialSupport(); if(!sup.ok){ setMsg($(ids.statusEl),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
+    $(ids.flashBtn).disabled=true;
+    const term=makeTerminal(ids.logEl,(line)=>{ const s=String(line);
+      if(/Erasing/i.test(s)) setMsg($(ids.statusEl),"Erasing…","warn");
+      else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($(ids.statusEl),"Writing firmware…","warn");
+      else if(/verified/i.test(s)) setMsg($(ids.statusEl),"Verifying…","warn"); });
+    try {
+      const chip=await espConnect({ terminal:term, statusEl:ids.statusEl, logId:ids.logEl });
+      appendLog(ids.logEl,`\n[portal] ${chip} — downloading ${ids.meta.images.length} images…\n`);
+      const fileArray=[];
+      for(const im of ids.meta.images){ const resp=await fetch(ORIGIN+im.url); if(!resp.ok) throw new Error("download failed for "+im.name+" ("+resp.status+")");
+        fileArray.push({data:binaryString(await resp.arrayBuffer()),address:im.offset_int}); appendLog(ids.logEl,`  ${im.name}: ${im.size} bytes\n`); }
+      setMsg($(ids.statusEl),"Writing firmware…","warn");
+      await esp.loader.writeFlash({ fileArray, flashSize:ids.meta.flash_size||"keep", flashMode:ids.meta.flash_mode||"keep", flashFreq:ids.meta.flash_freq||"keep",
+        eraseAll:false, compress:true, reportProgress:(i,w,t)=>{ const im=ids.meta.images[i]; const p=t?Math.round(w/t*100):0;
+          setMsg($(ids.statusEl),`Writing ${im?im.name:("image "+(i+1))} (${i+1}/${ids.meta.images.length})… ${p}%`,"warn"); } });
+      setMsg($(ids.statusEl),"Firmware flash succeeded — board rebooting.","ok");
+    } catch(e){ const raw=e.message||String(e);
+      const m=/No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Firmware flash failed: "+raw);
+      appendLog(ids.logEl,"\n[portal] "+m+"\n"); setMsg($(ids.statusEl),m,"bad"); }
+    finally { await releaseSerial(ids.logEl); }   // always release the port
   };
 }
+$("outFwFlashBtn").onclick = makeFwFlash(OUTFW);
+$("mainFwFlashBtn").onclick = makeFwFlash(MAINFW);
+$("outFwRefreshBtn").onclick = () => loadFirmware("output_demo", OUTFW);
+$("mainFwRefreshBtn").onclick = () => loadFirmware("main_board", MAINFW);
 
-// ---------- FLASH FIRMWARE (full main board firmware) ----------
-let FW_META = null;   // {available, images:[{name,offset,offset_int,size,url}], flash_* }
-const fwTerminal = makeTerminal("fwFlashLog", (line) => {
-  const s = String(line);
-  if(/Erasing/i.test(s)) setMsg($("fwStatus"), "Erasing…", "warn");
-  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("fwStatus"), "Writing firmware…", "warn");
-  else if(/verified/i.test(s)) setMsg($("fwStatus"), "Verifying…", "warn");
-});
-
-async function refreshFirmware(){
-  setMsg($("fwStatus"), "Checking firmware build…", "warn");
-  try { FW_META = await api("/api/firmware/meta"); }
-  catch(e){ FW_META = { available:false, message:"Could not query firmware build: "+e.message }; }
-  renderFirmwareImages();
-  const sup = webSerialSupport();
-  if(!FW_META.available){
-    setMsg($("fwStatus"), FW_META.message || "Firmware build not found.", "bad");
-    $("fwFlashBtn").disabled = true;
-  } else if(!sup.ok){
-    $("fwFlashBtn").disabled = true;
-    setMsg($("fwStatus"), sup.reason === "insecure-http"
-      ? "Firmware is built and ready, but flashing needs HTTPS/secure context (see the Flash model tab)."
-      : "Web Serial not supported — use Chrome or Edge.", "bad");
-  } else {
-    $("fwFlashBtn").disabled = false;
-    setMsg($("fwStatus"), "Firmware build found. Click “Connect & flash firmware”.", "ok");
-  }
+// ---------- OUTPUT DEMO: raw-serial LED / PWM control ----------
+async function ctrlSend(cmd){
+  if(!ctrlWriter){ setMsg($("ctrlStatus"),"Connect for control first.","bad"); return; }
+  try { await ctrlWriter.write(new TextEncoder().encode(cmd+"\n")); appendLog("ctrlLog","> "+cmd+"\n"); }
+  catch(e){ setMsg($("ctrlStatus"),"Send failed: "+(e.message||e),"bad"); }
 }
-
-function renderFirmwareImages(){
-  const host = $("fwImages"); if(!host) return;
-  if(!FW_META || !FW_META.available){ host.innerHTML = '<div class="note">'+((FW_META&&FW_META.message)||"No firmware build.")+'</div>'; return; }
-  const dev = $("devMode").checked;
-  const rows = (FW_META.images||[]).map(im => {
-    const off = dev ? ` <code>@ ${im.offset}</code>` : "";
-    return `<div><span>${im.name}${off}</span><span>${fmtSize(im.size)}</span></div>`;
-  }).join("");
-  host.innerHTML = `<div class="note">Main board firmware images (${FW_META.chip||"esp32s3"}):</div>${rows}`;
-}
-$("fwRefreshBtn").onclick = refreshFirmware;
-
-$("fwFlashBtn").onclick = async () => {
-  if(!FW_META || !FW_META.available){ setMsg($("fwStatus"), FW_META && FW_META.message || "No firmware build.", "bad"); return; }
-  const sup = webSerialSupport();
-  if(!sup.ok){ setMsg($("fwStatus"), "Web Serial unavailable (use Chrome/Edge over HTTPS).", "bad"); return; }
-  $("fwFlashBtn").disabled = true;
-  let transport = null, loader = null;
+$("ctrlConnectBtn").onclick = async () => {
+  const sup=webSerialSupport(); if(!sup.ok){ setMsg($("ctrlStatus"),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
   try {
-    const { ESPLoader, Transport } = await import(ESPTOOL_JS);
-    await closeModelFlashSession();
-    setMsg($("fwStatus"), "Opening browser serial chooser…", "warn");
-    const port = await navigator.serial.requestPort();
-    setMsg($("fwStatus"), "Connected. Entering bootloader…", "warn");
-    const connected = await connectEspLoader(ESPLoader, Transport, port, fwTerminal, "fwFlashLog");
-    transport = connected.transport;
-    loader = connected.loader;
-    const chip = connected.chip;
-    appendLog("fwFlashLog", `\n[portal] ${chip} — downloading ${FW_META.images.length} firmware images…\n`);
-    setMsg($("fwStatus"), "Downloading firmware images…", "warn");
-    const fileArray = [];
-    for(const im of FW_META.images){
-      const resp = await fetch(ORIGIN + im.url);
-      if(!resp.ok) throw new Error(`download failed for ${im.name} (${resp.status})`);
-      fileArray.push({ data: binaryString(await resp.arrayBuffer()), address: im.offset_int });
-      appendLog("fwFlashLog", `  ${im.name}: ${im.size} bytes\n`);
-    }
-    const nameByAddr = {}; FW_META.images.forEach(im => nameByAddr[im.offset_int] = im.name);
-    setMsg($("fwStatus"), "Writing firmware…", "warn");
-    await loader.writeFlash({
-      fileArray,
-      flashSize: FW_META.flash_size || "keep",
-      flashMode: FW_META.flash_mode || "keep",
-      flashFreq: FW_META.flash_freq || "keep",
-      eraseAll: false, compress: true,
-      reportProgress: (i, written, total) => {
-        const im = FW_META.images[i]; const pct = total ? Math.round(written/total*100) : 0;
-        setMsg($("fwStatus"), `Writing ${im?im.name:("image "+(i+1))} (${i+1}/${FW_META.images.length})… ${pct}%`, "warn");
-      },
-    });
-    try { if(loader.after) await loader.after("hard_reset"); } catch(_){}
-    setMsg($("fwStatus"), "Firmware flash succeeded — the main board is rebooting.", "ok");
-  } catch(e){
-    const raw = e.message || String(e);
-    const msg = /No port selected|cancell/i.test(raw) ? "Port selection cancelled." : ("Firmware flash failed: " + raw);
-    appendLog("fwFlashLog", "\n[portal] " + msg + "\n");
-    setMsg($("fwStatus"), msg, "bad");
-  }
-  await safeDisconnectTransport(transport);
-  $("fwFlashBtn").disabled = false;
+    await releaseSerial("ctrlLog");                 // free any flash port (or a prior control session) first
+    ctrlPort=await navigator.serial.requestPort();
+    await ctrlPort.open({ baudRate:115200 });
+    ctrlWriter=ctrlPort.writable.getWriter();
+    $("ctrlLog").textContent="";
+    ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
+    setMsg($("ctrlStatus"),"Connected. Use the buttons / slider.","ok");
+    readCtrlLoop();
+  } catch(e){ const raw=e.message||String(e);
+    setMsg($("ctrlStatus"), /No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect failed: "+raw), "bad");
+    await releaseSerial("ctrlLog"); }
 };
+async function readCtrlLoop(){
+  try { ctrlReader=ctrlPort.readable.getReader(); const dec=new TextDecoder();
+    for(;;){ const {value,done}=await ctrlReader.read(); if(done) break; if(value) appendLog("ctrlLog", dec.decode(value)); }
+  } catch(e){}
+  finally { try{ if(ctrlReader) ctrlReader.releaseLock(); }catch(_){} }
+}
+$("ledOnBtn").onclick   = () => ctrlSend("LED,1");
+$("ledOffBtn").onclick  = () => ctrlSend("LED,0");
+$("ledBlinkBtn").onclick= () => ctrlSend("BLINK");
+$("pwmSlider").oninput  = (e) => { setText("pwmVal", e.target.value); };
+$("pwmSlider").onchange = (e) => ctrlSend("PWM,"+e.target.value);
 
 $("refreshArtifacts").onclick = refreshArtifacts;
 init();

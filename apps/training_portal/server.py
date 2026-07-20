@@ -61,6 +61,20 @@ PYTORCH_MODELS_DIR = MODEL_FINETUNE_DIR / "models" / "pytorch"
 MAIN_BOARD_DIR = REPO_ROOT / "firmware" / "main_board"
 FIRMWARE_BUILD_DIR = MAIN_BOARD_DIR / "build"
 FIRMWARE_FLASHER_ARGS = FIRMWARE_BUILD_DIR / "flasher_args.json"
+# Flashable firmware targets (class day -> ESP-IDF build dir). Each is flashed with
+# its own ESP-IDF flasher_args.json so offsets are never hardcoded.
+FIRMWARE_TARGETS = {
+    "main_board": {
+        "label": "Main board (camera + inference) firmware",
+        "build_dir": REPO_ROOT / "firmware" / "main_board" / "build",
+        "build_hint": "firmware/main_board",
+    },
+    "output_demo": {
+        "label": "Output demo (GPIO/LED/PWM) firmware",
+        "build_dir": REPO_ROOT / "firmware" / "teaching_output_demo" / "build",
+        "build_hint": "firmware/teaching_output_demo",
+    },
+}
 ARTIFACT_MODELS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "models"
 ARTIFACT_REPORTS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "reports"
 
@@ -143,6 +157,18 @@ QUANTIZE_SCRIPT = "firmware/pc/tools/quantize_keras_model.py"
 #     format. It would be PC-comparison-only, so it is excluded rather than faked.
 QUANT_FORMATS = ["int8", "int16", "float32"]
 QUANT_GRANULARITIES = ["per-channel", "per-tensor"]
+
+# On-device benchmark (Deploy tab). Runs server-side as an allowlisted background
+# job against an ESP32-S3 connected to THIS (AI PC) machine's serial port.
+BENCHMARK_SCRIPT = "firmware/pc/benchmark/run_benchmark_png.py"
+# Allowlisted benchmark dataset directories (only existing ones with images are offered).
+BENCHMARK_DATASET_DIRS = [
+    ("test_tflite", REPO_ROOT / "firmware" / "pc" / "dataset" / "test" / "tflite"),
+    ("dataset_test", DATASET_DIR / "test"),
+    ("dataset_validation", DATASET_DIR / "validation"),
+    ("dataset_train", DATASET_DIR / "train"),
+]
+SERIAL_PORT_RE = re.compile(r"^(/dev/[A-Za-z0-9._\-]+|COM[0-9]+)$")
 
 # Directories whose files may be listed as artifacts and downloaded. Any download
 # request is resolved and confirmed to live inside one of these roots (no traversal).
@@ -785,6 +811,71 @@ def build_quantize_command(params):
     return cmd
 
 
+def _list_serial_ports():
+    """Serial ports on THIS (AI PC) machine, or None if pyserial is unavailable."""
+    try:
+        from serial.tools import list_ports
+    except Exception:  # noqa: BLE001
+        return None
+    return [
+        {"device": p.device, "description": p.description or "", "hwid": p.hwid or ""}
+        for p in list_ports.comports()
+    ]
+
+
+def _benchmark_datasets():
+    """Allowlisted benchmark dataset dirs that actually exist and contain images."""
+    out = []
+    for key, d in BENCHMARK_DATASET_DIRS:
+        if d.is_dir():
+            count = sum(1 for p in d.rglob("*")
+                        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
+            if count > 0:
+                out.append({"id": key, "path": str(d.resolve().relative_to(REPO_ROOT.resolve())), "count": count})
+    return out
+
+
+def build_benchmark_command(params):
+    """Build the allowlisted benchmark command (no shell, validated args)."""
+    script = (REPO_ROOT / BENCHMARK_SCRIPT).resolve()
+    if not script.is_file():
+        raise ValueError(f"Benchmark script missing: {BENCHMARK_SCRIPT}")
+
+    # Model: an existing .tflite artifact (resolved inside the allowed roots).
+    model_rel = params.get("model")
+    if not model_rel:
+        raise ValueError("model is required (select a .tflite artifact)")
+    candidate = (REPO_ROOT / model_rel).resolve() if not os.path.isabs(model_rel) else Path(model_rel)
+    model_path = _resolve_within_roots(candidate)
+    if model_path is None or not model_path.is_file() or model_path.suffix.lower() != ".tflite":
+        raise ValueError("model must be an existing .tflite artifact")
+
+    # Dataset: one of the allowlisted dataset dirs.
+    ds_id = params.get("dataset")
+    datasets = {d["id"]: d for d in _benchmark_datasets()}
+    if ds_id not in datasets:
+        raise ValueError(
+            "dataset must be one of "
+            + (", ".join(datasets) if datasets else "(none found — provide benchmark images first)")
+        )
+    data_dir = (REPO_ROOT / datasets[ds_id]["path"]).resolve()
+
+    # Serial port on the AI PC (validated shape; the board must be on THIS machine).
+    port = (params.get("port") or "").strip()
+    if not SERIAL_PORT_RE.match(port):
+        raise ValueError("port must look like /dev/ttyACM0 or COM6 (ESP32-S3 on the AI PC)")
+
+    cmd = [
+        sys.executable, str(script),
+        "--model", str(model_path),
+        "--data-dir", str(data_dir),
+        "--port", port,
+    ]
+    if params.get("baudrate") not in (None, ""):
+        cmd += ["--baudrate", str(_safe_int(params["baudrate"], "baudrate", 1200, 4000000))]
+    return cmd
+
+
 # --------------------------------------------------------------------------- #
 # Flask app
 # --------------------------------------------------------------------------- #
@@ -834,56 +925,54 @@ def create_app():
 
     @app.get("/api/firmware/meta")
     def firmware_meta():
-        """Main board firmware flash plan, parsed from ESP-IDF's flasher_args.json.
+        """Firmware flash plan for a target, parsed from ESP-IDF's flasher_args.json.
 
-        Returns the list of images (bootloader / partition-table / app) with their
-        offsets and sizes, plus flash settings — so the browser flasher uses the
-        ESP-IDF-generated offsets instead of hardcoded values. If the firmware has
-        not been built, returns available=false with a student-friendly message.
+        ?target=main_board (default) | output_demo. Returns the images (bootloader /
+        partition-table / app) with ESP-IDF-generated offsets + flash settings, so
+        the browser flasher never hardcodes offsets. If the target is not built,
+        returns available=false with a student-friendly message.
         """
-        if not FIRMWARE_FLASHER_ARGS.is_file():
-            return jsonify({
-                "available": False,
-                "message": "Main board firmware build artifacts were not found. "
-                           "Please build firmware/main_board first.",
-            })
+        target = request.args.get("target", "main_board")
+        spec = FIRMWARE_TARGETS.get(target)
+        if spec is None:
+            abort(404, f"Unknown firmware target '{target}'.")
+        build_dir = spec["build_dir"]
+        flasher_args = build_dir / "flasher_args.json"
+        not_built = {
+            "available": False, "target": target,
+            "message": f"{spec['label']} build artifacts were not found. "
+                       f"Please build {spec['build_hint']} first.",
+        }
+        if not flasher_args.is_file():
+            return jsonify(not_built)
         try:
-            data = json.loads(FIRMWARE_FLASHER_ARGS.read_text(encoding="utf-8"))
+            data = json.loads(flasher_args.read_text(encoding="utf-8"))
         except (OSError, ValueError) as exc:
-            return jsonify({"available": False,
+            return jsonify({"available": False, "target": target,
                             "message": f"Could not read firmware build metadata: {exc}"})
 
         settings = data.get("flash_settings", {}) or {}
         chip = (data.get("extra_esptool_args", {}) or {}).get("chip", "esp32s3")
         images = []
-        missing = []
         for offset, rel in sorted((data.get("flash_files") or {}).items(),
                                   key=lambda kv: int(kv[0], 16)):
-            img = (FIRMWARE_BUILD_DIR / rel).resolve()
+            img = (build_dir / rel).resolve()
             try:
-                img.relative_to(FIRMWARE_BUILD_DIR.resolve())
+                img.relative_to(build_dir.resolve())
             except ValueError:
                 continue  # never serve outside the build dir
             if not img.is_file():
-                missing.append(rel)
                 continue
             images.append({
-                "name": Path(rel).name,
-                "rel": rel,
-                "offset": offset,
-                "offset_int": int(offset, 16),
+                "name": Path(rel).name, "rel": rel,
+                "offset": offset, "offset_int": int(offset, 16),
                 "size": img.stat().st_size,
-                "url": "/api/firmware/download?name=" + rel,
+                "url": f"/api/firmware/download?target={target}&name={rel}",
             })
         if not images:
-            return jsonify({
-                "available": False,
-                "message": "Main board firmware build artifacts were not found. "
-                           "Please build firmware/main_board first.",
-            })
+            return jsonify(not_built)
         return jsonify({
-            "available": True,
-            "chip": chip,
+            "available": True, "target": target, "chip": chip,
             "flash_mode": settings.get("flash_mode", "keep"),
             "flash_freq": settings.get("flash_freq", "keep"),
             "flash_size": settings.get("flash_size", "keep"),
@@ -892,18 +981,54 @@ def create_app():
 
     @app.get("/api/firmware/download")
     def firmware_download():
-        """Serve one firmware image from the main board build dir (allowlisted)."""
+        """Serve one firmware image from a target's build dir (allowlisted)."""
+        target = request.args.get("target", "main_board")
+        spec = FIRMWARE_TARGETS.get(target)
+        if spec is None:
+            abort(404, f"Unknown firmware target '{target}'.")
+        build_dir = spec["build_dir"]
         rel = request.args.get("name", "")
         if not rel:
             abort(400, "Missing 'name'.")
-        candidate = (FIRMWARE_BUILD_DIR / rel).resolve()
+        candidate = (build_dir / rel).resolve()
         try:
-            candidate.relative_to(FIRMWARE_BUILD_DIR.resolve())
+            candidate.relative_to(build_dir.resolve())
         except ValueError:
             abort(403, "Path outside firmware build directory.")
         if not candidate.is_file() or candidate.suffix.lower() != ".bin":
             abort(404, "Firmware image not found.")
         return send_file(str(candidate), as_attachment=True, download_name=candidate.name)
+
+    @app.get("/api/reports")
+    def quant_reports():
+        """Latest quantization report metrics (Deploy tab results view).
+
+        These are the AI-PC-side numbers produced during quantization (source vs
+        int8 TFLite accuracy + score similarity). On-device latency/throughput
+        require the board and are run with the benchmark CLI where the board lives.
+        """
+        out = []
+        if ARTIFACT_REPORTS_DIR.is_dir():
+            for path in sorted(ARTIFACT_REPORTS_DIR.glob("*.json"),
+                               key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    r = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                tv = r.get("tflite_validation") or {}
+                out.append({
+                    "name": path.name,
+                    "model": r.get("model_name"),
+                    "quant_format": r.get("requested_quant_format") or r.get("quant_format"),
+                    "granularity": r.get("quantization_granularity"),
+                    "class_order": r.get("class_order"),
+                    "tflite_accuracy": tv.get("accuracy"),
+                    "tflite_samples": tv.get("samples"),
+                    "output_variation": tv.get("output_variation") or r.get("output_variation"),
+                    "modified": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+                                .strftime("%Y-%m-%dT%H:%M:%SZ"),
+                })
+        return jsonify({"reports": out})
 
     @app.get("/api/class-map")
     def get_class_map():
@@ -1029,6 +1154,37 @@ def create_app():
             abort(400, str(exc))
         try:
             job = jobs.start("quantize", f"quantize:{data.get('model_name')}", cmd)
+        except JobBusyError as exc:
+            return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
+        return jsonify(job.to_dict()), 202
+
+    @app.get("/api/serial-ports")
+    def serial_ports():
+        ports = _list_serial_ports()
+        if ports is None:
+            return jsonify({"ports": [], "error": "pyserial not installed"})
+        return jsonify({"ports": ports})
+
+    @app.get("/api/benchmark/options")
+    def benchmark_options():
+        """Datasets + serial ports the portal offers for the on-device benchmark."""
+        return jsonify({
+            "datasets": _benchmark_datasets(),
+            "ports": _list_serial_ports() or [],
+        })
+
+    @app.post("/api/benchmark")
+    def benchmark():
+        """Run the on-device benchmark as a background job (AI-PC-side only)."""
+        data = request.get_json(silent=True) or request.form.to_dict()
+        try:
+            cmd = build_benchmark_command(data)
+        except ValueError as exc:
+            abort(400, str(exc))
+        # Force the score-similarity comparison on so the summary includes it.
+        try:
+            job = jobs.start("benchmark", f"benchmark:{Path(data.get('model','')).name}", cmd,
+                             env={"BENCHMARK_COMPARE_OUTPUT": "1"})
         except JobBusyError as exc:
             return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
         return jsonify(job.to_dict()), 202
