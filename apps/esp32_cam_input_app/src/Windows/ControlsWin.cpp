@@ -128,6 +128,8 @@ void ControlsWin::draw(AppState& state) {
             state.pixel_format = 3; // Revert to JPEG
         }
         state.SendUsbCommand("f" + std::to_string(state.pixel_format), "set pixel format");
+        state.SendUsbCommand(std::string("m") + (state.horizontal_mirror ? "1" : "0"), "re-apply horizontal mirror");
+        state.SendUsbCommand(std::string("p") + (state.vertical_flip ? "1" : "0"), "re-apply vertical flip");
     }
 
     const char* sizes[] = {"96x96", "QQVGA", "QVGA", "VGA", "SVGA", "UXGA"};
@@ -141,6 +143,8 @@ void ControlsWin::draw(AppState& state) {
             state.SendUsbCommand("f3", "auto JPEG for VGA+");
         }
         state.SendUsbCommand("s" + std::to_string(state.frame_size), "set frame size");
+        state.SendUsbCommand(std::string("m") + (state.horizontal_mirror ? "1" : "0"), "re-apply horizontal mirror");
+        state.SendUsbCommand(std::string("p") + (state.vertical_flip ? "1" : "0"), "re-apply vertical flip");
     }
 
     ImGui::SeparatorText("Exposure & Gain");

@@ -33,6 +33,9 @@ static constexpr int PCLK_GPIO_NUM = 13;
 static constexpr int kXclkFrequencyHz = 10000000;
 static constexpr int kJpegQuality = 12;
 
+int g_hmirror = 0;
+int g_vflip = 0;
+
 static bool g_camera_initialized = false;
 static pixformat_t g_current_format = PIXFORMAT_JPEG;
 static framesize_t g_current_size = FRAMESIZE_VGA;
@@ -125,8 +128,8 @@ esp_err_t camera_capture_init() {
         sensor->set_awb_gain(sensor, 1);
         sensor->set_exposure_ctrl(sensor, 1);
         sensor->set_gain_ctrl(sensor, 1);
-        sensor->set_hmirror(sensor, 0);
-        sensor->set_vflip(sensor, 0);
+        sensor->set_hmirror(sensor, g_hmirror);
+        sensor->set_vflip(sensor, g_vflip);
     }
 
     g_camera_initialized = true;

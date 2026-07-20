@@ -81,6 +81,10 @@ static bool decode_jpeg_to_high_fidelity_grayscale(const uint8_t *jpg_buf, size_
 }
 static pixformat_t g_current_format = PIXFORMAT_JPEG;
 static framesize_t g_current_size = FRAMESIZE_VGA;
+
+extern int g_hmirror;
+extern int g_vflip;
+
 static TaskHandle_t g_input_controls_task_handle = nullptr;
 [[maybe_unused]] static TaskHandle_t g_uart_test_task_handle = nullptr;
 [[maybe_unused]] static TaskHandle_t g_camera_stream_task_handle = nullptr;
@@ -978,6 +982,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         sensor_t *s = esp_camera_sensor_get();
                         if (s) {
                             s->set_hmirror(s, val);
+                            g_hmirror = val;
                             dual_printf("[System] Horizontal Mirror updated to %d.\n", val);
                         }
                         break;
@@ -987,6 +992,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         sensor_t *s = esp_camera_sensor_get();
                         if (s) {
                             s->set_vflip(s, val);
+                            g_vflip = val;
                             dual_printf("[System] Vertical Flip updated to %d.\n", val);
                         }
                         break;
