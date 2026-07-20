@@ -12,7 +12,7 @@ This is a small Flask app on ``127.0.0.1:8770`` that:
   * connects to ESP1 (inference board) and optionally ESP2 (robot-arm board),
   * parses ESP1 ``RESULT,<index>,<timings...>,<scores...>`` lines,
   * maps the predicted output INDEX -> class name -> robot action using the
-    ``class_map.json`` produced by the training portal (index-only firmware),
+    ``class_mapping.json`` produced by the training portal (index-only firmware),
   * forwards the mapped action to ESP2,
   * serves a tiny browser page showing the live gesture + action.
 
@@ -137,7 +137,7 @@ INDEX_HTML = """<!doctype html><meta charset=utf-8>
 .big{font-size:40px;font-weight:700}.muted{color:#94a3b8}code{background:#1e293b;padding:1px 5px;border-radius:4px}</style>
 <h1>🎥 Student PC — gesture control</h1>
 <p class=muted>Reads ESP1 <code>RESULT</code> over serial, maps the output index to a robot action
-via <code>class_map.json</code>, forwards it to ESP2. Live camera preview: use the native app in
+via <code>class_mapping.json</code>, forwards it to ESP2. Live camera preview: use the native app in
 <code>apps/esp32_cam_input_app</code> (documented next step here).</p>
 <div class=big id=g>—</div><div id=a class=muted>action: —</div><div id=s class=muted></div>
 <script>
@@ -183,7 +183,7 @@ def create_app():
 
     @app.post("/class-map")
     def set_class_map():
-        """Load the class_map.json downloaded from the training portal."""
+        """Load the class_mapping.json downloaded from the training portal."""
         data = request.get_json(silent=True) or {}
         order = data.get("class_order")
         classes = data.get("classes")
@@ -233,7 +233,7 @@ def main():
     parser = argparse.ArgumentParser(description="EECampEdu student-PC camera/control app.")
     parser.add_argument("--host", default="127.0.0.1", help="Bind host. Default: 127.0.0.1")
     parser.add_argument("--port", type=int, default=8770, help="Bind port. Default: 8770")
-    parser.add_argument("--class-map", help="Optional path to a class_map.json to preload.")
+    parser.add_argument("--class-map", help="Optional path to a class_mapping.json to preload.")
     args = parser.parse_args()
 
     if args.class_map:

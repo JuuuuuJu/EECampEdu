@@ -7,9 +7,9 @@ class *order* is recorded once in a single JSON file and every stage reads it.
 
 Canonical file (generated at dataset-upload time, git-ignored):
 
-    model_finetune/dataset/class_map.json
+    model_finetune/dataset/class_mapping.json
 
-Schema (see model_finetune/class_map.example.json)::
+Schema (see model_finetune/class_mapping.example.json)::
 
     {
       "version": 1,
@@ -38,7 +38,7 @@ from pathlib import Path
 
 MODEL_FINETUNE_DIR = Path(__file__).resolve().parent
 DATASET_DIR = MODEL_FINETUNE_DIR / "dataset"
-CLASS_MAP_PATH = DATASET_DIR / "class_map.json"
+CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 
 # Exactly six gesture classes are expected for this project.
 NUM_CLASSES = 6
@@ -67,7 +67,7 @@ def load_class_order(default=None, path=CLASS_MAP_PATH):
     """Return the saved class order, or ``default`` if unavailable.
 
     ``default`` lets each script keep its historical class list when no
-    class_map.json has been produced yet (e.g. the 6-class MobileNet default or
+    class_mapping.json has been produced yet (e.g. the 6-class MobileNet default or
     the 4-class Mini-ResNet default).
     """
     data = _read(path)
@@ -118,7 +118,7 @@ def _build(class_order, actions=None):
 
 
 def save_class_map(class_order, actions=None, path=CLASS_MAP_PATH):
-    """Write class_map.json for ``class_order`` (list of names) + optional actions dict."""
+    """Write class_mapping.json for ``class_order`` (list of names) + optional actions dict."""
     payload = _build(class_order, actions)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)

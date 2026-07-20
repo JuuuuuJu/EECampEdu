@@ -40,6 +40,7 @@ from flask import (
     send_file,
     send_from_directory,
 )
+from werkzeug.exceptions import HTTPException
 
 # --------------------------------------------------------------------------- #
 # Paths
@@ -60,7 +61,7 @@ ARTIFACT_REPORTS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "reports"
 
 # Fallback gesture class order when no dataset has been imported yet. Students may
 # upload their own six class folders with ARBITRARY names; the imported order is
-# recorded in model_finetune/dataset/class_map.json and used across the pipeline.
+# recorded in model_finetune/dataset/class_mapping.json and used across the pipeline.
 CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 
 # Shared class-order / action-mapping helper (model_finetune/class_map.py).
@@ -70,8 +71,9 @@ try:
 except Exception:  # pragma: no cover - portal still runs without it
     class_map_lib = None
 
-CLASS_MAP_PATH = DATASET_DIR / "class_map.json"
+CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 NUM_CLASSES = 6
+VALIDATION_RATIO = 0.2  # auto-split fraction when the zip has no validation split
 # Robot-arm output actions a class may be mapped to (matches ESP2 output firmware).
 OUTPUT_ACTIONS = ["up", "down", "left", "right", "clamp", "release"]
 
@@ -565,6 +567,57 @@ def _copy_class_images(class_root, target, class_names):
     return {"target": target, "total_images": total, "per_class": counts}
 
 
+def _list_class_images(src_class):
+    return sorted(
+        (p for p in src_class.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS),
+        key=lambda p: str(p).lower(),
+    )
+
+
+def _safe_dest_name(img, src_class):
+    rel = img.relative_to(src_class)
+    return "__".join(re.sub(r"[^A-Za-z0-9._-]", "_", part) for part in rel.parts)
+
+
+def _copy_class_images_autosplit(class_root, class_names, val_ratio):
+    """Copy six class folders into dataset/train + dataset/validation.
+
+    Deterministic per-class split (~val_ratio to validation, evenly spaced, always
+    leaving at least one training image). Used when the zip has no explicit split.
+    """
+    train_dest = DATASET_DIR / "train"
+    val_dest = DATASET_DIR / "validation"
+    train_counts = {}
+    val_counts = {}
+    for class_name in class_names:
+        src_class = class_root / class_name
+        train_counts[class_name] = 0
+        val_counts[class_name] = 0
+        if not src_class.is_dir():
+            continue
+        images = _list_class_images(src_class)
+        n = len(images)
+        val_target = 0 if n < 2 else max(1, min(n - 1, int(round(n * val_ratio))))
+        step = (n / val_target) if val_target else 0
+        val_idx = {min(n - 1, int(k * step)) for k in range(val_target)} if val_target else set()
+        (train_dest / class_name).mkdir(parents=True, exist_ok=True)
+        (val_dest / class_name).mkdir(parents=True, exist_ok=True)
+        for i, img in enumerate(images):
+            dest_root = val_dest if i in val_idx else train_dest
+            shutil.copy2(img, dest_root / class_name / _safe_dest_name(img, src_class))
+            if i in val_idx:
+                val_counts[class_name] += 1
+            else:
+                train_counts[class_name] += 1
+    if sum(train_counts.values()) + sum(val_counts.values()) == 0:
+        allowed = "/".join(sorted(IMAGE_EXTENSIONS))
+        raise ValueError(f"No supported images ({allowed}) found inside the class folders.")
+    return [
+        {"target": "train", "total_images": sum(train_counts.values()), "per_class": train_counts},
+        {"target": "validation", "total_images": sum(val_counts.values()), "per_class": val_counts},
+    ]
+
+
 def _write_class_map(class_names):
     """Persist the imported class order, preserving prior action mappings if unchanged."""
     class_order = sorted(class_names)  # deterministic index assignment
@@ -586,17 +639,19 @@ def _write_class_map(class_names):
     return payload
 
 
-def _import_dataset(zip_path, target):
-    """Extract an uploaded dataset zip into model_finetune/dataset/<target>.
+def _import_dataset(zip_path):
+    """Extract one uploaded dataset zip (no train/validation choice needed).
 
-    Requires EXACTLY six class folders (arbitrary names). If the zip contains
-    explicit train/validation folders, both splits are imported in one upload and
-    must share the same six class names. Writes model_finetune/dataset/class_map.json
-    with the discovered class order. Returns a summary dict.
+    Auto-detects the layout and requires exactly six class folders (arbitrary
+    names):
+      * If the zip already has train/ AND validation/ splits, both are imported
+        as-is (they must share the same six class names).
+      * Otherwise the six class folders are imported and AUTO-SPLIT into
+        train/validation (VALIDATION_RATIO).
+
+    Writes model_finetune/dataset/class_mapping.json with the discovered class
+    order. Returns a summary dict.
     """
-    if target not in ("train", "validation"):
-        raise ValueError("target must be 'train' or 'validation'")
-
     staging = UPLOAD_DIR / f"stage-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     staging.mkdir(parents=True, exist_ok=True)
     try:
@@ -609,8 +664,8 @@ def _import_dataset(zip_path, target):
             raise ValueError(
                 f"Expected exactly {NUM_CLASSES} class folders, found {found}"
                 + (f" ({', '.join(example)})" if example else "")
-                + ". Zip layout: six folders (any names), each with images, "
-                "optionally under train/ and validation/."
+                + ". Zip layout: six folders with any names, each holding images "
+                "(optionally under train/ and validation/)."
             )
 
         best_by_split = {}
@@ -619,19 +674,24 @@ def _import_dataset(zip_path, target):
             if split and split not in best_by_split:
                 best_by_split[split] = candidate
 
-        imports = []
-        if best_by_split:
-            name_sets = {tuple(sorted(c["class_names"])) for c in best_by_split.values()}
+        if "train" in best_by_split and "validation" in best_by_split:
+            name_sets = {
+                tuple(sorted(best_by_split["train"]["class_names"])),
+                tuple(sorted(best_by_split["validation"]["class_names"])),
+            }
             if len(name_sets) > 1:
                 raise ValueError("train and validation folders have different class names.")
-            class_names = sorted(next(iter(best_by_split.values()))["class_names"])
-            for split in ("train", "validation"):
-                candidate = best_by_split.get(split)
-                if candidate:
-                    imports.append(_copy_class_images(candidate["root"], split, class_names))
+            class_names = sorted(best_by_split["train"]["class_names"])
+            imports = [
+                _copy_class_images(best_by_split["train"]["root"], "train", class_names),
+                _copy_class_images(best_by_split["validation"]["root"], "validation", class_names),
+            ]
+            mode = "provided-split"
         else:
-            class_names = sorted(six_class[0]["class_names"])
-            imports.append(_copy_class_images(six_class[0]["root"], target, class_names))
+            source = best_by_split.get("train") or six_class[0]
+            class_names = sorted(source["class_names"])
+            imports = _copy_class_images_autosplit(source["root"], class_names, VALIDATION_RATIO)
+            mode = "auto-split"
 
         class_map_payload = _write_class_map(class_names)
 
@@ -641,6 +701,7 @@ def _import_dataset(zip_path, target):
             for class_name, count in item["per_class"].items():
                 merged_counts[class_name] = merged_counts.get(class_name, 0) + count
         return {
+            "mode": mode,
             "target": "+".join(item["target"] for item in imports),
             "total_images": total,
             "class_order": class_names,
@@ -724,6 +785,16 @@ def create_app():
     # 2 GiB cap on uploaded dataset zips.
     app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
     jobs = JobManager()
+
+    @app.errorhandler(HTTPException)
+    def _json_error(exc):
+        # Return a clean JSON body ({"error": "..."}) instead of Flask's HTML page,
+        # so the browser shows a readable message rather than raw HTML.
+        return jsonify({"error": exc.description, "status": exc.code}), exc.code
+
+    @app.errorhandler(Exception)
+    def _json_unexpected(exc):  # pragma: no cover - safety net for 500s
+        return jsonify({"error": "Internal server error.", "status": 500}), 500
 
     @app.get("/")
     def index():
@@ -814,13 +885,12 @@ def create_app():
             abort(400, "No file selected.")
         if not upload.filename.lower().endswith(".zip"):
             abort(400, "Dataset must be a .zip file.")
-        target = request.form.get("target", "train")
         UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", upload.filename)
         saved_zip = UPLOAD_DIR / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{safe_name}"
         upload.save(str(saved_zip))
         try:
-            summary = _import_dataset(saved_zip, target)
+            summary = _import_dataset(saved_zip)
         except (ValueError, zipfile.BadZipFile) as exc:
             abort(400, str(exc))
         return jsonify({"ok": True, "zip": saved_zip.name, **summary})

@@ -30,7 +30,7 @@ The portal is a thin, safe launcher around scripts that already live in the repo
 
 Features: upload a dataset `.zip` (exactly six class folders, **any names**),
 map each class to a robot action (`up/down/left/right/clamp/release`, saved to
-`class_map.json`), pick framework + recipe, start training, start quantization,
+`class_mapping.json`), pick framework + recipe, start training, start quantization,
 watch **live job logs**, and list/download generated artifacts (`.keras`,
 `.pth`, `.onnx`, `.tflite`, quantization report `.json`). See the repo README
 section *Arbitrary Class Names & Robot-Action Mapping* for the full flow.
@@ -50,20 +50,24 @@ the gateway port-forwarding table), see [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Dataset zip layout
 
-One folder per gesture class (a single wrapper folder is also accepted):
+Upload **one zip** with exactly **six** class folders — **any names**. The layout
+is auto-detected:
 
 ```
-dataset.zip
-├── up/     *.jpg
-├── ok/     *.jpg
-├── thumb/  *.jpg
-├── palm/   *.jpg
-├── rock/   *.jpg
-└── stone/  *.jpg
+dataset.zip            (auto-split into train/validation)
+├── n1/  *.jpg
+├── n2/  *.jpg
+├── …          (six folders, any names)
+└── n6/  *.jpg
+
+dataset.zip            (kept as-is if it already has splits)
+├── train/{n1..n6}/*.jpg
+└── validation/{n1..n6}/*.jpg
 ```
 
-Uploads are extracted into `model_finetune/dataset/train/` (or `validation/`).
-Class order must stay `up, ok, thumb, palm, rock, stone`.
+The discovered class order is saved to `model_finetune/dataset/class_mapping.json`
+and used by training, quantization, benchmark, and the student PC control app.
+Any six names work — nothing is hardcoded.
 
 ## Safety model
 
@@ -96,7 +100,8 @@ apps/training_portal/runs/
 | GET | `/` | Portal page |
 | GET | `/api/health` | Status + active job |
 | GET | `/api/recipes` | Recipes, quant options, available `.keras` models |
-| POST | `/api/dataset/upload` | Upload+import dataset zip (`file`, `target`) |
+| POST | `/api/dataset/upload` | Upload+import one dataset zip (`file`); auto-detect/auto-split |
+| GET/POST | `/api/class-map` | Read / save class→action mapping (`class_mapping.json`) |
 | POST | `/api/train` | Start training (`recipe`, optional `epochs`/`batch_size`/`alpha`/`export_onnx`) |
 | POST | `/api/quantize` | Start quantization (`model_name`, `quant_format`, `quant_granularity`) |
 | GET | `/api/jobs` | Job history |
@@ -108,5 +113,11 @@ apps/training_portal/runs/
 
 The ESP32-S3 is plugged into the **student PC**, not the AI PC, so flashing is
 done by the companion localhost helper — see
-[`apps/local_flash_helper/`](../local_flash_helper/). The portal's "Flash"
-panel calls that helper on `127.0.0.1:8765`.
+[`apps/local_flash_helper/`](../local_flash_helper/). Students never type an
+address: the **Flash** panel auto-connects to the helper at `127.0.0.1:8765` in
+the background, checks health, lists serial ports, and auto-selects the most
+likely ESP32-S3 port. A plain status line reports the result (e.g. *"Flash
+helper connected · ESP32-S3 detected on …"*). Student flow: pick the TFLite
+model → confirm the detected port → **Flash model** (with a **Refresh ports**
+button). The helper URL / flash offset live under **Advanced** and are hidden by
+default; all errors are shown as clean text.

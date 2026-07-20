@@ -79,8 +79,8 @@ def load_class_names_for_model(model_path):
         except (OSError, json.JSONDecodeError) as exc:
             print(f"[WARN] Failed to read class map from {report_path}: {exc}")
 
-    # Fallback: the student's saved class order (model_finetune/dataset/class_map.json).
-    class_map_path = CNN_DIR.parent / "model_finetune" / "dataset" / "class_map.json"
+    # Fallback: the student's saved class order (model_finetune/dataset/class_mapping.json).
+    class_map_path = CNN_DIR.parent / "model_finetune" / "dataset" / "class_mapping.json"
     try:
         with open(class_map_path, "r", encoding="utf-8") as file:
             saved = json.load(file)
