@@ -37,18 +37,13 @@ section *Arbitrary Class Names & Robot-Action Mapping* for the full flow.
 
 ## Run (on the AI PC)
 
-Plain HTTP (default):
+Recommended — **HTTPS on port 8080** (a secure context, so browser **Web Serial
+flashing** works). Port 8080 serves HTTPS when `--https` is set; there is **one
+port** for both the site and flashing (no separate 8443):
 
 ```bash
 conda activate eecampedu
-python apps/training_portal/server.py --host 0.0.0.0 --port 8080
-```
-
-HTTPS (self-signed) — enables browser **Web Serial flashing**, which requires a
-secure context:
-
-```bash
-python apps/training_portal/server.py --host 0.0.0.0 --port 8443 --https \
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https \
   --cert-host 140.112.194.42        # optional: embed the gateway IP in the cert
 ```
 
@@ -57,11 +52,18 @@ python apps/training_portal/server.py --host 0.0.0.0 --port 8443 --https \
 pass your own `--cert`/`--key`). Because the cert is self-signed, **students see a
 one-time "Your connection is not private" warning** and must click
 **Advanced → Proceed to <site> (unsafe)** once; after that the portal loads and
-Web Serial flashing works. HTTP mode remains fully available.
+Web Serial flashing works.
 
-The AI PC listens on `0.0.0.0:8080` (or `:8443` for HTTPS); the classroom gateway
-forwards each team's public port (8081–8090) to that port. Students then open
-their team URL.
+Plain HTTP (drop `--https`) is still available but does **not** support browser
+flashing:
+
+```bash
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080   # HTTP, no flashing
+```
+
+The AI PC listens on `0.0.0.0:8080`; the classroom gateway forwards each team's
+public port (8081–8090) to that `:8080`. Students then open their team URL over
+**HTTPS**: **`https://140.112.194.42:8081`** (not `http://…`).
 
 For the full classroom network setup (stable IP, run-as-service, firewall, and
 the gateway port-forwarding table), see [`DEPLOYMENT.md`](DEPLOYMENT.md).

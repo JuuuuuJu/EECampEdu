@@ -175,13 +175,16 @@ load. Walk failures back:
 
 ## Important caveats
 
-- **Keep the portal on `http`, not `https`.** The browser page also calls the
-  local flash helper on `http://127.0.0.1:8765`. If the portal is served over
-  HTTPS, browsers block calls to `http://127.0.0.1` (mixed content) and
-  browser-based flashing breaks. Plain `http` through the gateway is supported.
+- **Serve HTTPS on `:8080` for browser flashing.** Run the portal with
+  `--port 8080 --https` (self-signed). Browser Web Serial flashing needs a secure
+  context, so students open **`https://140.112.194.42:8081`** and accept the
+  one-time self-signed certificate warning. Port 8080 carries HTTPS directly —
+  there is no separate HTTPS port. (Plain HTTP still works for training/quantize
+  but not for browser flashing.)
 - **One `:8080` per AI PC.** Every AI PC uses the same internal port; the
-  *gateway* assigns each a distinct public port. Do not give each AI PC a
-  different internal port.
+  *gateway* assigns each a distinct public port and forwards it to that `:8080`
+  (TCP passthrough — the gateway does not terminate TLS). Do not give each AI PC
+  a different internal port.
 - **Wired vs Wi‑Fi.** If an AI PC has both, forward to the **wired** IP (the one
   `ip route get 140.112.194.42` reports as `src`).
 

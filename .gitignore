@@ -30,13 +30,23 @@ model_finetune/models/**/*.h5
 !model_finetune/models/pytorch/mini_resnet_pretrained_weights.pth
 
 # Uploaded / generated datasets (students provide their own six class folders).
-# Keep the dataset README, config templates, and .gitkeep placeholders only.
+# Dataset CONTENT is never committed — only the dataset README and .gitkeep
+# placeholders are tracked. (Dataset files were purged from history; see
+# model_finetune/dataset/README.md.)
 model_finetune/dataset/train/
 model_finetune/dataset/validation/
 model_finetune/dataset/test/
 model_finetune/dataset/sign_mnist/
+model_finetune/dataset/_old/
 model_finetune/new_test_data/
+model_finetune/direction_data/
 model_finetune/dataset/class_mapping.json
+# Belt-and-suspenders: ignore dataset media anywhere under dataset/, keep placeholders.
+model_finetune/dataset/**/*.jpg
+model_finetune/dataset/**/*.jpeg
+model_finetune/dataset/**/*.png
+model_finetune/dataset/**/*.bmp
+model_finetune/dataset/**/*.csv
 !model_finetune/dataset/**/.gitkeep
 
 # Uploaded dataset zips anywhere

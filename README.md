@@ -250,16 +250,17 @@ does not reimplement the ML pipeline.
 
 Start the server on the AI PC:
 
+Recommended (HTTPS on port **8080**, so browser Web Serial flashing works):
+
 ```bash
 conda activate eecampedu
-python apps/training_portal/server.py --host 0.0.0.0 --port 8080          # HTTP
-# or, to enable browser Web Serial flashing (secure context via self-signed cert):
-python apps/training_portal/server.py --host 0.0.0.0 --port 8443 --https  # HTTPS
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https
 ```
 
-`--https` generates a self-signed cert under `runs/certs/` on first run (reused
-after). Students get a one-time browser certificate warning and click
-**Advanced → Proceed** once. HTTP mode stays the default.
+Port **8080 serves HTTPS** when `--https` is set — there is only one port for both
+the site and flashing (no separate 8443). `--https` generates a self-signed cert
+under `runs/certs/` on first run (reused after). Plain HTTP (drop `--https`) is
+still available but does not support browser flashing.
 
 For SSH deployment, run it in the background so the portal stays alive after the
 SSH window closes:
@@ -268,9 +269,14 @@ SSH window closes:
 cd ~/EECampEdu
 conda activate eecampedu
 mkdir -p apps/training_portal/runs
-nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 \
+nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https \
   > apps/training_portal/runs/server.log 2>&1 &
 ```
+
+Students open the **`https://`** team URL (the gateway forwards `8081`→AI-PC `:8080`):
+**`https://140.112.194.42:8081`** — *not* `http://…`. The self-signed cert makes
+the browser show a "Your connection is not private" warning once; students click
+**Advanced → Proceed to 140.112.194.42 (unsafe)** and the portal loads.
 
 Check health, inspect logs, or stop the background server:
 
@@ -307,7 +313,9 @@ The ESP32-S3 is plugged into the **student PC**, and flashing happens **entirely
 in the browser** using the Web Serial API — students install nothing, run no
 Python, and never see `127.0.0.1`. Student flow:
 
-1. Open the team portal (e.g. `http://140.112.194.42:8081`) in **Chrome or Edge**.
+1. Open the team portal over **HTTPS** — e.g. `https://140.112.194.42:8081`
+   (not `http://…`) — in **Chrome or Edge**, and click through the one-time
+   self-signed certificate warning (**Advanced → Proceed**).
 2. Select a `.tflite` model in the **Flash** panel.
 3. Click **Connect ESP32-S3** → the browser shows a port picker; choose the board.
 4. Click **Flash model**. The browser downloads the `.tflite` from the AI PC
@@ -322,17 +330,17 @@ flasher), vendored offline at
 (pinned 0.5.4; provenance + checksum in its README). The AI PC backend only
 lists/serves artifacts and returns flash metadata — no command execution.
 
-> **Secure-context requirement — and the plain-HTTP workaround.** Web Serial is
-> a browser security invariant: `navigator.serial` exists **only** in a *secure
-> context* — HTTPS, or `http://localhost` / `127.0.0.1`. On our classroom origin
-> `http://140.112.194.42:8081` (plain HTTP, non-localhost) it is **not** exposed,
-> so flashing is blocked until one of these is done — no page code can bypass it:
+> **Secure-context requirement.** Web Serial is a browser security invariant:
+> `navigator.serial` exists **only** in a *secure context* — HTTPS, or
+> `http://localhost` / `127.0.0.1`. A plain-HTTP non-localhost origin does **not**
+> expose it, so flashing is blocked there — no page code can bypass it. Pick one:
 >
-> 1. **Serve the portal over HTTPS** (best; zero per-PC setup). The server has a
->    built-in self-signed option — run it with `--https` (see below). Students see
->    a one-time "not private" certificate warning and click **Advanced → Proceed**
->    once; then Web Serial just works. (A real cert / TLS-terminating reverse proxy
->    avoids the warning entirely.)
+> 1. **Serve the portal over HTTPS on port 8080 (recommended, default).** Run it
+>    with `--port 8080 --https` (see above); students open
+>    **`https://140.112.194.42:8081`** and click through the one-time self-signed
+>    certificate warning (**Advanced → Proceed**). Zero per-PC setup; then Web
+>    Serial just works. (A real cert / TLS-terminating reverse proxy avoids the
+>    warning entirely.)
 > 2. **Allowlist this exact origin per PC (works over plain HTTP).** In Chrome/Edge,
 >    open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
 >    (Edge: `edge://flags/...`), add `http://140.112.194.42:8081`, set it
@@ -440,23 +448,25 @@ python -c "import tensorflow as tf; print('tf', tf.__version__)"
 
 ### 3. Start the AI PC training portal
 
+HTTPS on port 8080 (recommended — enables browser flashing):
+
 ```bash
-python apps/training_portal/server.py --host 0.0.0.0 --port 8080
+python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https
 ```
 
 Background form for classroom deployment:
 
 ```bash
 mkdir -p apps/training_portal/runs
-nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 \
+nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https \
   > apps/training_portal/runs/server.log 2>&1 &
 ```
 
-Smoke-check from another shell on the AI PC:
+Smoke-check from another shell on the AI PC (`-k` accepts the self-signed cert):
 
 ```bash
-curl -s http://127.0.0.1:8080/api/health
-curl -s http://127.0.0.1:8080/api/recipes
+curl -sk https://127.0.0.1:8080/api/health
+curl -sk https://127.0.0.1:8080/api/recipes
 ```
 
 Students reach it through the gateway port for their team (`8081`–`8090`). To
