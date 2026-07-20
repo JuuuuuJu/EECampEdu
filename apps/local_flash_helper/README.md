@@ -1,15 +1,22 @@
-# Local Flash Helper (student PC)
+# Local Flash Helper (student PC) — FALLBACK ONLY
+
+> **Not part of the normal student flow.** The portal now flashes the ESP32-S3
+> **from the browser** via the Web Serial API (esptool-js), with no local helper
+> and no `127.0.0.1`. This helper is kept only as a **manual, last-resort
+> fallback** for environments where browser Web Serial is unavailable — e.g. the
+> portal is not served over HTTPS *and* no Chrome/Edge is available. It is run by
+> hand and is **not** wired into the portal UI.
 
 A tiny localhost web service that flashes the ESP32-S3 from the **student's own
 PC**.
 
-## Why it is needed
+## Why it exists (fallback rationale)
 
 The AI PC runs the [training portal](../training_portal/) and produces the
 `.tflite` model, but the ESP32-S3 board is connected to the **student PC's** USB
-port. A web server on the AI PC cannot reach that USB port. This helper runs on
-the student PC, downloads the chosen `.tflite` from the portal, and flashes it
-locally with `esptool`.
+port. When browser Web Serial cannot be used, this helper runs on the student PC,
+downloads the chosen `.tflite` from the portal, and flashes it locally with
+`esptool`.
 
 ## Run (on the student PC, board plugged in)
 

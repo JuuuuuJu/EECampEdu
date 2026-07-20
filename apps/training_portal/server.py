@@ -74,6 +74,9 @@ except Exception:  # pragma: no cover - portal still runs without it
 CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 NUM_CLASSES = 6
 VALIDATION_RATIO = 0.2  # auto-split fraction when the zip has no validation split
+# ESP32-S3 model-partition offset (see firmware/esp/partitions.csv). Served via
+# /api/flash-meta to the browser Web Serial flasher; never shown in the UI.
+FLASH_OFFSET = 0x310000
 # Robot-arm output actions a class may be mapped to (matches ESP2 output firmware).
 OUTPUT_ACTIONS = ["up", "down", "left", "right", "clamp", "release"]
 
@@ -811,6 +814,19 @@ def create_app():
             "time": _now_iso(),
         })
 
+    @app.get("/api/flash-meta")
+    def flash_meta():
+        """Flash metadata for the browser Web Serial flasher.
+
+        The browser flashes the selected .tflite into the ESP32-S3 model
+        partition at this offset; the offset is deliberately not shown in the UI.
+        """
+        return jsonify({
+            "chip": "esp32s3",
+            "offset": hex(FLASH_OFFSET),
+            "offset_int": FLASH_OFFSET,
+        })
+
     @app.get("/api/class-map")
     def get_class_map():
         """Return the current class order + per-class output-action mapping."""
@@ -1022,23 +1038,112 @@ def create_app():
     return app
 
 
+CERT_DIR = RUNS_DIR / "certs"
+
+
+def ensure_self_signed_cert(cert_path, key_path, hosts):
+    """Create a self-signed cert/key pair if missing. Returns (cert_path, key_path).
+
+    For development / classroom use only — it enables HTTPS (a secure context) so
+    the browser exposes the Web Serial API. Students will still see a "not private"
+    warning because the certificate is self-signed; they continue past it once.
+    """
+    cert_path, key_path = Path(cert_path), Path(key_path)
+    if cert_path.exists() and key_path.exists():
+        return cert_path, key_path
+
+    import datetime
+    import ipaddress
+    from cryptography import x509
+    from cryptography.x509.oid import NameOID
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EECampEdu Training Portal")])
+
+    san = []
+    seen = set()
+    for host in hosts:
+        if not host or host in seen:
+            continue
+        seen.add(host)
+        try:
+            san.append(x509.IPAddress(ipaddress.ip_address(host)))
+        except ValueError:
+            san.append(x509.DNSName(host))
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=825))
+        .add_extension(x509.SubjectAlternativeName(san), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    key_path.write_bytes(key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.TraditionalOpenSSL,
+        encryption_algorithm=serialization.NoEncryption(),
+    ))
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    return cert_path, key_path
+
+
 def main():
     parser = argparse.ArgumentParser(description="EECampEdu AI PC training portal web server.")
     parser.add_argument("--host", default="0.0.0.0", help="Bind host. Default: 0.0.0.0")
     parser.add_argument("--port", type=int, default=8080, help="Bind port. Default: 8080")
     parser.add_argument("--debug", action="store_true", help="Enable Flask debug mode.")
+    parser.add_argument("--https", action="store_true",
+                        help="Serve over HTTPS with a self-signed cert (needed for browser Web Serial flashing).")
+    parser.add_argument("--cert", help="TLS certificate PEM path (default: runs/certs/portal-cert.pem, auto-generated).")
+    parser.add_argument("--key", help="TLS private key PEM path (default: runs/certs/portal-key.pem, auto-generated).")
+    parser.add_argument("--cert-host", action="append", default=[],
+                        help="Extra hostname/IP to embed in the generated cert's SAN (repeatable, e.g. the gateway IP).")
     args = parser.parse_args()
 
     for directory in (RUNS_DIR, UPLOAD_DIR, JOBS_DIR):
         directory.mkdir(parents=True, exist_ok=True)
 
+    ssl_context = None
+    scheme = "http"
+    if args.https:
+        cert_path = Path(args.cert) if args.cert else CERT_DIR / "portal-cert.pem"
+        key_path = Path(args.key) if args.key else CERT_DIR / "portal-key.pem"
+        san_hosts = ["127.0.0.1", "localhost"]
+        if args.host and args.host != "0.0.0.0":
+            san_hosts.append(args.host)
+        san_hosts.extend(args.cert_host)
+        try:
+            ensure_self_signed_cert(cert_path, key_path, san_hosts)
+        except ImportError:
+            print("[training_portal] ERROR: --https needs the 'cryptography' package "
+                  "(pip install cryptography) or supply --cert/--key.")
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            print(f"[training_portal] ERROR: could not prepare TLS cert: {exc}")
+            return 1
+        ssl_context = (str(cert_path), str(key_path))
+        scheme = "https"
+
     app = create_app()
     print(f"[training_portal] repo root : {REPO_ROOT}")
     print(f"[training_portal] runtime   : {RUNS_DIR}")
-    print(f"[training_portal] listening : http://{args.host}:{args.port}")
+    if ssl_context:
+        print(f"[training_portal] TLS cert  : {ssl_context[0]} (self-signed; browsers show a one-time warning)")
+    print(f"[training_portal] listening : {scheme}://{args.host}:{args.port}")
     # threaded=True so log polling / uploads are served while a job thread runs.
-    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
+    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True, ssl_context=ssl_context)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
