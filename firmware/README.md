@@ -4,10 +4,11 @@
 
 ```text
 firmware/
-  main_board/  main board ESP-IDF project: ESP32-S3 camera, USB, input, TFLite Micro inference.
-  control_board/ control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
-  pc/          Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
-  external/    Reference code from other teams, kept only as source context.
+  main_board/        full ESP32-S3 project: OV2640 camera, USB CDC/MSC, continuous TFLite Micro inference.
+  deploy_benchmark/  benchmark-only ESP32-S3 project: RuntimeMode::kTestUartFrame for PC benchmark frames.
+  control_board/     control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
+  teaching_output_demo/ standalone ESP32-S3 GPIO/LED/PWM teaching firmware.
+  pc/                Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
 ```
 
 Deploy contract:
@@ -18,9 +19,9 @@ Deploy target is TensorFlow Lite for main board ESP32-S3 TFLite Micro. Full int8
 Servo output target is control board ESP-IDF firmware, controlled by PC serial commands.
 ```
 
-## main board Firmware
+## Main Board Full Firmware
 
-Build main board:
+Build full main board firmware:
 
 ```powershell
 cd firmware\main_board
@@ -35,12 +36,17 @@ No `git clone --recursive` is required. ESP-IDF managed components are declared 
 main board runtime config:
 
 ```text
-firmware/main_board/main/include/model_config.hpp
+firmware/
+  main_board/        full ESP32-S3 project: OV2640 camera, USB CDC/MSC, continuous TFLite Micro inference.
+  deploy_benchmark/  benchmark-only ESP32-S3 project: RuntimeMode::kTestUartFrame for PC benchmark frames.
+  control_board/     control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
+  teaching_output_demo/ standalone ESP32-S3 GPIO/LED/PWM teaching firmware.
+  pc/                Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
 ```
 
 Important settings:
 
-- `RUNTIME_MODE`: selects benchmark, camera, USB, or self-test behavior.
+- `RUNTIME_MODE`: full main board default is `kCameraUsbMsc`; benchmark uses the separate `firmware/deploy_benchmark` project with `kTestUartFrame`.
 - `ENABLE_INPUT_CONTROLS`: enables rotary encoder / button GPIO input on main board.
 - `TENSOR_ARENA_SIZE`: TFLite Micro tensor arena size. Current integration default is `1536 * 1024` bytes so float32 MobileNetV2 can allocate tensors from PSRAM.
 - `MODEL_PARTITION_LABEL`: flash partition containing the selected TFLite model.
@@ -52,6 +58,18 @@ main board does not drive robotic-arm servo GPIO. It only prints inference resul
 RESULT,<class>,<model_us>,<preprocess_us>,<device_us>,<score0>,<score1>,...
 ```
 
+
+## Deploy Benchmark Firmware
+
+Build benchmark-only firmware before using the Deploy page benchmark flow:
+
+```powershell
+cd firmware\deploy_benchmark
+idf.py set-target esp32s3
+idf.py build
+```
+
+This project is copied from `main_board` but keeps `RuntimeMode::kTestUartFrame` fixed for UART/CDC image-frame benchmark tests. It is intentionally separate from the full camera/USB firmware.
 ## Control Board Output Firmware
 
 Build control board:
@@ -135,8 +153,12 @@ Supported deploy formats:
 Generated files:
 
 ```text
-firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite
-firmware/pc/artifacts/reports/MobileNetV2_finetuned_int8_per-channel_quantization_report.json
+firmware/
+  main_board/        full ESP32-S3 project: OV2640 camera, USB CDC/MSC, continuous TFLite Micro inference.
+  deploy_benchmark/  benchmark-only ESP32-S3 project: RuntimeMode::kTestUartFrame for PC benchmark frames.
+  control_board/     control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
+  teaching_output_demo/ standalone ESP32-S3 GPIO/LED/PWM teaching firmware.
+  pc/                Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
 ```
 
 Flash only main board model partition:
@@ -229,4 +251,3 @@ Current flash-storage output:
 ```
 
 `latest.bmp` is intentionally not generated in the firmware hot path. Raw payload and metadata are enough for firmware tests, and avoiding BMP conversion keeps storage writes deterministic.
-

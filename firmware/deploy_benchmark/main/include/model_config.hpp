@@ -15,7 +15,7 @@ enum class RuntimeMode {
 
 // Integration default: run OV2640 + USB CDC/MSC so the ImGui app can show live preview.
 // Switch to kTestUartFrame for deploy benchmark without OV2640.
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
+constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kTestUartFrame;
 
 constexpr int INPUT_HEIGHT = 96;
 constexpr int INPUT_WIDTH = 96;
@@ -65,3 +65,7 @@ constexpr bool CAMERA_USB_KEEP_SEQUENCE = true;
 constexpr int CAMERA_USB_CAPTURE_INTERVAL_MS = 250;
 constexpr int CAMERA_USB_DEFAULT_PIXEL_FORMAT = 3; // 0=grayscale, 1=RGB565, 2=YUV422, 3=JPEG
 constexpr int CAMERA_USB_DEFAULT_FRAME_SIZE = 3;   // 0=96x96, 1=QQVGA, 2=QVGA, 3=VGA
+
+
+
+

@@ -60,7 +60,10 @@
   <p>Topic routes: <code>/model_finetune</code> · <code>/deploy</code> · <code>/output</code> · <code>/firmware</code>.
      <span style="margin-left:14px;color:var(--muted)">Team: <b>{{ team }}</b></span>
      <form method="post" action="/logout" style="display:inline;margin-left:10px"><button class="secondary" style="margin:0;padding:3px 8px">Logout</button></form>
-     <label style="display:inline;margin-left:14px;color:var(--muted)"><input type="checkbox" id="devMode" style="width:auto"> developer mode (show flash offsets)</label></p>
+     <label style="display:inline;margin-left:14px;color:var(--muted)"><input type="checkbox" id="devMode" style="width:auto"> developer mode (show flash offsets)</label>
+     <label style="display:inline;margin-left:14px;color:var(--muted)">Flash sync:
+       <select id="bootMode" style="width:auto;padding:2px 6px;margin-left:4px"><option value="auto">auto + manual retry</option><option value="manual">manual BOOT only</option></select>
+     </label></p>
 </header>
 
 <nav class="tabs" id="tabs">
@@ -113,7 +116,20 @@
   <!-- ==================== MODEL DEMO ==================== -->
   <section class="pane" id="pane-model">
     <div class="card">
-      <h2>Model class — capture → train → preview</h2>
+      <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
+      <p class="note">Use this for the model class OV2640 preview/capture workflow. It should be built from <code>firmware/main_board</code> with camera stream mode, separate from deploy benchmark firmware.</p>
+      <div id="modelFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <div class="row">
+        <div><button id="modelFwFlashBtn" disabled>Connect &amp; flash model firmware</button></div>
+        <div><button class="secondary" id="modelFwRefreshBtn">Re-check build</button></div>
+      </div>
+      <div class="msg" id="modelFwStatus"></div>
+      <label style="margin-top:12px">Flash log</label>
+      <pre class="log" id="modelFwLog">Flash this before using OV2640 preview for model class.</pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">B.</span>Model class — capture → train → preview</h2>
       <p class="note">Training runs on the AI PC. OV2640 preview uses the browser to borrow the ESP32-S3 serial port, the same idea as browser flashing.</p>
       <div class="row compact">
         <div><button id="modelPreviewBtn">Start AI-PC webcam preview</button></div>
@@ -126,6 +142,7 @@
         <img id="cameraPreview" alt="OV2640 preview" style="max-width:100%;max-height:420px;object-fit:contain;display:none" />
         <div class="note" id="cameraPlaceholder">No OV2640 frame yet.</div>
       </div>
+      <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
       <label style="margin-top:12px">Camera / model messages</label>
       <pre class="log" id="cameraLog">Connect OV2640 preview after the main board firmware is flashed.</pre>
       <label style="margin-top:12px">Model file (ONNX) for preview</label>
@@ -137,14 +154,26 @@
   <section class="pane" id="pane-deploy">
     <div class="card">
       <h2>Deploy class — hardware</h2>
-      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: (optionally) train → quantize →
-         flash the model partition → review results. Flashing the <b>full firmware</b> is on the
-         “Main board firmware” tab.</p>
+      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: flash benchmark firmware → quantize →
+         flash the model partition → run benchmark and review latency/throughput/accuracy.</p>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">A.</span>Flash deploy benchmark firmware</h2>
+      <p class="note">Uses <code>RuntimeMode::kTestUartFrame</code> so the benchmark script can send frames over UART/CDC and collect latency/results. This is separate from model finetune camera firmware.</p>
+      <div id="benchFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <div class="row">
+        <div><button id="benchFwFlashBtn" disabled>Connect &amp; flash benchmark firmware</button></div>
+        <div><button class="secondary" id="benchFwRefreshBtn">Re-check build</button></div>
+      </div>
+      <div class="msg" id="benchFwStatus"></div>
+      <label style="margin-top:12px">Flash log</label>
+      <pre class="log" id="benchFwLog">Flash this before running Deploy benchmark.</pre>
     </div>
 
     <!-- Dataset + training (prep) -->
     <div class="card">
-      <h2><span class="step">A.</span>Dataset &amp; train (optional prep)</h2>
+      <h2><span class="step">B.</span>Dataset &amp; train (optional prep)</h2>
       <label>Dataset zip (six class folders, any names)</label>
       <input type="file" id="datasetFile" accept=".zip" />
       <button id="uploadBtn">Upload &amp; import</button>
@@ -169,7 +198,7 @@
 
     <!-- Quantize -->
     <div class="card">
-      <h2><span class="step">B.</span>Quantize → TFLite</h2>
+      <h2><span class="step">C.</span>Quantize → TFLite</h2>
       <label>Source .keras model</label>
       <select id="quantModel"></select>
       <div class="row compact">
@@ -190,7 +219,7 @@
 
     <!-- Flash model (Web Serial) -->
     <div class="card">
-      <h2><span class="step">C.</span>Flash model partition (.tflite)</h2>
+      <h2><span class="step">D.</span>Flash model partition (.tflite)</h2>
       <p class="note">Flashes only the model into its partition — the main board firmware is untouched.
          Chrome/Edge; the browser asks you to pick the serial port. No offsets shown.</p>
       <label>TFLite model</label>
@@ -215,7 +244,7 @@
 
     <!-- Results / benchmark -->
     <div class="card">
-      <h2><span class="step">D.</span>Results &amp; benchmark</h2>
+      <h2><span class="step">E.</span>Results &amp; benchmark</h2>
       <p class="note">PC-side quantization results (computed on the AI PC during quantization):</p>
       <table><thead><tr><th>Model</th><th>Format</th><th>TFLite accuracy</th><th>Samples</th><th>Output variation</th></tr></thead>
         <tbody id="reportsBody"><tr><td colspan="5" class="note">No quantization reports yet.</td></tr></tbody></table>
@@ -254,6 +283,23 @@
       <label style="margin-top:12px">Flash log</label>
       <pre class="log" id="mainFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
     </div>
+
+    <div class="card">
+      <h2>Full firmware live preview + inference</h2>
+      <p class="note">After flashing the full main board firmware, connect the same ESP32-S3 serial port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
+      <div class="row compact">
+        <div><button class="secondary" id="fullCameraConnectBtn">Connect camera stream</button></div>
+        <div><button class="secondary" id="fullCameraStopBtn" disabled>Stop stream</button></div>
+      </div>
+      <div class="msg" id="fullCameraMsg"></div>
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <img id="fullCameraPreview" alt="Full firmware OV2640 preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none" />
+        <div class="note" id="fullCameraPlaceholder">No OV2640 frame yet.</div>
+      </div>
+      <div class="big" id="fullGestureResult" style="margin-top:12px">Prediction: --</div>
+      <label style="margin-top:12px">Camera / inference messages</label>
+      <pre class="log tall" id="fullCameraLog">Connect after full main board firmware is running.</pre>
+    </div>
   </section>
 
   <!-- ==================== SHARED (deploy jobs) ==================== -->
@@ -279,6 +325,8 @@ const INITIAL_TOPIC = "{{ topic }}";
 const TEAM = "{{ team }}";
 let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTimer = null, benchJobId = null;
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
+let CLASS_LABELS = [];
+let CLASS_ACTION_BY_NAME = {};
 
 function $(id){ return document.getElementById(id); }
 function setText(t,x){ const el=(typeof t==="string")?$(t):t; if(el) el.textContent=x; }
@@ -304,8 +352,8 @@ function activateTopic(topic, push){
   if(push && PATH_BY_TOPIC[topic] && window.location.pathname !== PATH_BY_TOPIC[topic]) history.pushState({topic}, "", PATH_BY_TOPIC[topic]);
   if(topic==="mainfw") loadFirmware("main_board", MAINFW);
   if(topic==="output") loadFirmware("output_demo", OUTFW);
-  if(topic==="model") refreshModelDemo();
-  if(topic==="deploy"){ refreshReports(); loadBenchOptions(); }
+  if(topic==="model"){ loadFirmware("model_finetune", MODELFW); refreshModelDemo(); }
+  if(topic==="deploy"){ loadFirmware("deploy_benchmark", BENCHFW); refreshReports(); loadBenchOptions(); }
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -324,13 +372,15 @@ async function init(){
   initFlashPanel();
   loadFirmware("output_demo", OUTFW);   // default tab
   loadBenchOptions();
-  $("devMode").onchange = () => { renderFwImages(OUTFW); renderFwImages(MAINFW); };
+  $("devMode").onchange = () => { renderFwImages(OUTFW); renderFwImages(MODELFW); renderFwImages(BENCHFW); renderFwImages(MAINFW); };
 }
 
 // ---------- class map ----------
 async function refreshClassMap(){
   try {
     const m = await api("/api/class-map"); OUTPUT_ACTIONS = m.output_actions || OUTPUT_ACTIONS;
+    CLASS_LABELS = (m.classes||[]).slice().sort((a,b)=>a.index-b.index).map(c=>c.name);
+    CLASS_ACTION_BY_NAME = Object.fromEntries((m.classes||[]).map(c=>[c.name, c.action||""]));
     const host = $("classMapRows"); host.innerHTML = "";
     if(m.default){ host.innerHTML = '<div class="note">Import a dataset to map classes → robot actions.</div>'; return; }
     (m.classes||[]).forEach(c => {
@@ -524,8 +574,10 @@ $("modelPreviewBtn").onclick = async () => {
   try { const job = await api("/api/model/preview", {method:"POST"}); currentJobId = job.id; attachLog(job.id); refreshJobs(); setMsg($("modelMsg"), "Preview job started on the AI PC. Watch Live job log.", "ok"); }
   catch(e){ setMsg($("modelMsg"), "Preview failed: "+e.message, "bad"); }
 };
-$("cameraConnectBtn").onclick = async () => connectCameraPreview();
+$("cameraConnectBtn").onclick = async () => connectCameraPreview(MODEL_CAMERA_UI);
 $("cameraStopBtn").onclick = async () => { await releaseCamera("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
+$("fullCameraConnectBtn").onclick = async () => connectCameraPreview(FULL_CAMERA_UI);
+$("fullCameraStopBtn").onclick = async () => { await releaseCamera("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
 function copyText(text, msgEl, okMsg){
   const done=()=>setMsg(msgEl, okMsg, "ok");
   const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"Copy failed — select manually.","bad"); } document.body.removeChild(ta); };
@@ -557,10 +609,15 @@ let esp = { port:null, transport:null, loader:null, chip:null, meta:null };
 // Raw-serial control connection (Output demo LED/PWM). Also released centrally.
 let ctrlPort=null, ctrlWriter=null, ctrlReader=null;
 let camPort=null, camWriter=null, camReader=null, camStop=false, camObjectUrl=null;
+const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:"cameraStopBtn" };
+const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
+let camUi = MODEL_CAMERA_UI;
 
-// Firmware flash targets (used by Output demo + Main board tabs).
-const OUTFW  = { target:"output_demo", meta:null, imagesEl:"outFwImages",  statusEl:"outFwStatus",  logEl:"outFwLog",  flashBtn:"outFwFlashBtn",  refreshBtn:"outFwRefreshBtn" };
-const MAINFW = { target:"main_board",  meta:null, imagesEl:"mainFwImages", statusEl:"mainFwStatus", logEl:"mainFwLog", flashBtn:"mainFwFlashBtn", refreshBtn:"mainFwRefreshBtn" };
+// Firmware flash targets (one class day / runtime mode per target).
+const OUTFW   = { target:"output_demo",      meta:null, imagesEl:"outFwImages",    statusEl:"outFwStatus",    logEl:"outFwLog",    flashBtn:"outFwFlashBtn",    refreshBtn:"outFwRefreshBtn" };
+const MODELFW = { target:"model_finetune",   meta:null, imagesEl:"modelFwImages",  statusEl:"modelFwStatus",  logEl:"modelFwLog",  flashBtn:"modelFwFlashBtn",  refreshBtn:"modelFwRefreshBtn" };
+const BENCHFW = { target:"deploy_benchmark", meta:null, imagesEl:"benchFwImages",  statusEl:"benchFwStatus",  logEl:"benchFwLog",  flashBtn:"benchFwFlashBtn",  refreshBtn:"benchFwRefreshBtn" };
+const MAINFW  = { target:"main_board",       meta:null, imagesEl:"mainFwImages",   statusEl:"mainFwStatus",   logEl:"mainFwLog",   flashBtn:"mainFwFlashBtn",   refreshBtn:"mainFwRefreshBtn" };
 
 async function releaseCamera(logId){
   if(!camPort && !camReader && !camWriter){ return; }
@@ -572,6 +629,8 @@ async function releaseCamera(logId){
   camPort=null; camWriter=null; camReader=null;
   if($("cameraStopBtn")) $("cameraStopBtn").disabled = true;
   if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !webSerialSupport().ok;
+  if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = true;
+  if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !webSerialSupport().ok;
   log("Camera serial port released.\n");
 }
 // Force-release any leftover stream locks on a raw SerialPort, then close it.
@@ -587,7 +646,7 @@ async function releasePortLocks(port){
 // without a page refresh. Never throws.
 async function releaseSerial(logId){
   const log = (s)=>{ if(logId) appendLog(logId, s); };
-  if(!esp.transport && !esp.loader && !esp.port && !ctrlPort){ return; }
+  if(!esp.transport && !esp.loader && !esp.port && !ctrlPort && !camPort){ return; }
   log("Releasing serial port...\n");
   // 1) esptool-js post-flash reset (hard_reset) so the board reboots into the app.
   try {
@@ -621,32 +680,57 @@ function syncFlashButtons(){
   if($("connectBtn")) $("connectBtn").disabled = !sup;
   if($("flashBtn")) $("flashBtn").disabled = true;   // model: must connect first
   if($("outFwFlashBtn")) $("outFwFlashBtn").disabled = !(sup && OUTFW.meta && OUTFW.meta.available);
+  if($("modelFwFlashBtn")) $("modelFwFlashBtn").disabled = !(sup && MODELFW.meta && MODELFW.meta.available);
+  if($("benchFwFlashBtn")) $("benchFwFlashBtn").disabled = !(sup && BENCHFW.meta && BENCHFW.meta.available);
   if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
   ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
   if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
   if($("cameraStopBtn")) $("cameraStopBtn").disabled = !camPort;
+  if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !sup;
+  if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !camPort;
 }
 
-// Shared connect + bootloader sync with a manual-boot retry (no_reset).
-// Cleans up first (req 4), requests the port (user gesture), then syncs.
+// Shared connect + bootloader sync. Auto mode tries USB reset first, then fully
+// reopens the serial port and retries in manual BOOT mode. Manual mode skips
+// reset and only syncs with a board already held in ROM bootloader.
 async function espConnect({ terminal, statusEl, logId }){
   const { ESPLoader, Transport } = await import(ESPTOOL_JS);
   await releaseSerial(logId);                                   // free any prior flow
   setMsg($(statusEl), "Opening serial chooser…", "warn");
   const port = await navigator.serial.requestPort();           // user gesture
-  esp.port = port;
-  esp.transport = new Transport(port, true);
-  esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal });
-  setMsg($(statusEl), "Connecting — entering bootloader…", "warn");
+
+  async function trySync(resetMode, label){
+    appendLog(logId, `\n[portal] ${label}: opening port and syncing (${resetMode})...\n`);
+    esp.port = port;
+    esp.transport = new Transport(port, true);
+    esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal });
+    setMsg($(statusEl), `${label} — entering bootloader…`, "warn");
+    return await withTimeout(esp.loader.main(resetMode), 18000, `${label} timed out`);
+  }
+
+  const manualOnly = $("bootMode") && $("bootMode").value === "manual";
+  if(manualOnly){
+    appendLog(logId, "\n[portal] Manual mode: hold BOOT, tap RESET/EN once, release BOOT after ~1s, then wait.\n");
+    esp.chip = await trySync("no_reset", "Manual BOOT sync");
+    return esp.chip;
+  }
+
   try {
-    esp.chip = await withTimeout(esp.loader.main("default_reset"), 20000, "auto bootloader entry timed out");
+    esp.chip = await trySync("default_reset", "Auto reset sync");
   } catch(e){
-    // Manual bootloader retry: ask the student to force download mode, then re-sync.
-    appendLog(logId, "\n[portal] Auto reset failed. Hold BOOT, tap RESET/EN, release BOOT after ~1s…\n");
-    setMsg($(statusEl), "Hold BOOT, tap RESET/EN, release after ~1s — retrying…", "warn");
-    await new Promise(r=>setTimeout(r, 2500));
-    esp.chip = await withTimeout(esp.loader.main("no_reset"), 20000, serialTroubleshoot());
+    appendLog(logId, `\n[portal] Auto reset failed: ${e.message||e}\n`);
+    appendLog(logId, "[portal] Retrying with manual BOOT. Hold BOOT, tap RESET/EN, release BOOT after ~1s.\n");
+    setMsg($(statusEl), "Auto reset failed. Prepare manual BOOT retry…", "warn");
+    try { if(esp.transport && typeof esp.transport.disconnect === "function") await esp.transport.disconnect(); } catch(_){}
+    try { await releasePortLocks(esp.port); } catch(_){}
+    esp.transport=null; esp.loader=null; esp.chip=null;
+    await new Promise(r=>setTimeout(r, 1500));
+    try {
+      esp.chip = await trySync("no_reset", "Manual BOOT retry");
+    } catch(e2){
+      throw new Error(`${serialTroubleshoot()} Last error: ${e2.message||e2}`);
+    }
   }
   return esp.chip;
 }
@@ -656,10 +740,23 @@ async function espConnect({ terminal, statusEl, logId }){
 async function cameraWrite(cmd){
   if(!camWriter) throw new Error("camera port not connected");
   await camWriter.write(new TextEncoder().encode(cmd + "\n"));
-  appendLog("cameraLog", "> " + cmd + "\n");
+  appendLog(camUi.logId, "> " + cmd + "\n");
+}
+function classNameForIndex(idx){ return CLASS_LABELS[idx] || `class ${idx}`; }
+function updateGestureResult(line){
+  const parts = line.split(",");
+  if(parts.length < 2) return;
+  const pred = Number(parts[1]);
+  if(!Number.isFinite(pred)) return;
+  const name = classNameForIndex(pred);
+  const action = CLASS_ACTION_BY_NAME[name] || "";
+  const modelMs = parts.length > 2 && !Number.isNaN(Number(parts[2])) ? (Number(parts[2])/1000).toFixed(1) : "--";
+  const text = `Prediction: ${pred} (${name})${action?` → ${action}`:""} · model ${modelMs} ms`;
+  setText(camUi.resultId, text);
+  setMsg(camUi.msgId, text, "ok");
 }
 function renderCameraFrame(base64Data, meta){
-  const img=$("cameraPreview"), ph=$("cameraPlaceholder");
+  const img=$(camUi.imgId), ph=$(camUi.placeholderId);
   try {
     const raw = atob(base64Data.replace(/\s+/g,""));
     const bytes = new Uint8Array(raw.length);
@@ -670,8 +767,8 @@ function renderCameraFrame(base64Data, meta){
     img.src = camObjectUrl;
     img.style.display="block";
     if(ph) ph.style.display="none";
-    setMsg($("modelMsg"), `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes`, "ok");
-  } catch(e){ appendLog("cameraLog", "[camera] frame decode failed: "+(e.message||e)+"\n"); }
+    setMsg(camUi.msgId, `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes`, "ok");
+  } catch(e){ appendLog(camUi.logId, "[camera] frame decode failed: "+(e.message||e)+"\n"); }
 }
 async function cameraReadLoop(){
   const decoder = new TextDecoder();
@@ -697,36 +794,41 @@ async function cameraReadLoop(){
           frameLines=[];
         } else if(receiving){
           frameLines.push(line);
-        } else if(line.startsWith("RESULT,") || /READY|ERROR|CAMERA|TFLM|INPUT|CROP/i.test(line)){
-          appendLog("cameraLog", line + "\n");
+        } else if(line.startsWith("RESULT,")){
+          appendLog(camUi.logId, line + "\n");
+          updateGestureResult(line);
+        } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP/i.test(line)){
+          appendLog(camUi.logId, line + "\n");
         }
       }
     }
-  } catch(e){ if(!camStop) appendLog("cameraLog", "[camera] read stopped: "+(e.message||e)+"\n"); }
+  } catch(e){ if(!camStop) appendLog(camUi.logId, "[camera] read stopped: "+(e.message||e)+"\n"); }
 }
-async function connectCameraPreview(){
+async function connectCameraPreview(ui=MODEL_CAMERA_UI){
+  camUi = ui;
   const sup=webSerialSupport();
-  if(!sup.ok){ setMsg($("modelMsg"), "OV2640 preview needs Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
-  await releaseSerial("cameraLog");
-  $("cameraLog").textContent="";
-  setMsg($("modelMsg"), "Opening serial chooser for OV2640 preview...", "warn");
+  if(!sup.ok){ setMsg($(camUi.msgId), "OV2640 preview needs Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
+  await releaseSerial(camUi.logId);
+  $(camUi.logId).textContent="";
+  setText(camUi.resultId, "Prediction: --");
+  setMsg($(camUi.msgId), "Opening serial chooser for OV2640 preview...", "warn");
   try {
     camStop=false;
     camPort = await navigator.serial.requestPort();
     await camPort.open({baudRate:115200, bufferSize:1048576});
     camWriter = camPort.writable.getWriter();
     camReader = camPort.readable.getReader();
-    $("cameraConnectBtn").disabled=true;
-    $("cameraStopBtn").disabled=false;
+    if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
+    if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
     cameraReadLoop();
     await cameraWrite("f3"); await new Promise(r=>setTimeout(r,250));
     await cameraWrite("s1"); await new Promise(r=>setTimeout(r,250));
     await cameraWrite("d1");
-    setMsg($("modelMsg"), "OV2640 preview connected. Waiting for JPEG frames...", "ok");
+    setMsg($(camUi.msgId), "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
   } catch(e){
     const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "Port selection cancelled." : "OV2640 connect failed: "+(e.message||e);
-    setMsg($("modelMsg"), msg, "bad");
-    await releaseCamera("cameraLog");
+    setMsg($(camUi.msgId), msg, "bad");
+    await releaseCamera(camUi.logId);
   }
 }
 // ---------- FLASH MODEL (.tflite) ----------
@@ -819,8 +921,12 @@ function makeFwFlash(ids){
   };
 }
 $("outFwFlashBtn").onclick = makeFwFlash(OUTFW);
+$("modelFwFlashBtn").onclick = makeFwFlash(MODELFW);
+$("benchFwFlashBtn").onclick = makeFwFlash(BENCHFW);
 $("mainFwFlashBtn").onclick = makeFwFlash(MAINFW);
 $("outFwRefreshBtn").onclick = () => loadFirmware("output_demo", OUTFW);
+$("modelFwRefreshBtn").onclick = () => loadFirmware("model_finetune", MODELFW);
+$("benchFwRefreshBtn").onclick = () => loadFirmware("deploy_benchmark", BENCHFW);
 $("mainFwRefreshBtn").onclick = () => loadFirmware("main_board", MAINFW);
 
 // ---------- OUTPUT DEMO: raw-serial LED / PWM control ----------

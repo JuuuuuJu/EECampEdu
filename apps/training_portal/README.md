@@ -134,7 +134,7 @@ apps/training_portal/runs/
 
 ## Pages
 
-The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`.
+The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`. Firmware targets are separated by class: `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
 Train/Quantize run as background jobs (shared job log / artifacts / history
 panels); the flash and OV2640 preview flows run in the browser via Web Serial.
 
@@ -148,13 +148,11 @@ via the Web Serial API — no install, no Python, no `127.0.0.1`. Students use
   model → **Connect ESP32-S3** → **Flash model**. The page downloads the artifact
   through `/api/artifacts/download` and flashes it; the model-partition offset
   comes from `/api/flash-meta` and is not shown.
-- **Flash firmware** — updates the full main board firmware (bootloader +
-  partition table + app). Reads the ESP-IDF build via `/api/firmware/meta`
-  (parsed from `firmware/main_board/build/flasher_args.json`) and flashes each
-  image at its ESP-IDF-generated offset. If the firmware is not built, it shows
-  *"Main board firmware build artifacts were not found. Please build
-  firmware/main_board first."* Offsets are hidden unless **developer mode**
-  (header checkbox) is on.
+- **Flash firmware** — updates one ESP-IDF firmware target at a time. The portal reads the selected target's `build/flasher_args.json` via `/api/firmware/meta`, then flashes bootloader + partition table + app at ESP-IDF-generated offsets. Current targets:
+  - `/model_finetune` and `/firmware`: `firmware/main_board/build` (`RuntimeMode::kCameraUsbMsc`, full camera/USB/continuous inference).
+  - `/deploy`: `firmware/deploy_benchmark/build` (`RuntimeMode::kTestUartFrame`, benchmark-only frame input).
+  - `/output`: `firmware/teaching_output_demo/build` (GPIO/LED/PWM class firmware).
+  If a target is not built, that page tells the instructor which firmware folder to build first. Offsets are hidden unless **developer mode** (header checkbox) is on.
 
 Both use the vendored [esptool-js](static/vendor/esptool-js/) (offline, pinned);
 each page section has its own status line + flash log (connect → bootloader → erase →

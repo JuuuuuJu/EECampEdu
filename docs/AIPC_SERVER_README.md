@@ -47,10 +47,10 @@ Restart after changing Python, HTML, CSS, JS, README-served text, env vars, or c
 
 ## Portal Pages
 
-- `/model_finetune`: dataset upload, class-to-action mapping, TensorFlow/PyTorch training, and browser-side OV2640 preview. OV2640 is like flashing: the browser borrows the serial port from the student PC; the AI PC server does not directly own that camera USB port.
-- `/deploy`: quantization, model flashing, AI-PC-side benchmark.
+- `/model_finetune`: dataset upload, class-to-action mapping, TensorFlow/PyTorch training, full/main-board firmware flash, and browser-side OV2640 preview + live prediction. OV2640 is like flashing: the browser borrows the serial port from the student PC; the AI PC server does not directly own that camera USB port.
+- `/deploy`: deploy benchmark firmware flash, quantization, model flashing, AI-PC-side benchmark.
 - `/output`: output teaching firmware flash + LED/PWM controls.
-- `/firmware`: full main board firmware flash.
+- `/firmware`: full main board firmware flash + live OV2640 preview/inference.
 
 The UI is a top menu with routes, not a terminal tutorial.
 
@@ -59,11 +59,15 @@ The UI is a top menu with routes, not a terminal tutorial.
 The portal reads ESP-IDF `build/flasher_args.json`. If missing, the page tells you to build first.
 
 ```bash
-cd firmware/main_board
+cd firmware/main_board          # full camera + USB + continuous inference firmware
 idf.py set-target esp32s3
 idf.py build
 
-cd ../teaching_output_demo
+cd ../deploy_benchmark       # benchmark-only TEST_MODE_UART_FRAME firmware
+idf.py set-target esp32s3
+idf.py build
+
+cd ../teaching_output_demo   # output class GPIO/PWM firmware
 idf.py set-target esp32s3
 idf.py build
 ```

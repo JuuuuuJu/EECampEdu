@@ -68,10 +68,20 @@ FIRMWARE_FLASHER_ARGS = FIRMWARE_BUILD_DIR / "flasher_args.json"
 # Flashable firmware targets (class day -> ESP-IDF build dir). Each is flashed with
 # its own ESP-IDF flasher_args.json so offsets are never hardcoded.
 FIRMWARE_TARGETS = {
-    "main_board": {
-        "label": "Main board (camera + inference) firmware",
+    "model_finetune": {
+        "label": "Model finetune / full camera firmware",
         "build_dir": REPO_ROOT / "firmware" / "main_board" / "build",
-        "build_hint": "firmware/main_board",
+        "build_hint": "firmware/main_board with RuntimeMode::kCameraUsbMsc",
+    },
+    "deploy_benchmark": {
+        "label": "Deploy benchmark firmware",
+        "build_dir": REPO_ROOT / "firmware" / "deploy_benchmark" / "build",
+        "build_hint": "firmware/deploy_benchmark with RuntimeMode::kTestUartFrame",
+    },
+    "main_board": {
+        "label": "Main board full integration firmware",
+        "build_dir": REPO_ROOT / "firmware" / "main_board" / "build",
+        "build_hint": "firmware/main_board with RuntimeMode::kCameraUsbMsc",
     },
     "output_demo": {
         "label": "Output demo (GPIO/LED/PWM) firmware",
@@ -1009,7 +1019,7 @@ def create_app():
     def firmware_meta():
         """Firmware flash plan for a target, parsed from ESP-IDF's flasher_args.json.
 
-        ?target=main_board (default) | output_demo. Returns the images (bootloader /
+        ?target=model_finetune | deploy_benchmark | main_board (default) | output_demo. Returns the images (bootloader /
         partition-table / app) with ESP-IDF-generated offsets + flash settings, so
         the browser flasher never hardcodes offsets. If the target is not built,
         returns available=false with a student-friendly message.
