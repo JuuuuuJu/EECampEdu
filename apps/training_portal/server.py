@@ -56,6 +56,11 @@ MODEL_FINETUNE_DIR = REPO_ROOT / "model_finetune"
 DATASET_DIR = MODEL_FINETUNE_DIR / "dataset"
 TF_MODELS_DIR = MODEL_FINETUNE_DIR / "models" / "tf"
 PYTORCH_MODELS_DIR = MODEL_FINETUNE_DIR / "models" / "pytorch"
+# ESP32-S3 main board firmware (ESP-IDF project). Firmware flashing reads the
+# ESP-IDF-generated build metadata (flasher_args.json) rather than hardcoding offsets.
+MAIN_BOARD_DIR = REPO_ROOT / "firmware" / "main_board"
+FIRMWARE_BUILD_DIR = MAIN_BOARD_DIR / "build"
+FIRMWARE_FLASHER_ARGS = FIRMWARE_BUILD_DIR / "flasher_args.json"
 ARTIFACT_MODELS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "models"
 ARTIFACT_REPORTS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "reports"
 
@@ -826,6 +831,79 @@ def create_app():
             "offset": hex(FLASH_OFFSET),
             "offset_int": FLASH_OFFSET,
         })
+
+    @app.get("/api/firmware/meta")
+    def firmware_meta():
+        """Main board firmware flash plan, parsed from ESP-IDF's flasher_args.json.
+
+        Returns the list of images (bootloader / partition-table / app) with their
+        offsets and sizes, plus flash settings — so the browser flasher uses the
+        ESP-IDF-generated offsets instead of hardcoded values. If the firmware has
+        not been built, returns available=false with a student-friendly message.
+        """
+        if not FIRMWARE_FLASHER_ARGS.is_file():
+            return jsonify({
+                "available": False,
+                "message": "Main board firmware build artifacts were not found. "
+                           "Please build firmware/main_board first.",
+            })
+        try:
+            data = json.loads(FIRMWARE_FLASHER_ARGS.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            return jsonify({"available": False,
+                            "message": f"Could not read firmware build metadata: {exc}"})
+
+        settings = data.get("flash_settings", {}) or {}
+        chip = (data.get("extra_esptool_args", {}) or {}).get("chip", "esp32s3")
+        images = []
+        missing = []
+        for offset, rel in sorted((data.get("flash_files") or {}).items(),
+                                  key=lambda kv: int(kv[0], 16)):
+            img = (FIRMWARE_BUILD_DIR / rel).resolve()
+            try:
+                img.relative_to(FIRMWARE_BUILD_DIR.resolve())
+            except ValueError:
+                continue  # never serve outside the build dir
+            if not img.is_file():
+                missing.append(rel)
+                continue
+            images.append({
+                "name": Path(rel).name,
+                "rel": rel,
+                "offset": offset,
+                "offset_int": int(offset, 16),
+                "size": img.stat().st_size,
+                "url": "/api/firmware/download?name=" + rel,
+            })
+        if not images:
+            return jsonify({
+                "available": False,
+                "message": "Main board firmware build artifacts were not found. "
+                           "Please build firmware/main_board first.",
+            })
+        return jsonify({
+            "available": True,
+            "chip": chip,
+            "flash_mode": settings.get("flash_mode", "keep"),
+            "flash_freq": settings.get("flash_freq", "keep"),
+            "flash_size": settings.get("flash_size", "keep"),
+            "images": images,
+        })
+
+    @app.get("/api/firmware/download")
+    def firmware_download():
+        """Serve one firmware image from the main board build dir (allowlisted)."""
+        rel = request.args.get("name", "")
+        if not rel:
+            abort(400, "Missing 'name'.")
+        candidate = (FIRMWARE_BUILD_DIR / rel).resolve()
+        try:
+            candidate.relative_to(FIRMWARE_BUILD_DIR.resolve())
+        except ValueError:
+            abort(403, "Path outside firmware build directory.")
+        if not candidate.is_file() or candidate.suffix.lower() != ".bin":
+            abort(404, "Firmware image not found.")
+        return send_file(str(candidate), as_attachment=True, download_name=candidate.name)
 
     @app.get("/api/class-map")
     def get_class_map():

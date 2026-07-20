@@ -307,28 +307,61 @@ TensorFlow and a model recipe, start training, start quantization, watch live
 job logs, and download artifacts (`.keras`, `.pth`, `.onnx`, `.tflite`,
 quantization reports).
 
+### Portal tabs
+
+The portal separates the workflow into four tabs so training, quantization, model
+flashing, and firmware flashing never mix:
+
+1. **Train** — import dataset, map classes to robot actions, run training.
+2. **Quantize** — pick a trained `.keras` model + format, generate the `.tflite`.
+3. **Flash model** — flash the `.tflite` into the model partition (Web Serial).
+4. **Flash firmware** — flash the full ESP32-S3 main board firmware (Web Serial).
+
+Train/quantize run as background jobs on the AI PC (shared **Live job log** /
+**Generated artifacts** / **Job history** panels below the tabs). The two flash
+tabs run entirely in the browser and each has its own status + flash log.
+
 ### Flashing from the browser (Web Serial)
 
-The ESP32-S3 is plugged into the **student PC**, and flashing happens **entirely
-in the browser** using the Web Serial API — students install nothing, run no
-Python, and never see `127.0.0.1`. Student flow:
+The ESP32-S3 is plugged into the **student PC**, and both flash tabs work
+**entirely in the browser** via the Web Serial API — students install nothing,
+run no Python, and never see `127.0.0.1` or a flash offset.
+
+**Flash model** (updates only the `.tflite` in the model partition):
 
 1. Open the team portal over **HTTPS** — e.g. `https://140.112.194.42:8081`
-   (not `http://…`) — in **Chrome or Edge**, and click through the one-time
+   (not `http://…`) — in **Chrome or Edge**, click through the one-time
    self-signed certificate warning (**Advanced → Proceed**).
-2. Select a `.tflite` model in the **Flash** panel.
-3. Click **Connect ESP32-S3** → the browser shows a port picker; choose the board.
-4. Click **Flash model**. The browser downloads the `.tflite` from the AI PC
-   (via the existing `/api/artifacts/download`) and flashes the model partition
-   directly. The job log shows live progress: connected → entering bootloader →
-   erasing → writing bytes → verifying → succeeded/failed. The flash offset is
-   provided by the backend (`/api/flash-meta`) and never shown.
+2. In the **Flash model** tab, select a `.tflite` model.
+3. Click **Connect ESP32-S3** → pick the board in the port picker.
+4. Click **Flash model** — the browser downloads the `.tflite` (via
+   `/api/artifacts/download`) and flashes the model partition. The model-partition
+   offset comes from the backend (`/api/flash-meta`) and is never shown.
+
+**Flash firmware** (updates the full main board firmware — bootloader, partition
+table, and app):
+
+1. In the **Flash firmware** tab, the portal shows the firmware images found in
+   the ESP-IDF build (`firmware/main_board/build/`). If none are built yet it
+   shows: *"Main board firmware build artifacts were not found. Please build
+   firmware/main_board first."*
+2. Click **Connect & flash firmware** → pick the board. The browser downloads
+   each image (bootloader / partition-table / app) and flashes them at the
+   **offsets read from ESP-IDF's `flasher_args.json`** (via `/api/firmware/meta`)
+   — no hardcoded offsets, none shown to students. Progress: connect → bootloader
+   → erase → write each image → verify → reboot.
+
+Offsets are hidden unless **developer mode** (header checkbox) is enabled, which
+reveals the firmware image offsets for debugging.
 
 Flashing is done client-side by **esptool-js** (Espressif's official browser
 flasher), vendored offline at
 [`apps/training_portal/static/vendor/esptool-js/`](apps/training_portal/static/vendor/esptool-js/)
 (pinned 0.5.4; provenance + checksum in its README). The AI PC backend only
-lists/serves artifacts and returns flash metadata — no command execution.
+lists/serves artifacts + firmware images and returns flash metadata — no command
+execution. If the board will not connect, the UI shows a checklist (Chrome/Edge,
+HTTPS/secure context, hold **BOOT** + tap **RESET/EN**, close other serial
+monitors).
 
 > **Secure-context requirement.** Web Serial is a browser security invariant:
 > `navigator.serial` exists **only** in a *secure context* — HTTPS, or

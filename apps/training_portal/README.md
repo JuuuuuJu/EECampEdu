@@ -128,17 +128,38 @@ apps/training_portal/runs/
 | GET | `/api/jobs/<id>/log?offset=N` | Incremental log |
 | GET | `/api/artifacts` | List generated artifacts |
 | GET | `/api/artifacts/download?path=…` | Download an artifact |
+| GET | `/api/flash-meta` | Model-partition flash metadata (hidden offset) |
+| GET | `/api/firmware/meta` | Main board firmware flash plan from `flasher_args.json` (or "not built" message) |
+| GET | `/api/firmware/download?name=…` | Download one firmware `.bin` (allowlisted to the build dir) |
+
+## Tabs
+
+The GUI is split into four tabs so the flows stay separate: **Train** (dataset +
+class mapping + training), **Quantize**, **Flash model**, **Flash firmware**.
+Train/Quantize run as background jobs (shared job log / artifacts / history
+panels); the two flash tabs run in the browser via Web Serial.
 
 ## Flashing (browser Web Serial)
 
 The ESP32-S3 is plugged into the **student PC** and flashed **from the browser**
 via the Web Serial API — no install, no Python, no `127.0.0.1`. Students use
-**Chrome or Edge**: select a `.tflite` model, click **Connect ESP32-S3** (the
-browser shows a serial-port picker), then **Flash model**. The page downloads the
-artifact through `/api/artifacts/download` and flashes the model partition using
-the vendored [esptool-js](static/vendor/esptool-js/) (offline, pinned). The job
-log shows live progress: connect → bootloader → erase → write → verify → done.
-The flash offset comes from `/api/flash-meta` and is not shown.
+**Chrome or Edge**. Two separate tabs:
+
+- **Flash model** — updates only the `.tflite` in the model partition. Select a
+  model → **Connect ESP32-S3** → **Flash model**. The page downloads the artifact
+  through `/api/artifacts/download` and flashes it; the model-partition offset
+  comes from `/api/flash-meta` and is not shown.
+- **Flash firmware** — updates the full main board firmware (bootloader +
+  partition table + app). Reads the ESP-IDF build via `/api/firmware/meta`
+  (parsed from `firmware/main_board/build/flasher_args.json`) and flashes each
+  image at its ESP-IDF-generated offset. If the firmware is not built, it shows
+  *"Main board firmware build artifacts were not found. Please build
+  firmware/main_board first."* Offsets are hidden unless **developer mode**
+  (header checkbox) is on.
+
+Both use the vendored [esptool-js](static/vendor/esptool-js/) (offline, pinned);
+each tab has its own status line + flash log (connect → bootloader → erase →
+write → verify → done).
 
 Requirements & notes:
 
