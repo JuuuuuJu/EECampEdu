@@ -19,14 +19,14 @@ except ImportError:
     HAS_CV2 = False
 
 # Configure the serial port parameters
-COM_PORT = os.environ.get('ESP1_PORT', os.environ.get('CAMERA_CONTROLLER_PORT', 'COM11'))
-BAUD_RATE = int(os.environ.get('ESP1_BAUD_RATE', os.environ.get('CAMERA_CONTROLLER_BAUD_RATE', '115200')))
-ESP1_ASSERT_CONTROL_LINES = os.environ.get('ESP1_ASSERT_CONTROL_LINES', '0').lower() in ('1', 'true', 'yes', 'on')
-ESP1_STARTUP_CONFIG = os.environ.get('ESP1_STARTUP_CONFIG', '0').lower() in ('1', 'true', 'yes', 'on')
-ESP2_PORT = os.environ.get('OUTPUT_ESP2_PORT', os.environ.get('ESP2_PORT', ''))
-ESP2_BAUD_RATE = int(os.environ.get('OUTPUT_ESP2_BAUD_RATE', os.environ.get('ESP2_BAUD_RATE', '115200')))
+COM_PORT = os.environ.get('MAIN_BOARD_PORT', os.environ.get('CAMERA_CONTROLLER_PORT', 'COM11'))
+BAUD_RATE = int(os.environ.get('MAIN_BOARD_BAUD_RATE', os.environ.get('CAMERA_CONTROLLER_BAUD_RATE', '115200')))
+MAIN_BOARD_ASSERT_CONTROL_LINES = os.environ.get('MAIN_BOARD_ASSERT_CONTROL_LINES', '0').lower() in ('1', 'true', 'yes', 'on')
+MAIN_BOARD_STARTUP_CONFIG = os.environ.get('MAIN_BOARD_STARTUP_CONFIG', '0').lower() in ('1', 'true', 'yes', 'on')
+CONTROL_BOARD_PORT = os.environ.get('CONTROL_BOARD_PORT', '')
+CONTROL_BOARD_BAUD_RATE = int(os.environ.get('CONTROL_BOARD_BAUD_RATE', '115200'))
 CLASS_NAMES = ['up', 'ok', 'thumb', 'palm', 'rock', 'stone']
-ESP2_DIRECTION_CLASSES = {'up', 'down', 'right', 'left', 'null'}
+CONTROL_BOARD_DIRECTION_CLASSES = {'up', 'down', 'right', 'left', 'null'}
 OUTPUT_DIR = './captured_images'
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 receiving_file = False
@@ -43,11 +43,11 @@ try:
     # ESP32 boards, forcing DTR/RTS active can hold EN/GPIO0 in reset/boot mode,
     # which makes even tiny command writes time out on Windows.
     try:
-        ser.dtr = bool(ESP1_ASSERT_CONTROL_LINES)
-        ser.rts = bool(ESP1_ASSERT_CONTROL_LINES)
-        print(f"[Python UI] ESP1 DTR/RTS asserted: {ESP1_ASSERT_CONTROL_LINES}")
+        ser.dtr = bool(MAIN_BOARD_ASSERT_CONTROL_LINES)
+        ser.rts = bool(MAIN_BOARD_ASSERT_CONTROL_LINES)
+        print(f"[Python UI] main board DTR/RTS asserted: {MAIN_BOARD_ASSERT_CONTROL_LINES}")
     except Exception as line_ex:
-        print(f"[Python UI] WARNING: Could not configure ESP1 DTR/RTS: {line_ex}")
+        print(f"[Python UI] WARNING: Could not configure main board DTR/RTS: {line_ex}")
 
     # Save the original write method and override it with a timeout-safe wrapper.
     # Without write_timeout, Windows COM writes can block forever if the ESP side
@@ -77,25 +77,25 @@ except Exception as e:
     print("Please make sure the COM port is correct and not occupied by another serial monitor.")
     exit(1)
 
-esp2_ser = None
-if ESP2_PORT:
-    print(f"Connecting to ESP2 output controller on {ESP2_PORT} at {ESP2_BAUD_RATE} baud...")
+control_board_ser = None
+if CONTROL_BOARD_PORT:
+    print(f"Connecting to control board output controller on {CONTROL_BOARD_PORT} at {CONTROL_BOARD_BAUD_RATE} baud...")
     try:
-        esp2_ser = serial.Serial(ESP2_PORT, ESP2_BAUD_RATE, timeout=0.3, write_timeout=0.3)
+        control_board_ser = serial.Serial(CONTROL_BOARD_PORT, CONTROL_BOARD_BAUD_RATE, timeout=0.3, write_timeout=0.3)
         time.sleep(2.0)
-        esp2_ser.reset_input_buffer()
-        print("[ESP2] Output bridge enabled.")
+        control_board_ser.reset_input_buffer()
+        print("[control board] Output bridge enabled.")
     except Exception as e:
-        print(f"[ESP2] Warning: failed to open output port {ESP2_PORT}: {e}")
-        print("[ESP2] Camera controller will continue without servo forwarding.")
-        esp2_ser = None
+        print(f"[control board] Warning: failed to open output port {CONTROL_BOARD_PORT}: {e}")
+        print("[control board] Camera controller will continue without servo forwarding.")
+        control_board_ser = None
 else:
-    print("[ESP2] Output bridge disabled. Set OUTPUT_ESP2_PORT=COM7 to enable servo forwarding.")
-def send_esp1_command(command, label=None):
+    print("[control board] Output bridge disabled. Set CONTROL_BOARD_PORT=COM7 to enable servo forwarding.")
+def send_main_board_command(command, label=None):
     if isinstance(command, str):
         command = command.encode("utf-8")
     shown = label or command.decode("utf-8", errors="ignore").strip()
-    print(f"[Python UI] -> ESP1 {shown}")
+    print(f"[Python UI] -> main board {shown}")
     try:
         written = ser.write(command)
         if written != len(command):
@@ -113,26 +113,26 @@ def label_name(label):
     return "unknown"
 
 
-def forward_result_to_esp2(line):
-    if esp2_ser is None or not line.startswith("RESULT,"):
+def forward_result_to_control_board(line):
+    if control_board_ser is None or not line.startswith("RESULT,"):
         return
     try:
         parts = line.split(",")
         pred_idx = int(parts[1])
         pred_name = label_name(pred_idx)
-        if pred_name not in ESP2_DIRECTION_CLASSES:
-            print(f"[ESP2] skipped unmapped gesture: {pred_idx}({pred_name})")
+        if pred_name not in CONTROL_BOARD_DIRECTION_CLASSES:
+            print(f"[control board] skipped unmapped gesture: {pred_idx}({pred_name})")
             return
         command = f"GESTURE,{pred_idx},{pred_name}\n"
-        esp2_ser.write(command.encode("ascii"))
-        esp2_ser.flush()
-        ack = esp2_ser.readline().decode("utf-8", errors="ignore").strip()
+        control_board_ser.write(command.encode("ascii"))
+        control_board_ser.flush()
+        ack = control_board_ser.readline().decode("utf-8", errors="ignore").strip()
         if ack:
-            print(f"[ESP2] {ack}")
+            print(f"[control board] {ack}")
         else:
-            print(f"[ESP2] sent {command.strip()} (no ack)")
+            print(f"[control board] sent {command.strip()} (no ack)")
     except Exception as e:
-        print(f"[ESP2] Forwarding failed: {e}")
+        print(f"[control board] Forwarding failed: {e}")
 
 buffer = []
 receiving = False
@@ -358,7 +358,7 @@ def read_serial_thread():
                 if line.startswith("--- LOCAL FLASH FILE LIST ---"):
                     file_index_cache.clear()
                     print(f"[ESP32] {line}")
-                    forward_result_to_esp2(line)
+                    forward_result_to_control_board(line)
                 elif line.startswith("- ") and ("bytes)" in line):
                     parts = line.split()
                     if len(parts) >= 2:
@@ -371,11 +371,11 @@ def read_serial_thread():
                         print(f"[ESP32]  [{idx}] {line}")
                     else:
                         print(f"[ESP32] {line}")
-                    forward_result_to_esp2(line)
+                    forward_result_to_control_board(line)
                 else:
                     # Print standard output lines from ESP32 (logs, statistics, ascii art)
                     print(f"[ESP32] {line}")
-                    forward_result_to_esp2(line)
+                    forward_result_to_control_board(line)
                     
                     if "Inference started" in line:
                         print("[Python UI] ⏳ Running on-device TFLite model inference... Please wait (this can take several seconds for larger models)...")
@@ -493,7 +493,7 @@ def handle_command(cmd_str):
     if action == 'c':
         ts = time.strftime("%Y%m%d_%H%M%S")
         print(f"[Python UI] Triggering capture workflow with timestamp {ts}...")
-        send_esp1_command(f"c{ts}\n", "capture")
+        send_main_board_command(f"c{ts}\n", "capture")
         return True
         
     if action == 'w':
@@ -794,12 +794,12 @@ def run_gui():
 
     # Automatically start continuous streaming from ESP32 on launch.
     # In unit-test mode, force QQVGA before d1 so 115200 baud is not flooded by VGA JPEG frames.
-    if not ESP1_STARTUP_CONFIG:
-        send_esp1_command(b"s1\n", "s1 QQVGA before preview")
+    if not MAIN_BOARD_STARTUP_CONFIG:
+        send_main_board_command(b"s1\n", "s1 QQVGA before preview")
         camera_state["resolution"] = "QQVGA (160x120)"
         time.sleep(0.2)
     camera_state["streaming"] = True
-    send_esp1_command(b"d1\n", "d1 start preview")
+    send_main_board_command(b"d1\n", "d1 start preview")
     
     last_displayed_frame = None
     first_frame = True
@@ -890,7 +890,7 @@ def run_gui():
         elif key == ord('c') or key == ord(' '):  # 'c' or Space to capture
             ts = time.strftime("%Y%m%d_%H%M%S")
             print(f"[Python UI] GUI requested frame capture with timestamp {ts}...")
-            send_esp1_command(f"c{ts}\n", "capture")
+            send_main_board_command(f"c{ts}\n", "capture")
                     
     # Clean up stream
     print("[Python UI] Stopping live stream...")
@@ -900,11 +900,11 @@ def run_gui():
 
 # Reset state and clear buffer BEFORE starting the serial reader thread
 try:
-    if ESP1_STARTUP_CONFIG:
+    if MAIN_BOARD_STARTUP_CONFIG:
         print("[Python UI] Resetting ESP32 camera stream state...")
-        send_esp1_command(b"d0\n", "d0 stop stream")
-        send_esp1_command(b"f3\n", "f3 JPEG")
-        send_esp1_command(b"s3\n", "s3 VGA")
+        send_main_board_command(b"d0\n", "d0 stop stream")
+        send_main_board_command(b"f3\n", "f3 JPEG")
+        send_main_board_command(b"s3\n", "s3 VGA")
         time.sleep(0.3)            # Wait for ESP32 to receive and process
     else:
         print("[Python UI] Startup camera config skipped. Unit-test firmware defaults to JPEG VGA. For unit test, set s1 manually if serial preview is slow.")

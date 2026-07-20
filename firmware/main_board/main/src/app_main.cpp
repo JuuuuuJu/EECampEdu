@@ -1084,7 +1084,7 @@ static void maybe_start_input_controls() {
 }
 
 static void maybe_start_output_controls() {
-    ESP_LOGI(TAG, "Robot arm output is controlled by ESP2 through the PC serial bridge.");
+    ESP_LOGI(TAG, "Robot arm output is controlled by control board through the PC serial bridge.");
 }
 
 static const char *runtime_mode_name() {
@@ -1619,7 +1619,7 @@ static void input_output_self_test_task(void *pvParameters) {
         }
 
         const int action = sequence[index];
-        dual_printf("SELFTEST_OUTPUT,action=%d,route=PC_TO_ESP2_REQUIRED\n", action);
+        dual_printf("SELFTEST_OUTPUT,action=%d,route=PC_TO_CONTROL_BOARD_REQUIRED\n", action);
         index = (index + 1) % (int)(sizeof(sequence) / sizeof(sequence[0]));
         vTaskDelay(pdMS_TO_TICKS(IO_SELF_TEST_INTERVAL_MS));
     }

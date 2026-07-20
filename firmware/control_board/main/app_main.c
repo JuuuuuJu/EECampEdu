@@ -1,4 +1,4 @@
-﻿#include <ctype.h>
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,7 +10,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-static const char *TAG = "ESP2_OUTPUT";
+static const char *TAG = "CONTROL_BOARD_OUTPUT";
 
 // Keep these pins consistent with the original output team's robotic_arm.ino.
 #define BASE_SERVO_GPIO 18
@@ -367,7 +367,7 @@ void app_main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     servo_output_init();
 
-    printf("READY,ESP2_SERVO_OUTPUT\n");
+    printf("READY,CONTROL_BOARD_SERVO_OUTPUT\n");
     print_state("STATE", 4);
 
     char line[128];

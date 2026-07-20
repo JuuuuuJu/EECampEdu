@@ -11,7 +11,7 @@ reach the board's USB serial port.
 |-----|---------|------------------|---------|
 | Training portal (`apps/training_portal`) | **AI PC** | no | upload dataset, train, quantize, download artifacts |
 | Local flash helper (`apps/local_flash_helper`) | **student PC** | yes (flash) | flash the `.tflite` to the ESP32-S3 |
-| Camera/control app (`apps/local_camera_app`) | **student PC** | yes (serial) | live gesture result + class→action mapping + ESP2 forward |
+| Camera/control app (`apps/local_camera_app`) | **student PC** | yes (serial) | live gesture result + class→action mapping + control board forward |
 
 **Why not put camera/preview in the AI PC server?** Live preview and reading the
 inference `RESULT` line require the board's USB port, which physically lives on
@@ -36,19 +36,19 @@ Then open `http://127.0.0.1:8770/` for the live view.
 | GET | `/health` | status + available actions |
 | GET | `/ports` | list local serial ports |
 | POST | `/class-map` | load the `class_mapping.json` downloaded from the portal |
-| POST | `/connect` | `{esp1_port, esp2_port?, baud?}` — open serial + start reader |
+| POST | `/connect` | `{main_board_port, control_board_port?, baud?}` — open serial + start reader |
 | GET | `/status` | latest gesture: index, scores, class name, mapped action |
 
-The reader parses ESP1 `RESULT,<index>,<t0>,<t1>,<t2>,<score...>` (index-only
+The reader parses main board `RESULT,<index>,<t0>,<t1>,<t2>,<score...>` (index-only
 firmware), maps `index → class name → action` via the class map, and forwards
-the action string to ESP2.
+the action string to control board.
 
 ## Class → action mapping
 
 The mapping comes from the training portal's `class_mapping.json` (the same file
 that records the six class folder names). Download it from the portal
 (`/api/class-map`) and `POST` it here, or preload with `--class-map path.json`.
-Actions are `up/down/left/right/clamp/release`, index-aligned with the ESP2
+Actions are `up/down/left/right/clamp/release`, index-aligned with the control board
 output firmware.
 
 ## Camera preview status (scope)

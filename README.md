@@ -7,12 +7,12 @@ Current integration architecture:
 ```text
 Model source: PyTorch or TensorFlow
 Deploy target: TensorFlow Lite, default/recommended int8 TFLite
-Inference board: ESP1, ESP32-S3
-Output board: ESP2, normal ESP32
+Inference board: main board, ESP32-S3
+Output board: control board, normal ESP32
 PC role: live preview, benchmark, command bridge, and UI
 ```
 
-ESP1 no longer drives servos directly. ESP1 runs camera/model inference and prints `RESULT,...`; the PC forwards the predicted gesture to ESP2 over a second USB serial link; ESP2 controls the robotic arm servos.
+main board no longer drives servos directly. main board runs camera/model inference and prints `RESULT,...`; the PC forwards the predicted gesture to control board over a second USB serial link; control board controls the robotic arm servos.
 
 ## Repository Layout
 
@@ -20,11 +20,11 @@ ESP1 no longer drives servos directly. ESP1 runs camera/model inference and prin
 EECampEdu/
   model_finetune/   Training scripts, class_map.py (shared class order), source-model handoff.
                     Datasets and generated models are git-ignored (see "Generated vs tracked").
-  firmware/         ESP1 firmware, ESP2 output firmware, quantization, flashing, benchmark, camera, USB.
+  firmware/         main board firmware, control board output firmware, quantization, flashing, benchmark, camera, USB.
   apps/
     training_portal/     AI PC browser GUI: dataset upload, class mapping, train, quantize, artifacts.
     local_flash_helper/  Fallback-only CLI helper (portal flashes via browser Web Serial instead).
-    local_camera_app/    Student-PC localhost app: live gesture result + class->action + ESP2 forward.
+    local_camera_app/    Student-PC localhost app: live gesture result + class->action + control board forward.
     esp32_cam_input_app/ Native Dear ImGui / SDL3 app: USB-CDC live camera preview + controls.
   docs/             Guides and notes.
 ```
@@ -57,21 +57,21 @@ Model team
 
 Deploy team
   -> export source model into deployable TFLite
-  -> flash ESP1 model partition
+  -> flash main board model partition
   -> validate accuracy, latency, throughput, and output similarity
 
-ESP1 ESP32-S3
+main board ESP32-S3
   -> OV2640 capture
   -> grayscale / crop / resize / scale
   -> TFLite Micro inference
   -> print RESULT,<class>,<model_us>,<preprocess_us>,<device_us>,<scores...>
 
 PC
-  -> receives ESP1 result
+  -> receives main board result
   -> benchmark and/or UI live preview
   -> maps each gesture class to a user-selected output action
 
-ESP2 normal ESP32
+control board normal ESP32
   -> receives ACTION,up/down/left/right/clamp/release/none over second USB serial
   -> drives robotic arm servos
 ```
@@ -82,10 +82,10 @@ ESP2 normal ESP32
 | --- | --- | --- |
 | Model | `model_finetune/` | Train/fine-tune gesture models and provide source artifacts. |
 | Deploy | `firmware/` | Convert PyTorch/TensorFlow handoff into ESP-deployable TFLite, flash, benchmark, and validate ESP behavior. |
-| Camera | `firmware/esp/main/src/camera_capture_ov2640.cpp` | OV2640 capture and frame format/resolution control on ESP1. |
-| USB | `firmware/esp/main/src/usb_composite.cpp` | ESP1 USB CDC command stream and USB MSC storage exposure. |
-| Input | `apps/`, `firmware/esp/main/src/input_controls.cpp` | PC UI, rotary encoder/button controls, camera parameters. |
-| Output | `firmware/esp2_output/`, `firmware/pc/tools/send_esp2_gesture.py` | ESP2 ESP-IDF servo control and PC-to-ESP2 gesture bridge. |
+| Camera | `firmware/main_board/main/src/camera_capture_ov2640.cpp` | OV2640 capture and frame format/resolution control on main board. |
+| USB | `firmware/main_board/main/src/usb_composite.cpp` | main board USB CDC command stream and USB MSC storage exposure. |
+| Input | `apps/`, `firmware/main_board/main/src/input_controls.cpp` | PC UI, rotary encoder/button controls, camera parameters. |
+| Output | `firmware/control_board/`, `firmware/pc/tools/send_control_board_gesture.py` | control board ESP-IDF servo control and PC-to-control board gesture bridge. |
 
 ## Windows Environment
 
@@ -99,12 +99,12 @@ conda activate eecampedu
 
 The setup script installs Python deploy dependencies and native packages for the ImGui/SDL3 PC app. ESP-IDF is installed separately and must be available in the terminal where `idf.py` is used.
 
-## Build ESP1 Firmware
+## Build main board Firmware
 
-ESP1 is the ESP32-S3 board with camera, USB, and TFLite Micro inference.
+main board is the ESP32-S3 board with camera, USB, and TFLite Micro inference.
 
 ```powershell
-cd firmware\esp
+cd firmware\main_board
 idf.py set-target esp32s3
 idf.py fullclean
 idf.py build
@@ -114,25 +114,25 @@ idf.py -p COM6 flash monitor
 Runtime mode is selected in:
 
 ```text
-firmware/esp/main/include/model_config.hpp
+firmware/main_board/main/include/model_config.hpp
 ```
 
 Common modes:
 
 | Mode | Purpose | Hardware |
 | --- | --- | --- |
-| `RuntimeMode::kTestUartFrame` | PC benchmark sends test frames over UART/CDC. | ESP1 only |
-| `RuntimeMode::kCameraFlash` | OV2640 capture, flash storage, preprocessing, inference. | ESP1 + OV2640 |
-| `RuntimeMode::kCameraUsbMsc` | CDC live preview, MSC storage, camera/control integration. | ESP1 + OV2640 + PC app |
-| `RuntimeMode::kPhotoFlashTest` | Preloaded-photo flash test without camera. | ESP1 only |
-| `RuntimeMode::kInputOutputSelfTest` | ESP1 input logging and output-route log only. | ESP1 input hardware |
+| `RuntimeMode::kTestUartFrame` | PC benchmark sends test frames over UART/CDC. | main board only |
+| `RuntimeMode::kCameraFlash` | OV2640 capture, flash storage, preprocessing, inference. | main board + OV2640 |
+| `RuntimeMode::kCameraUsbMsc` | CDC live preview, MSC storage, camera/control integration. | main board + OV2640 + PC app |
+| `RuntimeMode::kPhotoFlashTest` | Preloaded-photo flash test without camera. | main board only |
+| `RuntimeMode::kInputOutputSelfTest` | main board input logging and output-route log only. | main board input hardware |
 
-## Build ESP2 Output Firmware
+## Build Control Board Output Firmware
 
-ESP2 is a separate normal ESP32 board dedicated to robotic arm servo output.
+control board is a separate normal ESP32 board dedicated to robotic arm servo output.
 
 ```powershell
-cd firmware\esp2_output
+cd firmware\control_board
 idf.py set-target esp32
 idf.py build
 idf.py -p COM7 flash monitor
@@ -145,12 +145,12 @@ pitch GPIO22
 claw  GPIO21
 ```
 
-Manual ESP2 test:
+Manual control board test:
 
 ```powershell
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 up
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 right --repeat 3
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 P100
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 up
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 right --repeat 3
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 P100
 ```
 
 ## Train Source Model
@@ -207,7 +207,7 @@ Supported `--quant-format` choices:
 
 | Format | Calibration | Notes |
 | --- | --- | --- |
-| `int8` | Required | Recommended. Full int8 input/output and int8 weights. Best size/speed target for ESP1. |
+| `int8` | Required | Recommended. Full int8 input/output and int8 weights. Best size/speed target for main board. |
 | `int16` | Required | Experimental TFLite int16 activations with int8 weights. Currently supports `per-channel` only; verify TFLite Micro operator support per model. |
 | `float32` | Not required | No quantization. Useful as a reference export; usually larger/slower on ESP. |
 
@@ -236,10 +236,10 @@ firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite
 firmware/pc/artifacts/reports/MobileNetV2_finetuned_int8_per-channel_quantization_report.json
 ```
 
-Flash only the ESP1 model partition:
+Flash only the main board model partition:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
+python firmware\main_board\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
 ```
 
 ## AI PC Training Portal (Browser GUI)
@@ -397,8 +397,8 @@ conda activate eecampedu
 python apps/local_camera_app/preview_app.py   # http://127.0.0.1:8770
 ```
 
-It lists serial ports, connects to ESP1 (and optionally ESP2), maps the predicted
-index → class → action via `class_mapping.json`, and forwards the action to ESP2.
+It lists serial ports, connects to main board (and optionally control board), maps the predicted
+index → class → action via `class_mapping.json`, and forwards the action to control board.
 Live JPEG-over-USB-CDC preview is provided by the native app
 [`apps/esp32_cam_input_app`](apps/esp32_cam_input_app/); see
 [`apps/local_camera_app/README.md`](apps/local_camera_app/README.md) for the
@@ -542,7 +542,7 @@ If the board is plugged into the AI PC itself, flash the model partition
 directly with the project script (offset handled by the script):
 
 ```bash
-python firmware/esp/flash_tflite_model.py \
+python firmware/main_board/flash_tflite_model.py \
   firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite -p /dev/ttyUSB0
 ```
 
@@ -589,7 +589,7 @@ PATH):
 
 ```bash
 idf.py --version
-cd firmware/esp && idf.py set-target esp32s3 && idf.py build
+cd firmware/main_board && idf.py set-target esp32s3 && idf.py build
 ```
 
 ### 11. Expected outputs and success criteria
@@ -603,7 +603,7 @@ cd firmware/esp && idf.py set-target esp32s3 && idf.py build
 | Quantize | `*_int8_per-channel.tflite` + `*_quantization_report.json` | report accuracy above threshold; job `succeeded` |
 | Artifacts | file listed in `/api/artifacts` | download returns the bytes |
 | Flash | `Hash of data verified.` from esptool | esptool returncode `0` |
-| ESP-IDF build | `Project build complete` | `firmware/esp/build/*.bin` produced |
+| ESP-IDF build | `Project build complete` | `firmware/main_board/build/*.bin` produced |
 
 ### 12. Known hardware / network / browser-dependent steps
 
@@ -626,7 +626,7 @@ These cannot be fully validated without the classroom hardware/network:
 
 ## Benchmark
 
-ESP1 firmware mode:
+main board firmware mode:
 
 ```cpp
 constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kTestUartFrame;
@@ -639,18 +639,18 @@ cd firmware\pc
 python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
-Benchmark plus ESP2 robotic arm output:
+Benchmark plus control board robotic arm output:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --control-board-port COM7
 ```
 
 Port meaning:
 
 ```text
---port      ESP1 inference board
---esp2-port ESP2 servo output board
+--port      main board inference board
+--control-board-port control board servo board
 ```
 
 ## Real Camera / Output Runs
@@ -658,8 +658,8 @@ Port meaning:
 Python camera controller path:
 
 ```powershell
-$env:ESP1_PORT="COM6"
-$env:OUTPUT_ESP2_PORT="COM7"
+$env:MAIN_BOARD_PORT="COM6"
+$env:CONTROL_BOARD_PORT="COM7"
 python firmware\pc\tools\camera_controller.py
 ```
 
@@ -673,10 +673,10 @@ apps\esp32_cam_input_app\build\eecampedu_input_demo.exe
 In the app:
 
 ```text
-USB CDC Port      -> ESP1 COM port
-ESP2 Output Port  -> ESP2 COM port
+USB CDC Port      -> main board COM port
+Control Board Output Port  -> control board COM port
 Auto-forward RESULT checked
-Gesture -> Output Mapping set in the ESP2 Output panel
+Gesture -> Output Mapping set in the Control Board Output panel
 ```
 
 The browser-driven version of steps 1–4 (upload → class mapping → train →

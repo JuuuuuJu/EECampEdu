@@ -47,16 +47,16 @@ void ControlsWin::draw(AppState& state) {
         ImGui::TextWrapped("Last command: %s", state.last_command.c_str());
     }
 
-    ImGui::SeparatorText("ESP2 Output");
-    ImGui::InputText("ESP2 Port", state.output_port, sizeof(state.output_port));
-    ImGui::InputInt("ESP2 Baud", &state.output_baud_rate);
+    ImGui::SeparatorText("Control Board Output");
+    ImGui::InputText("Control Board Port", state.output_port, sizeof(state.output_port));
+    ImGui::InputInt("Control Board Baud", &state.output_baud_rate);
     ImGui::Checkbox("Auto-forward RESULT", &state.auto_forward_output);
     if (!state.IsOutputConnected()) {
-        if (ImGui::Button("Connect ESP2")) {
+        if (ImGui::Button("Connect control board")) {
             state.ConnectOutput();
         }
     } else {
-        if (ImGui::Button("Disconnect ESP2")) {
+        if (ImGui::Button("Disconnect control board")) {
             state.DisconnectOutput();
         }
     }
@@ -72,7 +72,7 @@ void ControlsWin::draw(AppState& state) {
     for (int i = 0; i < AppState::kModelClassCount; ++i) {
         ImGui::Combo(state.ModelClassName(i), &state.output_action_for_class[i], output_actions, AppState::kOutputActionCount);
     }
-    HelpMarker("Maps each model class to one ESP2 output action. Use 'none' to ignore a gesture.");
+    HelpMarker("Maps each model class to one control board output action. Use 'none' to ignore a gesture.");
 
     if (ImGui::Button("Output Up")) state.SendOutputAction("up");
     ImGui::SameLine();
@@ -105,7 +105,7 @@ void ControlsWin::draw(AppState& state) {
     ImGui::SetNextItemWidth(140.0f);
     ImGui::SliderInt("Interval ms", &state.continuous_inference_interval_ms, 1500, 10000);
     ImGui::TextWrapped("Inference: %s", state.continuous_inference_status.c_str());
-    HelpMarker("Continuously sends quick inference commands. ESP1 does not mount MSC or save files in this mode. The app waits for preview frame completion and RESULT/ERROR before sending the next request.");
+    HelpMarker("Continuously sends quick inference commands. Main board does not mount MSC or save files in this mode. The app waits for preview frame completion and RESULT/ERROR before sending the next request.");
 
     if (ImGui::Button("List storage")) {
         state.SendUsbCommand("L", "list storage");

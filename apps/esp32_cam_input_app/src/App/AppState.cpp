@@ -158,20 +158,20 @@ bool AppState::IsUsbConnected() const {
 bool AppState::ConnectOutput() {
     std::string error;
     if (output_client.Open(output_port, output_baud_rate, &error)) {
-        output_status = "Connected to ESP2 on " + std::string(output_port);
-        AppendUsbLog("[ESP2] " + output_status + "\n");
+        output_status = "Connected to control board on " + std::string(output_port);
+        AppendUsbLog("[control board] " + output_status + "\n");
         return true;
     }
 
-    output_status = "ESP2 connect failed: " + error;
-    AppendUsbLog("[ESP2] " + output_status + "\n");
+    output_status = "Control board connect failed: " + error;
+    AppendUsbLog("[control board] " + output_status + "\n");
     return false;
 }
 
 void AppState::DisconnectOutput() {
     if (output_client.IsOpen()) {
         output_client.Close();
-        AppendUsbLog("[ESP2] Disconnected\n");
+        AppendUsbLog("[control board] Disconnected\n");
     }
     output_status = "Output disconnected";
 }
@@ -205,18 +205,18 @@ void AppState::SendOutputAction(const std::string& action) {
 
     std::string error;
     if (!output_client.Write(command, &error)) {
-        output_status = "ESP2 send failed: " + error;
-        AppendUsbLog("[ESP2] " + output_status + "\n");
+        output_status = "Control board send failed: " + error;
+        AppendUsbLog("[control board] " + output_status + "\n");
         return;
     }
 
     std::string ack;
     if (output_client.ReadAvailable(&ack, &error) && !ack.empty()) {
         output_status = ack;
-        AppendUsbLog("[ESP2] " + ack);
+        AppendUsbLog("[control board] " + ack);
     } else {
         output_status = "Sent " + command;
-        AppendUsbLog("[ESP2 TX] " + command);
+        AppendUsbLog("[control board TX] " + command);
     }
 }
 
@@ -232,18 +232,18 @@ void AppState::SendOutputGesture(int gesture, const std::string& name) {
 
     std::string error;
     if (!output_client.Write(command.str(), &error)) {
-        output_status = "ESP2 send failed: " + error;
-        AppendUsbLog("[ESP2] " + output_status + "\n");
+        output_status = "Control board send failed: " + error;
+        AppendUsbLog("[control board] " + output_status + "\n");
         return;
     }
 
     std::string ack;
     if (output_client.ReadAvailable(&ack, &error) && !ack.empty()) {
         output_status = ack;
-        AppendUsbLog("[ESP2] " + ack);
+        AppendUsbLog("[control board] " + ack);
     } else {
         output_status = "Sent " + command.str();
-        AppendUsbLog("[ESP2 TX] " + command.str());
+        AppendUsbLog("[control board TX] " + command.str());
     }
 }
 
@@ -414,7 +414,7 @@ void AppState::ForwardResultLineToOutput(const std::string& line) {
 
         if (gesture < 0 || gesture >= kModelClassCount) {
         output_status = "Skipped out-of-range gesture: " + std::to_string(gesture);
-        AppendUsbLog("[ESP2] " + output_status + "\n");
+        AppendUsbLog("[control board] " + output_status + "\n");
         return;
     }
 
@@ -422,11 +422,11 @@ void AppState::ForwardResultLineToOutput(const std::string& line) {
     const char* action = OutputActionName(output_action_for_class[gesture]);
     if (std::string(action) == "none") {
         output_status = "Skipped gesture mapped to none: " + std::to_string(gesture) + "(" + gesture_name + ")";
-        AppendUsbLog("[ESP2] " + output_status + "\n");
+        AppendUsbLog("[control board] " + output_status + "\n");
         return;
     }
 
-    AppendUsbLog("[ESP2 MAP] " + std::string(gesture_name) + " -> " + action + "\n");
+    AppendUsbLog("[control board MAP] " + std::string(gesture_name) + " -> " + action + "\n");
     SendOutputAction(action);
 }
 void AppState::ParseCdcFrames() {

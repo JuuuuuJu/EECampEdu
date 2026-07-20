@@ -25,10 +25,10 @@ Schema (see model_finetune/class_mapping.example.json)::
 Design notes:
   * The model output is purely an index; ``class_order[i]`` is the human label of
     output index ``i``. The ESP firmware never needs the names — only the index
-    and scores (see firmware/esp app_main.cpp RESULT line).
+    and scores (see firmware/main_board app_main.cpp RESULT line).
   * ``action`` maps each trained class to one robot-arm output action. The valid
-    actions match the ESP2 output firmware's index-driven table
-    (firmware/esp2_output/main/app_main.c): up/down/left/right/clamp/release.
+    actions match the control board output firmware's index-driven table
+    (firmware/control_board/main/app_main.c): up/down/left/right/clamp/release.
   * Every consumer falls back to a caller-supplied default when the file is
     missing or malformed, so existing behaviour is preserved with no dataset.
 """
@@ -44,7 +44,7 @@ CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 NUM_CLASSES = 6
 
 # Robot-arm output actions a class may be mapped to. Order/index here matches the
-# ESP2 output firmware apply_action() table so the student PC control app can send
+# control board output firmware apply_action() table so the student PC control app can send
 # either the action name or its index.
 OUTPUT_ACTIONS = ["up", "down", "left", "right", "clamp", "release"]
 

@@ -1,12 +1,12 @@
 # Firmware
 
-`firmware/` contains all deploy-side code for ESP1, ESP2, and PC tooling.
+`firmware/` contains all deploy-side code for main board, control board, and PC tooling.
 
 ```text
 firmware/
-  esp/         ESP1 ESP-IDF project: ESP32-S3 camera, USB, input, TFLite Micro inference.
-  esp2_output/ ESP2 ESP-IDF project: normal ESP32 robotic-arm servo controller.
-  pc/          Quantization, flashing helpers, benchmark, camera controller, ESP2 bridge tools.
+  main_board/  main board ESP-IDF project: ESP32-S3 camera, USB, input, TFLite Micro inference.
+  control_board/ control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
+  pc/          Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
   external/    Reference code from other teams, kept only as source context.
 ```
 
@@ -14,16 +14,16 @@ Deploy contract:
 
 ```text
 Source framework can be PyTorch or TensorFlow.
-Deploy target is TensorFlow Lite for ESP1 ESP32-S3 TFLite Micro. Full int8 TFLite is the default/recommended target.
-Servo output target is ESP2 ESP-IDF firmware, controlled by PC serial commands.
+Deploy target is TensorFlow Lite for main board ESP32-S3 TFLite Micro. Full int8 TFLite is the default/recommended target.
+Servo output target is control board ESP-IDF firmware, controlled by PC serial commands.
 ```
 
-## ESP1 Firmware
+## main board Firmware
 
-Build ESP1:
+Build main board:
 
 ```powershell
-cd firmware\esp
+cd firmware\main_board
 idf.py set-target esp32s3
 idf.py fullclean
 idf.py build
@@ -32,38 +32,38 @@ idf.py -p COM6 flash monitor
 
 No `git clone --recursive` is required. ESP-IDF managed components are declared in `esp/main/idf_component.yml`.
 
-ESP1 runtime config:
+main board runtime config:
 
 ```text
-firmware/esp/main/include/model_config.hpp
+firmware/main_board/main/include/model_config.hpp
 ```
 
 Important settings:
 
 - `RUNTIME_MODE`: selects benchmark, camera, USB, or self-test behavior.
-- `ENABLE_INPUT_CONTROLS`: enables rotary encoder / button GPIO input on ESP1.
+- `ENABLE_INPUT_CONTROLS`: enables rotary encoder / button GPIO input on main board.
 - `TENSOR_ARENA_SIZE`: TFLite Micro tensor arena size. Current integration default is `1536 * 1024` bytes so float32 MobileNetV2 can allocate tensors from PSRAM.
 - `MODEL_PARTITION_LABEL`: flash partition containing the selected TFLite model.
 - `STORAGE_PARTITION_LABEL`: FAT storage partition used by camera/USB.
 
-ESP1 does not drive robotic-arm servo GPIO. It only prints inference results such as:
+main board does not drive robotic-arm servo GPIO. It only prints inference results such as:
 
 ```text
 RESULT,<class>,<model_us>,<preprocess_us>,<device_us>,<score0>,<score1>,...
 ```
 
-## ESP2 Output Firmware
+## Control Board Output Firmware
 
-Build ESP2:
+Build control board:
 
 ```powershell
-cd firmware\esp2_output
+cd firmware\control_board
 idf.py set-target esp32
 idf.py build
 idf.py -p COM7 flash monitor
 ```
 
-ESP2 receives line-based serial commands from the PC:
+control board receives line-based serial commands from the PC:
 
 ```text
 GESTURE,0,up
@@ -94,8 +94,8 @@ claw  GPIO21
 Manual PC test:
 
 ```powershell
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 up
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 P100
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 up
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 P100
 ```
 
 ## Model Deploy
@@ -124,7 +124,7 @@ Supported deploy formats:
 
 | Format | Calibration | Notes |
 | --- | --- | --- |
-| `int8` | Required | Recommended ESP1 format. Full int8 input/output and weights. |
+| `int8` | Required | Recommended main board format. Full int8 input/output and weights. |
 | `int16` | Required | Experimental int16 activations with int8 weights. Currently supports `per-channel` only and requires per-model TFLite Micro verification. |
 | `float32` | Not required | Reference export without quantization. |
 
@@ -139,17 +139,17 @@ firmware/pc/artifacts/models/MobileNetV2_finetuned_int8_per-channel.tflite
 firmware/pc/artifacts/reports/MobileNetV2_finetuned_int8_per-channel_quantization_report.json
 ```
 
-Flash only ESP1 model partition:
+Flash only main board model partition:
 
 ```powershell
-python firmware\esp\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
+python firmware\main_board\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
 ```
 
-The model partition is independent from the firmware app partition. Current ESP1 partition table reserves `4M` for `model` at `0x310000`, then starts FAT `storage` at `0x710000`.
+The model partition is independent from the firmware app partition. Current main board partition table reserves `4M` for `model` at `0x310000`, then starts FAT `storage` at `0x710000`.
 
 ## Benchmark
 
-Set ESP1 firmware mode:
+Set main board firmware mode:
 
 ```cpp
 constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kTestUartFrame;
@@ -162,11 +162,11 @@ cd firmware\pc
 python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
 ```
 
-Inference benchmark plus ESP2 output forwarding:
+Inference benchmark plus control board output forwarding:
 
 ```powershell
 cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --esp2-port COM7
+python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --control-board-port COM7
 ```
 
 Primary deploy metrics:
@@ -185,12 +185,12 @@ Primary deploy metrics:
 Use this path when testing real camera capture through the Python controller:
 
 ```powershell
-$env:ESP1_PORT="COM6"
-$env:OUTPUT_ESP2_PORT="COM7"
+$env:MAIN_BOARD_PORT="COM6"
+$env:CONTROL_BOARD_PORT="COM7"
 python firmware\pc\tools\camera_controller.py
 ```
 
-When `camera_controller.py` receives `RESULT,...` from ESP1, it forwards `GESTURE,<index>,<name>` to ESP2.
+When `camera_controller.py` receives `RESULT,...` from main board, it forwards `GESTURE,<index>,<name>` to control board.
 
 ## Camera Modes
 
@@ -215,7 +215,7 @@ CDC is used for:
 - live JPEG preview frames
 - camera commands
 - input/control debug messages
-- ESP1 inference result logs
+- main board inference result logs
 
 MSC exposes the FAT storage partition to the PC as a USB drive. This is frame-by-frame preview over CDC, not UVC.
 

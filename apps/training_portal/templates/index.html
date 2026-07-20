@@ -541,6 +541,18 @@ function flashLog(s){
   el.scrollTop = el.scrollHeight;
 }
 
+function withTimeout(promise, ms, message){
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function bootloaderHelp(){
+  return "Could not enter bootloader automatically. Try this: hold BOOT, click Connect ESP32-S3, keep holding until Connecting... appears, then tap RESET/EN once and release BOOT after 1 second. Close other serial monitors first.";
+}
+
 // Feature detection. Web Serial exists only in Chromium browsers AND secure
 // contexts (HTTPS or localhost). On a plain-HTTP non-localhost origin it is
 // hidden — but the student can allowlist this exact origin via a browser flag,
@@ -598,15 +610,18 @@ $("connectBtn").onclick = async () => {
     const port = await navigator.serial.requestPort();           // browser port picker (user gesture)
     esp.transport = new Transport(port, true);
     setMsg($("flashStatus"), "Connected. Entering bootloader…", "warn");
+    flashLog("\n[portal] If this stays here, hold BOOT and tap RESET/EN, then retry.\n");
     esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal: espTerminal });
-    esp.chip = await esp.loader.main();                          // sync + detect chip
+    esp.chip = await withTimeout(esp.loader.main(), 20000, bootloaderHelp()); // sync + detect chip
     setMsg($("flashStatus"), `ESP32-S3 connected (${esp.chip}). Select a model and click Flash model.`, "ok");
     $("flashBtn").disabled = false;
   } catch(e){
     esp.loader = null;
     try { if(esp.transport) await esp.transport.disconnect(); } catch(_){}
     esp.transport = null;
-    const msg = /No port selected|cancell/i.test(e.message||"") ? "Port selection cancelled." : ("Connect failed: " + (e.message||e));
+    const raw = e.message || String(e);
+    const msg = /No port selected|cancell/i.test(raw) ? "Port selection cancelled." : ("Connect failed: " + raw);
+    flashLog("\n[portal] " + msg + "\n");
     setMsg($("flashStatus"), msg, "bad");
   }
   $("connectBtn").disabled = false;

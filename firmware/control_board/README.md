@@ -1,8 +1,8 @@
-# ESP2 Output Firmware
+# Control Board Output Firmware
 
-`firmware/esp2_output/` is a standalone ESP-IDF project for the normal ESP32 board that controls the robotic arm servos.
+`firmware/control_board/` is a standalone ESP-IDF project for the normal ESP32 board that controls the robotic arm servos.
 
-ESP1 handles camera and model inference. The PC receives ESP1 `RESULT,...` lines, maps the predicted gesture to one output action, then forwards `ACTION,<name>` commands to ESP2 over a second USB serial connection.
+main board handles camera and model inference. The PC receives main board `RESULT,...` lines, maps the predicted gesture to one output action, then forwards `ACTION,<name>` commands to control board over a second USB serial connection.
 
 ## Servo Pins
 
@@ -20,7 +20,7 @@ claw  GPIO21
 Use an ESP-IDF terminal:
 
 ```powershell
-cd firmware\esp2_output
+cd firmware\control_board
 idf.py set-target esp32
 idf.py build
 idf.py -p COM7 flash monitor
@@ -29,7 +29,7 @@ idf.py -p COM7 flash monitor
 Expected boot output:
 
 ```text
-READY,ESP2_SERVO_OUTPUT
+READY,CONTROL_BOARD_SERVO_OUTPUT
 STATE,gesture=4,name=null,base=90,arm=90,pitch=90,claw=30
 ```
 
@@ -84,17 +84,17 @@ OK,gesture=0,name=up,base=90,arm=90,pitch=95,claw=30
 From repository root:
 
 ```powershell
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 up
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 clamp
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 release
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 right --repeat 3
-python firmware\pc\tools\send_esp2_gesture.py --port COM7 TEST --timeout 5
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 up
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 clamp
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 release
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 right --repeat 3
+python firmware\pc\tools\send_control_board_gesture.py --port COM7 TEST --timeout 5
 ```
 
 ## Full System Paths
 
 ```text
-Benchmark path          firmware/pc/benchmark/run_benchmark_png.py --esp2-port COM7
-Python controller path  OUTPUT_ESP2_PORT=COM7 python firmware/pc/tools/camera_controller.py
-ImGui app path          Connect ESP2 Output panel and enable Auto-forward RESULT
+Benchmark path          firmware/pc/benchmark/run_benchmark_png.py --control-board-port COM7
+Python controller path  CONTROL_BOARD_PORT=COM7 python firmware/pc/tools/camera_controller.py
+ImGui app path          Connect Control Board Output panel and enable Auto-forward RESULT
 ```

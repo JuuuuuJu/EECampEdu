@@ -44,8 +44,8 @@ constexpr int INPUT_DEBOUNCE_MS = 60;
 // Input/output unit-test mode. This mode does not require a flashed TFLite model.
 constexpr int IO_SELF_TEST_INTERVAL_MS = 1000;
 
-// Robot arm output is now owned by ESP2 over a second USB serial link.
-// ESP1 only reports inference results to the PC; the PC forwards gestures to ESP2.
+// Robot arm output is now owned by control board over a second USB serial link.
+// main board only reports inference results to the PC; the PC forwards gestures to control board.
 
 // Integration default: keep the tensor arena on PSRAM so all supported model
 // candidates use the same memory path. Set true only for small-model speed tests.

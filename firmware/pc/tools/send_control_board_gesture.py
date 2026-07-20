@@ -37,9 +37,9 @@ def build_command(text):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Send one output action/manual servo command to the ESP2 output controller.")
+    parser = argparse.ArgumentParser(description="Send one output action/manual servo command to the control board output controller.")
     parser.add_argument("command", help="Output action such as up/down/left/right/clamp/release/none, legacy gesture index 0-4, or manual servo command such as B90, A90, P100, C30.")
-    parser.add_argument("--port", "-p", required=True, help="Serial port connected to ESP2, for example COM7.")
+    parser.add_argument("--port", "-p", required=True, help="Serial port connected to control board, for example COM7.")
     parser.add_argument("--baudrate", "--baud", type=int, default=115200)
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--delay", type=float, default=0.25, help="Delay between repeated commands in seconds.")

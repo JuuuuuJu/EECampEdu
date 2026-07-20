@@ -1,4 +1,4 @@
-﻿# Apps
+# Apps
 
 `apps/` contains PC applications. UI code stays here, not inside firmware.
 
@@ -10,7 +10,7 @@
 - `local_flash_helper/` — student-PC localhost helper that flashes the ESP32-S3
   from the browser. See [`local_flash_helper/README.md`](local_flash_helper/README.md).
 - `local_camera_app/` — student-PC localhost app: live gesture result + class→action
-  mapping + ESP2 forward. See [`local_camera_app/README.md`](local_camera_app/README.md).
+  mapping + control board forward. See [`local_camera_app/README.md`](local_camera_app/README.md).
 
 ## Current App
 
@@ -24,11 +24,11 @@ apps/esp32_cam_input_app/
 
 The app is an integration demo for:
 
-- ESP1 USB CDC live preview.
-- ESP1 camera capture / stream / format / resolution commands.
+- main board USB CDC live preview.
+- main board camera capture / stream / format / resolution commands.
 - Input UI controls for zoom placeholder, exposure, ISO/gain, and capture.
-- ESP2 output connection and manual servo movement tests.
-- Automatic forwarding from ESP1 `RESULT,...` lines to ESP2 `GESTURE,<index>,<name>` commands.
+- control board output connection and manual servo movement tests.
+- Automatic forwarding from main board `RESULT,...` lines to control board `GESTURE,<index>,<name>` commands.
 - ImGui demo window for rapid component testing.
 
 ## Build
@@ -50,7 +50,7 @@ Use a 64-bit Visual Studio Build Tools environment. The build script avoids the 
 
 ## Firmware Mode
 
-For USB live preview and UI control tests, set ESP1 firmware to:
+For USB live preview and UI control tests, set main board firmware to:
 
 ```cpp
 constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
@@ -61,10 +61,10 @@ constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
 The app uses two independent serial connections:
 
 ```text
-USB CDC Port      ESP1 ESP32-S3 camera/inference board, for example COM6
-ESP2 Output Port  ESP2 servo output board, for example COM7
+USB CDC Port      main board ESP32-S3 camera/inference board, for example COM6
+Control Board Output Port  control board servo output board, for example COM7
 ```
 
-With `Auto-forward RESULT` checked, the app forwards every ESP1 `RESULT,...` line to ESP2 as a `GESTURE,<index>,<name>` command.
+With `Auto-forward RESULT` checked, the app forwards every main board `RESULT,...` line to control board as a `GESTURE,<index>,<name>` command.
 
-Manual output buttons are available in the `ESP2 Output` panel for unit testing without camera/model inference.
+Manual output buttons are available in the `Control Board Output` panel for unit testing without camera/model inference.

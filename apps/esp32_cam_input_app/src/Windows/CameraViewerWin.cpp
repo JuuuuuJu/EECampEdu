@@ -1,4 +1,4 @@
-﻿#include "CameraViewerWin.hpp"
+#include "CameraViewerWin.hpp"
 
 #include <algorithm>
 #include <cstdint>

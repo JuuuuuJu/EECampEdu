@@ -74,10 +74,10 @@ except Exception:  # pragma: no cover - portal still runs without it
 CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 NUM_CLASSES = 6
 VALIDATION_RATIO = 0.2  # auto-split fraction when the zip has no validation split
-# ESP32-S3 model-partition offset (see firmware/esp/partitions.csv). Served via
+# ESP32-S3 model-partition offset (see firmware/main_board/partitions.csv). Served via
 # /api/flash-meta to the browser Web Serial flasher; never shown in the UI.
 FLASH_OFFSET = 0x310000
-# Robot-arm output actions a class may be mapped to (matches ESP2 output firmware).
+# Robot-arm output actions a class may be mapped to (matches control board output firmware).
 OUTPUT_ACTIONS = ["up", "down", "left", "right", "clamp", "release"]
 
 
