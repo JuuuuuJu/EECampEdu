@@ -548,6 +548,42 @@ function binaryString(arrayBuffer){
   for(let i=0;i<buf.length;i++) s += String.fromCharCode(buf[i]);
   return s;
 }
+async function safeDisconnectTransport(transport){
+  try { if(transport) await transport.disconnect(); } catch(_) {}
+}
+async function closeModelFlashSession(){
+  esp.loader = null;
+  esp.chip = null;
+  await safeDisconnectTransport(esp.transport);
+  esp.transport = null;
+}
+async function connectEspLoader(ESPLoader, Transport, port, terminal, logId){
+  const attempts = [
+    { mode: "default_reset", label: "auto reset" },
+    { mode: "no_reset", label: "manual boot/no-reset" },
+  ];
+  let lastError = null;
+  for(const attempt of attempts){
+    let transport = null;
+    try {
+      appendLog(logId, `\n[portal] Connecting with ${attempt.label}...\n`);
+      transport = new Transport(port, true);
+      const loader = new ESPLoader({ transport, baudrate: 115200, romBaudrate: 115200, terminal });
+      const chip = await withTimeout(loader.main(attempt.mode), 20000, serialTroubleshoot());
+      return { transport, loader, chip };
+    } catch(e){
+      lastError = e;
+      appendLog(logId, `[portal] ${attempt.label} failed: ${(e && e.message) || e}\n`);
+      await safeDisconnectTransport(transport);
+      if(attempt.mode === "default_reset"){
+        appendLog(logId, "[portal] Auto reset failed. Put the board in bootloader mode, then continue: hold BOOT, tap RESET/EN, release BOOT after ~1s.\n");
+        const proceed = window.confirm("Auto reset failed. Put the ESP32-S3 in bootloader mode now:\n\n1. Hold BOOT\n2. Tap RESET/EN\n3. Release BOOT after about 1 second\n\nThen click OK to retry without toggling DTR/RTS.");
+        if(!proceed) throw new Error("Manual boot retry cancelled.");
+      }
+    }
+  }
+  throw lastError || new Error(serialTroubleshoot());
+}
 
 // ---------- FLASH MODEL (.tflite only) ----------
 let esp = { transport: null, loader: null, chip: null, meta: null };
@@ -581,15 +617,17 @@ $("connectBtn").onclick = async () => {
   try {
     const { ESPLoader, Transport } = await import(ESPTOOL_JS);
     if(!esp.meta){ try { esp.meta = await api("/api/flash-meta"); } catch(e){ esp.meta = { offset_int: 3211264 }; } }
+    await closeModelFlashSession();
     const port = await navigator.serial.requestPort();
-    esp.transport = new Transport(port, true);
     setMsg($("flashStatus"), "Connected. Entering bootloader…", "warn");
-    esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal: modelTerminal });
-    esp.chip = await withTimeout(esp.loader.main(), 20000, serialTroubleshoot());
+    const connected = await connectEspLoader(ESPLoader, Transport, port, modelTerminal, "modelFlashLog");
+    esp.transport = connected.transport;
+    esp.loader = connected.loader;
+    esp.chip = connected.chip;
     setMsg($("flashStatus"), `ESP32-S3 connected (${esp.chip}). Select a model and click Flash model.`, "ok");
     $("flashBtn").disabled = false;
   } catch(e){
-    esp.loader = null; try { if(esp.transport) await esp.transport.disconnect(); } catch(_){}
+    await closeModelFlashSession();
     esp.transport = null;
     const raw = e.message || String(e);
     const msg = /No port selected|cancell/i.test(raw) ? "Port selection cancelled." : ("Connect failed: " + raw);
@@ -620,10 +658,12 @@ $("flashBtn").onclick = async () => {
         setMsg($("flashStatus"), `Writing model to flash… ${pct}% (${written}/${total} bytes)`, "warn");
       },
     });
-    try { if(esp.loader.hardReset) await esp.loader.hardReset(); } catch(_){}
+    try { if(esp.loader.after) await esp.loader.after("hard_reset"); } catch(_){}
+    await closeModelFlashSession();
     setMsg($("flashStatus"), "Flash succeeded — the ESP32-S3 is running the new model.", "ok");
   } catch(e){
     setMsg($("flashStatus"), "Flash failed: " + (e.message || e) + " (see log)", "bad");
+    await closeModelFlashSession();
   }
   $("flashBtn").disabled = false; $("connectBtn").disabled = false;
 };
@@ -692,12 +732,14 @@ $("fwFlashBtn").onclick = async () => {
   let transport = null, loader = null;
   try {
     const { ESPLoader, Transport } = await import(ESPTOOL_JS);
+    await closeModelFlashSession();
     setMsg($("fwStatus"), "Opening browser serial chooser…", "warn");
     const port = await navigator.serial.requestPort();
-    transport = new Transport(port, true);
     setMsg($("fwStatus"), "Connected. Entering bootloader…", "warn");
-    loader = new ESPLoader({ transport, baudrate: 460800, romBaudrate: 115200, terminal: fwTerminal });
-    const chip = await withTimeout(loader.main(), 20000, serialTroubleshoot());
+    const connected = await connectEspLoader(ESPLoader, Transport, port, fwTerminal, "fwFlashLog");
+    transport = connected.transport;
+    loader = connected.loader;
+    const chip = connected.chip;
     appendLog("fwFlashLog", `\n[portal] ${chip} — downloading ${FW_META.images.length} firmware images…\n`);
     setMsg($("fwStatus"), "Downloading firmware images…", "warn");
     const fileArray = [];
@@ -720,7 +762,7 @@ $("fwFlashBtn").onclick = async () => {
         setMsg($("fwStatus"), `Writing ${im?im.name:("image "+(i+1))} (${i+1}/${FW_META.images.length})… ${pct}%`, "warn");
       },
     });
-    try { if(loader.hardReset) await loader.hardReset(); } catch(_){}
+    try { if(loader.after) await loader.after("hard_reset"); } catch(_){}
     setMsg($("fwStatus"), "Firmware flash succeeded — the main board is rebooting.", "ok");
   } catch(e){
     const raw = e.message || String(e);
@@ -728,7 +770,7 @@ $("fwFlashBtn").onclick = async () => {
     appendLog("fwFlashLog", "\n[portal] " + msg + "\n");
     setMsg($("fwStatus"), msg, "bad");
   }
-  try { if(transport) await transport.disconnect(); } catch(_){}
+  await safeDisconnectTransport(transport);
   $("fwFlashBtn").disabled = false;
 };
 
