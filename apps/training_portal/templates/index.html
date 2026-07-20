@@ -139,30 +139,35 @@
     <div class="msg" id="quantMsg"></div>
   </section>
 
-  <!-- 5. Flash helper (student PC) -->
+  <!-- 5. Flash (browser Web Serial) -->
   <section class="card">
     <h2><span class="step">5.</span>Flash ESP32-S3 (your PC)</h2>
-    <p class="note">Plug the ESP32-S3 into <b>your PC</b>. The board is detected automatically —
-       pick the model, confirm the port, and click <b>Flash model</b>.</p>
-    <div class="msg" id="helperStatus">Connecting to flash helper…</div>
+    <p class="note">Plug the ESP32-S3 into <b>your PC</b> and flash it straight from this page —
+       no install, no Python. Use <b>Chrome</b> or <b>Edge</b>; the browser will ask you to pick
+       the board's serial port. Progress appears in the job log below.</p>
     <label>TFLite model</label>
     <select id="flashArtifact"></select>
     <div class="row">
-      <div><label>Detected port</label><select id="flashPort"></select></div>
-      <div style="flex:0 0 auto">
-        <label>&nbsp;</label>
-        <button class="secondary" id="refreshPortsBtn" style="margin-top:0">Refresh ports</button>
-      </div>
+      <div><button class="secondary" id="connectBtn">Connect ESP32-S3</button></div>
+      <div><button id="flashBtn" disabled>Flash model</button></div>
     </div>
-    <button id="flashBtn">Flash model</button>
-    <div class="msg" id="flashMsg"></div>
-    <details style="margin-top:12px">
-      <summary class="note" style="cursor:pointer">Advanced (only if the helper runs elsewhere)</summary>
-      <label>Local flash helper URL</label>
-      <input type="text" id="helperUrl" value="http://127.0.0.1:8765" />
-      <label>Flash offset</label>
-      <input type="text" id="flashOffset" value="0x310000" />
-    </details>
+    <div class="msg" id="flashStatus"></div>
+    <div id="httpHelp" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:10px">
+      <p class="note" style="margin-top:0">This page is served over <b>HTTP</b>, so Chrome/Edge hide
+         serial flashing. Allow <b>this one site</b> once (per PC), then reload:</p>
+      <ol class="note" style="margin:0 0 6px 18px;line-height:1.7">
+        <li>Copy this address:
+          <code id="originCode"></code>
+          <button class="secondary" id="copyOriginBtn" style="margin:0;padding:2px 8px">Copy</button></li>
+        <li>In a new tab open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>
+            <br>(Microsoft Edge: <code>edge://flags/#unsafely-treat-insecure-origin-as-secure</code>) —
+            type it into the address bar.</li>
+        <li>Paste the address into the box, set the dropdown to <b>Enabled</b>, then click <b>Relaunch</b>.</li>
+        <li>Return here, reload, and click <b>Connect ESP32-S3</b>.</li>
+      </ol>
+      <p class="note" style="margin:0">If your school browser blocks this flag, ask your instructor to serve
+         the portal over HTTPS, or use the offline CLI helper as a fallback.</p>
+    </div>
   </section>
 
   <!-- Job log -->
@@ -256,7 +261,7 @@ async function init(){
   refreshArtifacts();
   refreshJobs();
   setInterval(refreshJobs, 5000);
-  checkHelper();   // auto-detect the local flash helper + ESP32-S3 port in the background
+  initFlashPanel();   // Web Serial feature detection for the Flash panel
 }
 
 async function refreshClassMap(){
@@ -524,118 +529,139 @@ async function refreshJobs(){
   } catch(e){}
 }
 
-// ---------- flash helper (auto-talks to the student-PC localhost helper) ----------
-const HELPER_URL_DEFAULT = "http://127.0.0.1:8765";
-function helperBase(){
-  const el = $("helperUrl");
-  const url = (el && el.value.trim()) ? el.value.trim() : HELPER_URL_DEFAULT;
-  return url.replace(/\/$/, "");
+// ---------- flash via browser Web Serial (esptool-js, vendored offline) ----------
+// No local helper, no 127.0.0.1: the browser talks to the board directly.
+const ESPTOOL_JS = "/static/vendor/esptool-js/bundle.js";  // pinned esptool-js@0.5.4
+let esp = { transport: null, loader: null, chip: null, meta: null };
+
+function flashLog(s){
+  const el = $("log");
+  if(!el) return;
+  el.textContent += s;
+  el.scrollTop = el.scrollHeight;
 }
 
-// Fetch JSON from the local helper, always surfacing a clean text message on error.
-async function helperJson(path, opts){
-  const res = await fetch(helperBase() + path, opts);
-  const text = await res.text();
-  let body; try { body = JSON.parse(text); } catch(e){ body = null; }
-  if(!res.ok){
-    throw new Error((body && (body.error || body.message)) || cleanError(text) || (res.status + " error"));
-  }
-  return body != null ? body : {};
+// Feature detection. Web Serial exists only in Chromium browsers AND secure
+// contexts (HTTPS or localhost). On a plain-HTTP non-localhost origin it is
+// hidden — but the student can allowlist this exact origin via a browser flag,
+// which is what the "insecure-http" reason surfaces (see the help panel).
+function webSerialSupport(){
+  if(navigator.serial) return { ok: true };
+  if(!window.isSecureContext){ return { ok: false, reason: "insecure-http" }; }
+  return { ok: false, reason: "unsupported-browser" };
 }
 
-// Heuristic: does a serial port look like an ESP32-S3 USB bridge?
-function looksLikeEsp(port){
-  const s = ((port.device||"") + " " + (port.description||"") + " " + (port.hwid||"")).toLowerCase();
-  return /(ttyusb|ttyacm|cp210|ch340|ch910|wch|cdc|espressif|silicon\s*labs|usb\s*serial|usb\s*jtag|303a|10c4|1a86)/.test(s);
-}
-
-let HELPER_OK = false;
-
-async function checkHelper(){
-  setMsg($("helperStatus"), "Connecting to flash helper…", "warn");
-  let health;
-  try {
-    health = await helperJson("/health");
-  } catch(e){
-    HELPER_OK = false;
-    setMsg($("helperStatus"),
-      "Flash helper not detected. Start it on your PC, then click Refresh ports.", "bad");
-    fillPorts([]);
+function initFlashPanel(){
+  const help = $("httpHelp");
+  const originEl = $("originCode");
+  if(originEl) originEl.textContent = window.location.origin;
+  if(help) help.style.display = "none";
+  const sup = webSerialSupport();
+  const cb = $("connectBtn"), fb = $("flashBtn");
+  if(sup.ok){
+    setMsg($("flashStatus"), "Ready. Click “Connect ESP32-S3” and pick the board's port.", "");
     return;
   }
-  HELPER_OK = true;
-  let ports = [];
-  try { ports = (await helperJson("/ports")).ports || []; } catch(e){ ports = []; }
-  const chosen = fillPorts(ports);
-  if(!ports.length){
-    setMsg($("helperStatus"),
-      "Flash helper connected. No ESP32-S3 found — plug in the board and click Refresh ports.", "warn");
-  } else if(chosen){
-    setMsg($("helperStatus"), `Flash helper connected · ESP32-S3 detected on ${chosen}`, "ok");
+  if(cb) cb.disabled = true;
+  if(fb) fb.disabled = true;
+  if(sup.reason === "unsupported-browser"){
+    setMsg($("flashStatus"), "Web Serial is not supported in this browser. Please use Chrome or Edge.", "bad");
   } else {
-    setMsg($("helperStatus"),
-      `Flash helper connected · ${ports.length} serial port(s) found — confirm the port below.`, "warn");
+    // Plain HTTP: actionable — show the one-time browser-flag steps for THIS origin.
+    setMsg($("flashStatus"),
+      "Flashing is blocked because this page is served over HTTP. One-time browser setup below enables it.", "warn");
+    if(help) help.style.display = "";
   }
 }
 
-// Populate the port dropdown and auto-select the most likely ESP32-S3 port.
-// Returns the auto-selected device (string) or "" if none was confidently chosen.
-function fillPorts(ports){
-  const sel = $("flashPort");
-  if(!sel) return "";
-  sel.innerHTML = "";
-  if(!ports.length){
-    const o = document.createElement("option");
-    o.value = ""; o.textContent = "(no serial ports — click Refresh ports)";
-    sel.appendChild(o);
-    return "";
-  }
-  ports.forEach(p => {
-    const o = document.createElement("option");
-    o.value = p.device;
-    o.textContent = p.device + (p.description ? " — " + p.description : "");
-    sel.appendChild(o);
-  });
-  const match = ports.find(looksLikeEsp);
-  if(match){ sel.value = match.device; return match.device; }
-  sel.value = ports[0].device;   // fall back to first port, but report it as unconfirmed
-  return "";
+// esptool-js terminal sink: mirror device output to the log + drive the status line.
+const espTerminal = {
+  clean(){ const el = $("log"); if(el) el.textContent = ""; },
+  writeLine(data){ flashLog(data + "\n"); scanFlashStatus(data); },
+  write(data){ flashLog(data); scanFlashStatus(data); },
+};
+function scanFlashStatus(line){
+  const s = String(line);
+  if(/Erasing/i.test(s))                 setMsg($("flashStatus"), "Erasing model partition…", "warn");
+  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("flashStatus"), "Writing model to flash…", "warn");
+  else if(/Hash of data verified|verified/i.test(s)) setMsg($("flashStatus"), "Verifying…", "warn");
 }
 
-$("refreshPortsBtn").onclick = checkHelper;
+$("connectBtn").onclick = async () => {
+  const sup = webSerialSupport();
+  if(!sup.ok){ setMsg($("flashStatus"), sup.msg, "bad"); return; }
+  setMsg($("flashStatus"), "Opening browser serial chooser…", "warn");
+  $("connectBtn").disabled = true;
+  try {
+    const { ESPLoader, Transport } = await import(ESPTOOL_JS);
+    if(!esp.meta){ try { esp.meta = await api("/api/flash-meta"); } catch(e){ esp.meta = { chip:"esp32s3", offset_int: 3211264 }; } }
+    const port = await navigator.serial.requestPort();           // browser port picker (user gesture)
+    esp.transport = new Transport(port, true);
+    setMsg($("flashStatus"), "Connected. Entering bootloader…", "warn");
+    esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal: espTerminal });
+    esp.chip = await esp.loader.main();                          // sync + detect chip
+    setMsg($("flashStatus"), `ESP32-S3 connected (${esp.chip}). Select a model and click Flash model.`, "ok");
+    $("flashBtn").disabled = false;
+  } catch(e){
+    esp.loader = null;
+    try { if(esp.transport) await esp.transport.disconnect(); } catch(_){}
+    esp.transport = null;
+    const msg = /No port selected|cancell/i.test(e.message||"") ? "Port selection cancelled." : ("Connect failed: " + (e.message||e));
+    setMsg($("flashStatus"), msg, "bad");
+  }
+  $("connectBtn").disabled = false;
+};
 
 $("flashBtn").onclick = async () => {
   const artifactPath = $("flashArtifact").value;
-  const port = $("flashPort").value;
-  if(!HELPER_OK){ setMsg($("flashMsg"), "Flash helper not running — start it, then click Refresh ports.", "bad"); return; }
-  if(!artifactPath){ setMsg($("flashMsg"), "Select a TFLite model first (quantize one if the list is empty).", "bad"); return; }
-  if(!port){ setMsg($("flashMsg"), "No serial port detected — plug in the ESP32-S3 and click Refresh ports.", "bad"); return; }
-  const artifactUrl = ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(artifactPath);
-  const offsetEl = $("flashOffset");
-  const body = { artifact_url: artifactUrl, port: port };
-  if(offsetEl && offsetEl.value.trim()){ body.offset = offsetEl.value.trim(); }
-  setMsg($("flashMsg"), `Flashing ${artifactPath.split("/").pop()} to ${port}… do not unplug.`, "warn");
-  $("flashBtn").disabled = true;
+  if(!esp.loader){ setMsg($("flashStatus"), "Connect the ESP32-S3 first.", "bad"); return; }
+  if(!artifactPath){ setMsg($("flashStatus"), "Select a TFLite model first (quantize one if the list is empty).", "bad"); return; }
+  const offset = (esp.meta && esp.meta.offset_int) || 3211264;   // model partition; not shown to the student
+  $("flashBtn").disabled = true; $("connectBtn").disabled = true;
   try {
-    // Flash can return the esptool log on both success (200) and failure (500),
-    // so parse defensively rather than throwing away the output.
-    const res = await fetch(helperBase() + "/flash", {
-      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)
+    setMsg($("flashStatus"), "Downloading model from the portal…", "warn");
+    const resp = await fetch(ORIGIN + "/api/artifacts/download?path=" + encodeURIComponent(artifactPath));
+    if(!resp.ok) throw new Error("could not download model (" + resp.status + ")");
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    let bin = ""; for(let i=0;i<buf.length;i++) bin += String.fromCharCode(buf[i]);   // esptool-js wants a binary string
+    flashLog(`\n[portal] flashing ${artifactPath.split("/").pop()} (${buf.length} bytes)\n`);
+    setMsg($("flashStatus"), "Erasing model partition…", "warn");
+    await esp.loader.writeFlash({
+      fileArray: [{ data: bin, address: offset }],
+      flashSize: "keep", flashMode: "keep", flashFreq: "keep",
+      eraseAll: false, compress: true,
+      reportProgress: (idx, written, total) => {
+        const pct = total ? Math.round(written / total * 100) : 0;
+        setMsg($("flashStatus"), `Writing model to flash… ${pct}% (${written}/${total} bytes)`, "warn");
+      },
     });
-    const text = await res.text();
-    let r; try { r = JSON.parse(text); } catch(e){ r = null; }
-    setText("log", (r && r.output) || cleanError(text) || "(no output)");
-    if(res.ok && r && r.ok){
-      setMsg($("flashMsg"), "Flash succeeded.", "ok");
-    } else {
-      const why = (r && (r.error || (r.ok === false ? "esptool reported an error — see the log below." : ""))) || cleanError(text) || "flash failed";
-      setMsg($("flashMsg"), "Flash failed: " + why, "bad");
-    }
+    setMsg($("flashStatus"), "Flash succeeded. Resetting board…", "ok");
+    try { if(esp.loader.hardReset) await esp.loader.hardReset(); } catch(_){}
+    setMsg($("flashStatus"), "Flash succeeded — the ESP32-S3 is running the new model.", "ok");
   } catch(e){
-    setMsg($("flashMsg"), "Could not reach the flash helper: " + e.message, "bad");
+    setMsg($("flashStatus"), "Flash failed: " + (e.message || e) + " (see the log below)", "bad");
   }
-  $("flashBtn").disabled = false;
+  $("flashBtn").disabled = false; $("connectBtn").disabled = false;
 };
+
+if($("copyOriginBtn")){
+  $("copyOriginBtn").onclick = () => {
+    const text = window.location.origin;
+    const done = () => setMsg($("flashStatus"), "Address copied — paste it into the browser flag box, then Relaunch.", "ok");
+    const fallback = () => {
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); }
+      catch(e){ setMsg($("flashStatus"), "Could not copy automatically — select and copy the address shown.", "bad"); }
+      document.body.removeChild(ta);
+    };
+    // navigator.clipboard also requires a secure context, so fall back on HTTP.
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(fallback);
+    } else { fallback(); }
+  };
+}
 
 $("refreshArtifacts").onclick = refreshArtifacts;
 init();
