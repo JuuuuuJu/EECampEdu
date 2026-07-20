@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #include "driver/ledc.h"
 #include "esp_err.h"
@@ -36,6 +37,7 @@ static const char *TAG = "ESP2_OUTPUT";
 #define CLAW_MAX_DEG 90
 #define CLAW_CLAMP_DEG 0
 #define CLAW_RELEASE_DEG 80
+#define HEIGHT_COEFFICIENT 0.25
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
@@ -64,6 +66,20 @@ static void write_all_servos(void) {
     write_servo(LEDC_CHANNEL_1, arm_angle);
     write_servo(LEDC_CHANNEL_2, pitch_angle);
     write_servo(LEDC_CHANNEL_3, claw_angle);
+}
+
+static int pitch_angle_calculator(int arm){
+    double arm_Rad = (double)arm * M_PI / 180.0;
+    double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
+    return clamp_int((int)calculated_pitch, PITCH_MIN_DEG, PITCH_MAX_DEG);
+}
+
+static void set_angles_constant_height(int base, int arm, int claw) {
+    base_angle = clamp_int(base, 0, 180);
+    arm_angle = clamp_int(arm, ARM_MIN_DEG, ARM_MAX_DEG);
+    pitch_angle = pitch_angle_calculator(arm_angle);
+    claw_angle = clamp_int(claw, CLAW_MIN_DEG, CLAW_MAX_DEG);
+    write_all_servos();
 }
 
 static void set_all_angles(int base, int arm, int pitch, int claw) {
@@ -219,11 +235,15 @@ static int parse_action(const char *command) {
 static void apply_gesture(int gesture) {
     switch (gesture) {
         case 0:
-            pitch_angle = clamp_int(pitch_angle + STEP_DEG, PITCH_MIN_DEG, PITCH_MAX_DEG);
+            arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+            pitch_angle = pitch_angle_calculator(arm_angle);
+            write_servo(LEDC_CHANNEL_1, arm_angle);
             write_servo(LEDC_CHANNEL_2, pitch_angle);
             break;
         case 1:
-            pitch_angle = clamp_int(pitch_angle - STEP_DEG, PITCH_MIN_DEG, PITCH_MAX_DEG);
+            arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+            pitch_angle = pitch_angle_calculator(arm_angle);
+            write_servo(LEDC_CHANNEL_1, arm_angle);
             write_servo(LEDC_CHANNEL_2, pitch_angle);
             break;
         case 2:
