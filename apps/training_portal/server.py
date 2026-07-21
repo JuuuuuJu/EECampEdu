@@ -69,9 +69,9 @@ FIRMWARE_FLASHER_ARGS = FIRMWARE_BUILD_DIR / "flasher_args.json"
 # its own ESP-IDF flasher_args.json so offsets are never hardcoded.
 FIRMWARE_TARGETS = {
     "model_finetune": {
-        "label": "Model finetune / full camera firmware",
-        "build_dir": REPO_ROOT / "firmware" / "main_board" / "build",
-        "build_hint": "firmware/main_board with RuntimeMode::kCameraUsbMsc",
+        "label": "Model finetune camera firmware",
+        "build_dir": REPO_ROOT / "firmware" / "model_finetune" / "build",
+        "build_hint": "firmware/model_finetune camera-only OV2640 + USB firmware",
     },
     "deploy_benchmark": {
         "label": "Deploy benchmark firmware",

@@ -14,6 +14,7 @@ Students use the AI PC browser portal to collect/train model data, quantize a de
 
 ```text
 model_finetune/                 training scripts, class mapping, source model outputs
+firmware/model_finetune/        camera-only ESP32-S3 firmware: OV2640 preview/capture for model data
 firmware/main_board/            full ESP32-S3 firmware: camera + USB + continuous TFLite Micro inference
 firmware/deploy_benchmark/      benchmark-only ESP32-S3 firmware: TEST_MODE_UART_FRAME
 firmware/control_board/         servo control board firmware

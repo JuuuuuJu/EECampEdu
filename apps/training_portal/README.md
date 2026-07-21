@@ -134,7 +134,7 @@ apps/training_portal/runs/
 
 ## Pages
 
-The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`. Firmware targets are separated by class: `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
+The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`. Firmware targets are separated by class: `firmware/model_finetune` is camera-only OV2640 preview/capture, `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
 Train/Quantize run as background jobs (shared job log / artifacts / history
 panels); the flash, OV2640 preview, and **`/deploy` on-device benchmark** all run
 in the browser via Web Serial against the board on the **student PC** (the AI PC
@@ -152,7 +152,8 @@ via the Web Serial API — no install, no Python, no `127.0.0.1`. Students use
   through `/api/artifacts/download` and flashes it; the model-partition offset
   comes from `/api/flash-meta` and is not shown.
 - **Flash firmware** — updates one ESP-IDF firmware target at a time. The portal reads the selected target's `build/flasher_args.json` via `/api/firmware/meta`, then flashes bootloader + partition table + app at ESP-IDF-generated offsets. Current targets:
-  - `/model_finetune` and `/firmware`: `firmware/main_board/build` (`RuntimeMode::kCameraUsbMsc`, full camera/USB/continuous inference).
+  - `/model_finetune`: `firmware/model_finetune/build` (camera-only OV2640 preview/capture, no TFLite model required).
+  - `/firmware`: `firmware/main_board/build` (`RuntimeMode::kCameraUsbMsc`, full camera/USB/continuous inference).
   - `/deploy`: `firmware/deploy_benchmark/build` (`RuntimeMode::kTestUartFrame`, benchmark-only frame input).
   - `/output`: `firmware/teaching_output_demo/build` (GPIO/LED/PWM class firmware).
   If a target is not built, that page tells the instructor which firmware folder to build first. Offsets are hidden unless **developer mode** (header checkbox) is on.

@@ -117,7 +117,7 @@
   <section class="pane" id="pane-model">
     <div class="card">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
-      <p class="note">Use this for the model class OV2640 preview/capture workflow. It should be built from <code>firmware/main_board</code> with camera stream mode, separate from deploy benchmark firmware.</p>
+      <p class="note">Use this for the model class OV2640 preview/capture workflow. It is built from <code>firmware/model_finetune</code>, a camera-only firmware separate from full integration and deploy benchmark firmware.</p>
       <div id="modelFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="modelFwFlashBtn" disabled>Connect &amp; flash model firmware</button></div>
@@ -144,7 +144,7 @@
       </div>
       <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
       <label style="margin-top:12px">Camera / model messages</label>
-      <pre class="log" id="cameraLog">Connect OV2640 preview after the main board firmware is flashed.</pre>
+      <pre class="log" id="cameraLog">Connect OV2640 preview after the model finetune camera firmware is flashed.</pre>
       <label style="margin-top:12px">Model file (ONNX) for preview</label>
       <div id="modelOnnx" class="note">Looking for a trained ONNX model…</div>
     </div>
@@ -605,6 +605,8 @@ $("benchRunBtn").onclick = async () => {
     setMsg($("benchMsg"),"Opening serial chooser — pick your ESP32-S3…","warn");
     bench.port = await navigator.serial.requestPort();
     await bench.port.open({ baudRate: BENCH_BAUD });
+    await clearSerialResetSignals(bench.port);
+    await sleep(1200);
     bench.writer = bench.port.writable.getWriter();
     benchStartPump();
     bench.running = true;
@@ -613,9 +615,10 @@ $("benchRunBtn").onclick = async () => {
       const im = images[k];
       const frame = await benchImageToFrame(im.url);
       setMsg($("benchMsg"), `Benchmarking… ${k+1}/${images.length}`, "warn");
-      await benchWaitFor(/READY/, 15000);
+      try { await benchWaitFor(/READY/, 20000); }
+      catch(e){ throw new Error("no READY from deploy benchmark firmware"); }
       await bench.writer.write(frame);
-      const line = await benchWaitFor(/^RESULT,/, 20000);
+      const line = await benchWaitFor(/^RESULT,/, 25000);
       const p = line.split(",");
       const idx = parseInt(p[1], 10);
       const model = parseInt(p[2], 10) || 0, pre = parseInt(p[3], 10) || 0, dev = parseInt(p[4], 10) || 0;
@@ -631,7 +634,8 @@ $("benchRunBtn").onclick = async () => {
     renderBenchSummary(agg, images.length, true);
     const raw = e.message || String(e);
     const m = /No port selected|cancell/i.test(raw) ? "Port selection cancelled."
-      : /timeout/i.test(raw) ? "No RESULT from the board. Flash the deploy benchmark firmware first, and close other serial monitors."
+      : /no READY/i.test(raw) ? "No READY from the board. Flash deploy benchmark firmware, reset the board once, then run benchmark again."
+      : /timeout/i.test(raw) ? "No RESULT from the board. The board was found, but did not finish one inference frame."
       : ("Benchmark failed: " + raw);
     appendLog("benchLog", "\n[portal] " + m + "\n");
     setMsg($("benchMsg"), m, "bad");
@@ -671,6 +675,23 @@ function webSerialSupport(){ if(navigator.serial) return {ok:true}; if(!window.i
 function makeTerminal(logId,onLine){ return { clean(){ const el=$(logId); if(el) el.textContent=""; },
   writeLine(d){ appendLog(logId,d+"\n"); if(onLine) onLine(d); }, write(d){ appendLog(logId,d); if(onLine) onLine(d); } }; }
 function binaryString(ab){ const b=new Uint8Array(ab); let s=""; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return s; }
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+async function clearSerialResetSignals(port){
+  if(!port || typeof port.setSignals !== "function") return;
+  // Normal app mode: release the auto-reset lines. Some ESP32-S3 USB-UART
+  // bridges hold EN/BOOT in a bad state after Web Serial opens the port.
+  try { await port.setSignals({ dataTerminalReady:false, requestToSend:false }); } catch(_) {}
+}
+async function resetSerialBoardToApp(port, logId){
+  if(!port || typeof port.setSignals !== "function") return;
+  try {
+    appendLog(logId, "[portal] resetting board into app mode...\n");
+    await port.setSignals({ dataTerminalReady:false, requestToSend:true });
+    await sleep(120);
+    await port.setSignals({ dataTerminalReady:false, requestToSend:false });
+    await sleep(800);
+  } catch(e){ appendLog(logId, "Serial cleanup warning: manual reset — "+(e.message||e)+"\n"); }
+}
 
 // ======================================================================
 // Shared Web Serial state + ONE cleanup helper used by every flash flow.
@@ -738,6 +759,7 @@ async function releaseSerial(logId){
     if(esp.loader && typeof esp.loader.after === "function") { await esp.loader.after("hard_reset"); }
     else if(esp.loader && typeof esp.loader.hardReset === "function") { await esp.loader.hardReset(); }
   } catch(e){ log("Serial cleanup warning: reset — "+(e.message||e)+"\n"); }
+  await resetSerialBoardToApp(esp.port, logId);
   // 2) disconnect the esptool transport (closes the device, releases its reader).
   try { if(esp.transport && typeof esp.transport.disconnect === "function") { await esp.transport.disconnect(); } }
   catch(e){ log("Serial cleanup warning: disconnect — "+(e.message||e)+"\n"); }
@@ -898,6 +920,8 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     camStop=false;
     camPort = await navigator.serial.requestPort();
     await camPort.open({baudRate:115200, bufferSize:1048576});
+    await clearSerialResetSignals(camPort);
+    await sleep(800);
     camWriter = camPort.writable.getWriter();
     camReader = camPort.readable.getReader();
     if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
@@ -1023,6 +1047,8 @@ $("ctrlConnectBtn").onclick = async () => {
     await releaseSerial("ctrlLog");                 // free any flash port (or a prior control session) first
     ctrlPort=await navigator.serial.requestPort();
     await ctrlPort.open({ baudRate:115200 });
+    await clearSerialResetSignals(ctrlPort);
+    await sleep(300);
     ctrlWriter=ctrlPort.writable.getWriter();
     $("ctrlLog").textContent="";
     ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
