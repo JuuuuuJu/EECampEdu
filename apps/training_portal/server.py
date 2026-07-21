@@ -613,10 +613,11 @@ def _find_class_roots(base_dir):
             "num_classes": len(class_names),
             "total_images": total,
         })
-    # Prefer candidates with exactly NUM_CLASSES, then split-labeled, then more images.
+    # Prefer candidates with MORE classes (the dataset may hold more than the
+    # active-6 limit), then split-labeled, then more images.
     candidates.sort(
         key=lambda item: (
-            item["num_classes"] == NUM_CLASSES,
+            item["num_classes"],
             item["split"] is not None,
             item["total_images"],
         ),
@@ -738,13 +739,19 @@ def _copy_class_images_autosplit(class_root, class_names, val_ratio):
 
 
 def _write_class_map(class_names):
-    """Persist the imported class order, preserving prior action mappings if unchanged."""
+    """Persist the ACTIVE class order (<= NUM_CLASSES), preserving any prior
+    per-class action for classes that remain active."""
     class_order = sorted(class_names)  # deterministic index assignment
     actions = {}
     if class_map_lib is not None:
         existing = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
-        if existing and set(existing.get("class_order", [])) == set(class_order):
-            actions = {c["name"]: c["action"] for c in existing.get("classes", []) if c.get("action")}
+        if existing:
+            # Carry over actions by NAME for any class still in the active set.
+            actions = {
+                c["name"]: c["action"]
+                for c in existing.get("classes", [])
+                if c.get("action") and c.get("name") in class_order
+            }
         return class_map_lib.save_class_map(class_order, actions=actions, path=CLASS_MAP_PATH)
     # Fallback writer if the shared module is unavailable.
     payload = {
@@ -776,19 +783,15 @@ def _import_dataset(zip_path):
     try:
         _extract_zip_safely(zip_path, staging)
         candidates = _find_class_roots(staging)
-        six_class = [c for c in candidates if c["num_classes"] == NUM_CLASSES]
-        if not six_class:
-            found = candidates[0]["num_classes"] if candidates else 0
-            example = candidates[0]["class_names"] if candidates else []
+        if not candidates:
             raise ValueError(
-                f"Expected exactly {NUM_CLASSES} class folders, found {found}"
-                + (f" ({', '.join(example)})" if example else "")
-                + ". Zip layout: six folders with any names, each holding images "
-                "(optionally under train/ and validation/)."
+                "No gesture class folders with images found. Zip layout: one folder "
+                "per class (any names), each holding images — optionally grouped under "
+                "train/ and validation/. At least two classes are required."
             )
 
         best_by_split = {}
-        for candidate in six_class:
+        for candidate in candidates:
             split = candidate["split"]
             if split and split not in best_by_split:
                 best_by_split[split] = candidate
@@ -807,12 +810,17 @@ def _import_dataset(zip_path):
             ]
             mode = "provided-split"
         else:
-            source = best_by_split.get("train") or six_class[0]
+            source = best_by_split.get("train") or candidates[0]
             class_names = sorted(source["class_names"])
             imports = _copy_class_images_autosplit(source["root"], class_names, VALIDATION_RATIO)
             mode = "auto-split"
 
-        class_map_payload = _write_class_map(class_names)
+        # The dataset may hold more than NUM_CLASSES classes; each training/
+        # inference run uses an ACTIVE subset of at most NUM_CLASSES. Default the
+        # active set to the first NUM_CLASSES classes alphabetically; the student
+        # can change it later on the Model finetune page.
+        active_names = class_names[:NUM_CLASSES]
+        class_map_payload = _write_class_map(active_names)
 
         total = sum(item["total_images"] for item in imports)
         merged_counts = {class_name: 0 for class_name in class_names}
@@ -823,7 +831,9 @@ def _import_dataset(zip_path):
             "mode": mode,
             "target": "+".join(item["target"] for item in imports),
             "total_images": total,
-            "class_order": class_names,
+            "class_order": active_names,
+            "available_classes": class_names,
+            "active_classes": active_names,
             "per_class": merged_counts,
             "class_map": class_map_payload,
             "imports": imports,
@@ -896,14 +906,29 @@ def _dataset_counts():
 
 
 def _refresh_class_map_from_dataset(extra_class=None):
-    names = set(_dataset_class_names())
-    if extra_class:
-        names.add(extra_class)
-    if len(names) > NUM_CLASSES:
-        raise ValueError(f"This teaching flow supports at most {NUM_CLASSES} gesture classes.")
-    if not names:
+    """Keep the ACTIVE class set consistent after a capture.
+
+    The dataset may hold many classes; the active set is capped at NUM_CLASSES.
+    A newly captured class is auto-activated only if there is a free active slot
+    (< NUM_CLASSES); otherwise it is simply collected on disk and the student can
+    activate it later by swapping the active set. Never raises on extra classes.
+    """
+    available = _dataset_class_names()
+    if not available:
         return None
-    return _write_class_map(sorted(names))
+    order = []
+    if class_map_lib is not None:
+        order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH) or []
+    # Drop any active class whose images are gone; keep the rest active.
+    order = [c for c in order if c in available]
+    if extra_class and extra_class in available and extra_class not in order and len(order) < NUM_CLASSES:
+        order.append(extra_class)
+    if not order:
+        # Bootstrap: first NUM_CLASSES classes alphabetically.
+        order = sorted(available)[:NUM_CLASSES]
+    if not order:
+        return None
+    return _write_class_map(order)
 
 
 def _preprocess_image_bytes_for_keras(raw, image_size=MODEL_INPUT_SIZE):
@@ -1312,36 +1337,74 @@ def create_app():
             }
         payload["output_actions"] = OUTPUT_ACTIONS
         payload["dataset_counts"] = _dataset_counts()
+        payload["available_classes"] = _dataset_class_names()
+        payload["max_active"] = NUM_CLASSES
         return jsonify(payload)
 
     @app.post("/api/class-map")
     def set_class_map():
-        """Save the student's class -> output-action mapping.
+        """Set the ACTIVE class set and/or the class -> output-action mapping.
 
-        Body: {"actions": {"<class name>": "<action>", ...}}. The class ORDER is
-        fixed by the imported dataset and cannot be changed here; only actions are
-        editable, and each must be one of OUTPUT_ACTIONS (or empty to clear).
+        Body:
+          {"active": ["classA", "classB", ...]}  optional; the <= NUM_CLASSES
+              classes used for training/quantization/inference. Each must exist in
+              the dataset. Replaces the current active set (class order).
+          {"actions": {"<class name>": "<action>", ...}}  optional; only classes in
+              the active set may be mapped, each to one of OUTPUT_ACTIONS (or empty
+              to clear).
+        At least one of the two must be provided.
         """
         if class_map_lib is None:
             abort(500, "class_map module unavailable on the server.")
-        order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
-        if not order:
-            abort(400, "No dataset imported yet — upload six class folders first.")
         data = request.get_json(silent=True) or {}
-        actions_in = data.get("actions", {})
-        if not isinstance(actions_in, dict):
-            abort(400, "'actions' must be an object of {class_name: action}.")
+        available = set(_dataset_class_names())
+        active_in = data.get("active", None)
+
+        if active_in is not None:
+            if not isinstance(active_in, list) or not active_in:
+                abort(400, "'active' must be a non-empty list of class names.")
+            order = []
+            for raw_name in active_in:
+                name = str(raw_name)
+                if name not in available:
+                    abort(400, f"Class '{name}' is not in the dataset.")
+                if name not in order:
+                    order.append(name)
+            if len(order) > NUM_CLASSES:
+                abort(400, f"Select at most {NUM_CLASSES} active classes (got {len(order)}).")
+            order = sorted(order)   # deterministic class-index assignment
+        else:
+            order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
+            if not order:
+                abort(400, "No active classes yet — select up to six classes first.")
+
+        active_set = set(order)
+        # Start from existing actions for classes that remain active, then apply edits.
         actions = {}
-        for name, action in actions_in.items():
-            if name not in order:
-                abort(400, f"Unknown class '{name}'.")
-            if action in (None, ""):
-                continue
-            if action not in OUTPUT_ACTIONS:
-                abort(400, f"action '{action}' must be one of {OUTPUT_ACTIONS}.")
-            actions[name] = action
+        existing = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
+        if existing:
+            for c in existing.get("classes", []):
+                if c.get("action") and c.get("name") in active_set:
+                    actions[c["name"]] = c["action"]
+        actions_in = data.get("actions", {})
+        if actions_in:
+            if not isinstance(actions_in, dict):
+                abort(400, "'actions' must be an object of {class_name: action}.")
+            for name, action in actions_in.items():
+                if name not in active_set:
+                    abort(400, f"Class '{name}' is not in the active set.")
+                if action in (None, ""):
+                    actions.pop(name, None)
+                    continue
+                if action not in OUTPUT_ACTIONS:
+                    abort(400, f"action '{action}' must be one of {OUTPUT_ACTIONS}.")
+                actions[name] = action
+
         payload = class_map_lib.save_class_map(order, actions=actions, path=CLASS_MAP_PATH)
         payload["output_actions"] = OUTPUT_ACTIONS
+        payload["dataset_counts"] = _dataset_counts()
+        payload["available_classes"] = _dataset_class_names()
+        payload["max_active"] = NUM_CLASSES
         return jsonify({"ok": True, **payload})
 
     @app.get("/api/recipes")
@@ -1453,7 +1516,6 @@ def create_app():
             if split not in {"train", "validation"}:
                 raise ValueError("split must be 'train' or 'validation'.")
             raw, _mime, _ext = _decode_image_payload(data.get("image_data"))
-            _refresh_class_map_from_dataset(class_name)
         except ValueError as exc:
             abort(400, str(exc))
         target_dir = DATASET_DIR / split / class_name

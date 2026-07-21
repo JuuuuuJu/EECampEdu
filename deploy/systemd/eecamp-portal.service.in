@@ -1,0 +1,20 @@
+[Unit]
+Description=EECampEdu AI PC Training Portal (Web Serial flashing + training)
+# Docs: docs/AIPC_SERVER_README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@REPO@
+# Secrets (EECAMP_PORTAL_SECRET, EECAMP_TEAM_PASSWORDS) live outside git.
+# The leading '-' makes the file optional so the service still starts with defaults.
+EnvironmentFile=-@REPO@/deploy/eecamp-portal.env
+# HTTPS on 8080 is required for browser Web Serial flashing (secure context).
+ExecStart=@PYTHON@ apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https
+Restart=on-failure
+RestartSec=3
+# Logs go to the journal: journalctl --user -u eecamp-portal -f
+
+[Install]
+WantedBy=default.target

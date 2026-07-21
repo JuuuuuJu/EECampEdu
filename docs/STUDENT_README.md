@@ -14,12 +14,13 @@ If the browser shows a certificate warning, choose **Advanced -> Proceed** once.
 
 Purpose: collect/check gesture data, train a model, and preview camera/model behavior.
 
-1. Upload a dataset zip when provided. Accepted layout: class folders such as `up/`, `ok/`, `thumb/`, or any six custom names.
-2. Map each class to a robot action: `up`, `down`, `left`, `right`, `clamp`, `release`.
-3. Choose TensorFlow or PyTorch and a model recipe.
-4. Click **Start training** and watch the live job log.
-5. Flash the model/full camera firmware shown on the page if the instructor asks you to update it.
-6. For OV2640 preview, plug the ESP32-S3 main board into your PC, then click **Connect OV2640 preview**. The browser borrows the serial port, sends camera stream commands, displays incoming JPEG frames, and shows live prediction/result lines. No Python or terminal command is needed.
+1. Upload a dataset zip when provided. Accepted layout: one folder per gesture class such as `up/`, `ok/`, `thumb/`, or any custom names. You can include **more than six** classes — collect extras or replace gestures freely.
+2. **Choose the active classes** (up to six). Your dataset can hold many classes, but each training / inference run uses the active set you tick. Click **Save active classes**. You can also capture new gesture frames (any class name) and activate them later by swapping the active set.
+3. Map each active class to a robot action: `up`, `down`, `left`, `right`, `clamp`, `release`.
+4. Choose TensorFlow or PyTorch and a model recipe.
+5. Click **Start training** and watch the live job log.
+6. Flash the model/full camera firmware shown on the page if the instructor asks you to update it.
+7. For OV2640 preview, plug the ESP32-S3 main board into your PC, then click **Connect OV2640 preview**. The browser borrows the serial port, sends camera stream commands, displays incoming JPEG frames, and shows live prediction/result lines. No Python or terminal command is needed.
 
 Expected result: a trained source model appears in the artifact list, and OV2640 preview shows frames plus current prediction when the full main board firmware is running.
 
@@ -68,5 +69,6 @@ Requires the **main board firmware** (flash it on the Firmware page). Plug the E
 - Close Arduino Serial Monitor, `idf.py monitor`, PuTTY, or any other program using the port.
 - Only one serial workflow runs at a time. After one finishes, wait for the status to say released before starting the next one — no page refresh needed.
 - If auto-reset fails while flashing: hold BOOT, click connect, tap RESET/EN, release BOOT after about 1 second.
+- **Flash baud:** the header has a **Flash baud** selector used for all flashing (model + firmware). Leave it at **460800**; if flashing is unreliable, lower it to **230400** or **115200** and try again. (Connecting always syncs at 115200 first, so this only affects write speed.)
 - Use a data-capable USB cable.
 - **Benchmark:** pick the ESP32-S3 **UART-bridge** COM port (not the USB-JTAG one) — the `READY` handshake only appears there. If the portal reports "no serial data," the port is wrong or in use; if it reports "talking but no READY," flash the deploy benchmark firmware and pick the UART-bridge port.

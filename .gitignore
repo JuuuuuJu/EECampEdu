@@ -80,3 +80,5 @@ stego.jpg
 stego_dual.png
 scripts/generate_dual_image.py
 scripts/generate_maze.py
+# Portal service secrets (never commit)
+deploy/eecamp-portal.env
