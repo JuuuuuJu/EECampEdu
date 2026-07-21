@@ -51,6 +51,9 @@ Restart after changing Python, HTML, CSS, JS, README-served text, env vars, or c
 - `/deploy`: deploy benchmark firmware flash, quantization, model flashing, and **browser Web Serial benchmark** (runs on the student PC's board; the AI PC only serves dataset images).
 - `/output`: output teaching firmware flash + LED/PWM controls.
 - `/firmware`: full main board firmware flash + live OV2640 preview/inference.
+- `/camera_usb`: full OV2640 camera + USB-storage control demo (pixel format, resolution, exposure/gain/AWB/brightness, capture to flash, expose as USB drive), modeled on `firmware/pc/tools/camera_controller.py`. Runs on the main board firmware over browser Web Serial.
+
+All Web Serial flows (flash, model flash, benchmark, camera preview, camera+USB demo, output control) share one lifecycle: one port open at a time, release-before-acquire, and a full close after each workflow.
 
 The UI is a top menu with routes, not a terminal tutorial.
 

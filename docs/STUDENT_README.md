@@ -56,10 +56,17 @@ Purpose: flash the full ESP32-S3 main board firmware.
 
 Use this for a new board or when the instructor updates camera/USB/continuous-inference firmware. The page flashes the ESP-IDF build images automatically; students do not type offsets or esptool commands. After flashing, use **Connect camera stream** to see OV2640 live preview and the latest prediction result.
 
+## Camera + USB Demo Page
+
+Purpose: explore the OV2640 camera and on-board USB storage with the full control set.
+
+Requires the **main board firmware** (flash it on the Firmware page). Plug the ESP32-S3 into **your PC**, click **Connect camera**, then use the settings: pixel format, resolution, brightness/contrast/saturation, auto exposure/gain/white balance, mirror/flip. You can capture frames to the board's flash, list them, and expose the storage to your PC as a **USB drive**. No Python or terminal needed.
+
 ## Flashing / Serial Checklist
 
 - Use Chrome or Edge over HTTPS.
 - Close Arduino Serial Monitor, `idf.py monitor`, PuTTY, or any other program using the port.
+- Only one serial workflow runs at a time. After one finishes, wait for the status to say released before starting the next one — no page refresh needed.
 - If auto-reset fails while flashing: hold BOOT, click connect, tap RESET/EN, release BOOT after about 1 second.
 - Use a data-capable USB cable.
-- After one serial workflow finishes, wait for the status to say done/released before starting the next one.
+- **Benchmark:** pick the ESP32-S3 **UART-bridge** COM port (not the USB-JTAG one) — the `READY` handshake only appears there. If the portal reports "no serial data," the port is wrong or in use; if it reports "talking but no READY," flash the deploy benchmark firmware and pick the UART-bridge port.

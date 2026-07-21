@@ -71,6 +71,7 @@
   <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
   <button data-topic="output" data-path="/output">Output demo</button>
   <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
+  <button data-topic="camerausb" data-path="/camera_usb">Camera + USB demo</button>
 </nav>
 
 <main>
@@ -109,12 +110,6 @@
       </div>
       <label style="margin-top:12px">Brightness (PWM): <span id="pwmVal">128</span> / 255</label>
       <input type="range" id="pwmSlider" min="0" max="255" value="128" disabled />
-      <div class="row compact" style="margin-top:10px">
-        <div><label>Debug GPIO</label><input type="number" id="ledPinInput" min="0" max="48" value="38" /></div>
-        <div><button class="secondary" id="ledPinBtn" disabled>Use GPIO</button></div>
-        <div><label>LED polarity</label><select id="ledActiveSelect"><option value="1">active high</option><option value="0">active low</option></select></div>
-        <div><button class="secondary" id="ledActiveBtn" disabled>Apply polarity</button></div>
-      </div>
       <div class="msg" id="ctrlStatus"></div>
       <label style="margin-top:10px">Board messages</label>
       <pre class="log" id="ctrlLog">Not connected.</pre>
@@ -325,6 +320,69 @@
     </div>
   </section>
 
+  <!-- ==================== CAMERA + USB DEMO ==================== -->
+  <section class="pane" id="pane-camerausb">
+    <div class="card">
+      <h2>Camera + USB demo</h2>
+      <p class="note">Full OV2640 camera control over Web Serial, modeled on the developer
+         <code>camera_controller.py</code>. Requires the <b>main board firmware</b> — flash it on the
+         <b>Main board firmware</b> tab first. The ESP32-S3 is plugged into <b>your PC</b>; the browser
+         borrows the serial port (no Python, no <code>127.0.0.1</code>). Use <b>Chrome or Edge</b>.</p>
+      <div class="row compact">
+        <div><button id="usbCamConnectBtn">Connect camera</button></div>
+        <div><button class="secondary" id="usbCamStopBtn" disabled>Disconnect</button></div>
+      </div>
+      <div class="msg" id="usbCamMsg"></div>
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <img id="usbCamPreview" alt="OV2640 camera+USB preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none" />
+        <div class="note" id="usbCamPlaceholder">No camera frame yet.</div>
+      </div>
+      <div class="big" id="usbCamResult" style="margin-top:12px">Prediction: --</div>
+    </div>
+
+    <div class="card">
+      <h2>Camera settings</h2>
+      <p class="note">Changes stream live to the sensor (same single-letter commands as the CLI tool).</p>
+      <div class="row compact">
+        <div><label>Pixel format</label>
+          <select id="usbCamFormat"><option value="0">Grayscale (f0)</option><option value="1">RGB565 (f1)</option><option value="2">YUV422 (f2)</option><option value="3" selected>JPEG (f3)</option></select></div>
+        <div><label>Resolution</label>
+          <select id="usbCamSize"><option value="0">96x96 (s0)</option><option value="1" selected>QQVGA 160x120 (s1)</option><option value="2">QVGA 320x240 (s2)</option><option value="3">VGA 640x480 (s3)</option><option value="4">SVGA 800x600 (s4)</option><option value="5">UXGA 1600x1200 (s5)</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamStreamOn">Start stream</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamStreamOff">Stop stream</button></div>
+      </div>
+      <div class="row compact">
+        <div><label>Brightness (-2…2): <span id="usbBriVal">0</span></label><input type="range" id="usbCamBrightness" min="-2" max="2" value="0" /></div>
+        <div><label>Contrast (-2…2): <span id="usbConVal">0</span></label><input type="range" id="usbCamContrast" min="-2" max="2" value="0" /></div>
+        <div><label>Saturation (-2…2): <span id="usbSatVal">0</span></label><input type="range" id="usbCamSaturation" min="-2" max="2" value="0" /></div>
+      </div>
+      <div class="row compact">
+        <div><label>Auto exposure (AEC)</label><select id="usbCamAec"><option value="1">auto</option><option value="0">manual</option></select></div>
+        <div><label>Auto gain (AGC)</label><select id="usbCamAgc"><option value="1">auto</option><option value="0">manual</option></select></div>
+        <div><label>Auto white balance</label><select id="usbCamAwb"><option value="1">auto</option><option value="0">manual</option></select></div>
+        <div><label>Mirror</label><select id="usbCamMirror"><option value="0">off</option><option value="1">on</option></select></div>
+        <div><label>Flip</label><select id="usbCamFlip"><option value="0">off</option><option value="1">on</option></select></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Capture &amp; USB storage</h2>
+      <p class="note">Save frames to the board's flash, then expose them to your PC as a USB drive (USB MSC).</p>
+      <div class="row compact">
+        <div><button class="secondary" id="usbCamCaptureBtn">Capture to flash</button></div>
+        <div><button class="secondary" id="usbCamListBtn">List files</button></div>
+        <div><button class="secondary" id="usbCamMscBtn">Expose as USB drive</button></div>
+      </div>
+      <div class="row compact">
+        <div><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · v300 · k0 · format" /></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
+      </div>
+      <div class="msg" id="usbCamCmdMsg"></div>
+      <label style="margin-top:12px">Camera / USB messages</label>
+      <pre class="log tall" id="usbCamLog">Connect the camera to begin.</pre>
+    </div>
+  </section>
+
   <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div class="card">
     <h2>Live job log <span class="pill" id="jobPill"></span></h2>
@@ -369,8 +427,8 @@ async function api(path, opts){
 }
 
 // ---------- topic routes ----------
-const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/":"model"};
-const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware"};
+const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/":"model"};
+const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb"};
 function activateTopic(topic, push){
   topic = topic || "model";
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
@@ -564,6 +622,7 @@ async function refreshReports(){
 // containing READY, host writes a raw 160x160 grayscale frame, board replies
 // RESULT,<idx>,<model_us>,<preprocess_us>,<device_us>,<scores...>. 115200 baud.
 const BENCH_W = 160, BENCH_H = 160, BENCH_BAUD = 115200;
+const BENCH_FRAME_BYTES = BENCH_W * BENCH_H;   // 160x160 grayscale, matches firmware FRAME_*
 
 async function loadBenchOptions(){
   try {
@@ -574,43 +633,6 @@ async function loadBenchOptions(){
   } catch(e){}
 }
 
-// Background pump: read the raw serial port, split into lines, hand to waiters.
-function benchStartPump(){
-  bench.reader = bench.port.readable.getReader();
-  bench.pumping = true; bench.buf = ""; bench.lines = []; bench.waiters = [];
-  (async ()=>{
-    const dec = new TextDecoder();
-    try {
-      while(bench.pumping){
-        const { value, done } = await bench.reader.read();
-        if(done) break;
-        if(value){
-          bench.buf += dec.decode(value);
-          let nl;
-          while((nl = bench.buf.indexOf("\n")) >= 0){
-            const line = bench.buf.slice(0, nl).replace(/\r$/, "");
-            bench.buf = bench.buf.slice(nl + 1);
-            appendLog("benchLog", line + "\n");
-            if(bench.waiters.length){ const w = bench.waiters.shift(); clearTimeout(w.timer); w.resolve(line); }
-            else bench.lines.push(line);
-          }
-        }
-      }
-    } catch(e){ /* reader cancelled on cleanup */ }
-    finally { try{ if(bench.reader) bench.reader.releaseLock(); }catch(_){} }
-  })();
-}
-function benchNextLine(timeoutMs){
-  if(bench.lines.length) return Promise.resolve(bench.lines.shift());
-  return new Promise((resolve, reject)=>{
-    const timer = setTimeout(()=>{ const i = bench.waiters.findIndex(x=>x.timer===timer); if(i>=0) bench.waiters.splice(i,1); reject(new Error("serial read timeout")); }, timeoutMs);
-    bench.waiters.push({ resolve, reject, timer });
-  });
-}
-async function benchWaitFor(re, timeoutMs){
-  const deadline = Date.now() + timeoutMs;
-  for(;;){ const line = await benchNextLine(Math.max(50, deadline - Date.now())); if(re.test(line)) return line; }
-}
 async function benchImageToFrame(url){
   const resp = await fetch(ORIGIN + url); if(!resp.ok) throw new Error("image fetch failed ("+resp.status+")");
   const bmp = await createImageBitmap(await resp.blob());
@@ -635,12 +657,27 @@ function renderBenchSummary(agg, total, done){
   ];
   $("benchSummary").innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
 }
+// Confirm the board is actually the deploy benchmark firmware on the right port
+// BEFORE streaming images. Two distinct failure modes get distinct guidance:
+//   * no bytes at all       -> wrong/locked COM port, or power-only cable
+//   * bytes but no READY    -> wrong firmware/mode, or the USB-JTAG interface
+//     (READY is printed on UART0 only; dual_printf logs show on both).
+async function benchDiagnose(){
+  appendLog("benchLog", "[portal] listening for board output — pick the ESP32-S3 UART-bridge COM port…\n");
+  let firstLine = null;
+  try { firstLine = await serialNextLine(4000); } catch(e){}
+  if(firstLine === null) throw new Error("NO_DATA");
+  if(/READY/.test(firstLine)) return;
+  try { await serialWaitFor(/READY/, 8000); }
+  catch(e){ throw new Error("NO_READY"); }
+}
 $("benchRunBtn").onclick = async () => {
   const dataset = $("benchDataset").value;
   const limit = Math.max(1, Math.min(2000, parseInt($("benchLimit").value||"60", 10)));
   if(!dataset){ setMsg($("benchMsg"),"Pick a dataset.","bad"); return; }
   const sup = webSerialSupport();
   if(!sup.ok){ setMsg($("benchMsg"), sup.reason==="insecure-http" ? "Benchmark needs HTTPS (secure context) — open the https:// portal." : "Use Chrome or Edge for the browser benchmark.", "bad"); return; }
+  if(Serial.acquiring){ setMsg($("benchMsg"),"A serial connection is opening — please wait a moment.","warn"); return; }
   // class order → expected label index
   let order = [];
   try { order = (await api("/api/class-map")).class_order || []; } catch(e){}
@@ -650,26 +687,26 @@ $("benchRunBtn").onclick = async () => {
   if(!images.length){ setMsg($("benchMsg"),"No images in that dataset.","bad"); return; }
 
   $("benchRunBtn").disabled = true; $("benchSummary").innerHTML = ""; $("benchLog").textContent = "";
-  await releaseSerial("benchLog");   // free any prior flash/control/camera session first
   const agg = { n:0, correct:0, labeled:0, model:0, pre:0, dev:0, preN:0 };
+  let running = true;
   try {
     setMsg($("benchMsg"),"Opening serial chooser — pick your ESP32-S3…","warn");
-    bench.port = await navigator.serial.requestPort();
-    await bench.port.open({ baudRate: BENCH_BAUD });
-    await clearSerialResetSignals(bench.port);
-    await sleep(1200);
-    bench.writer = bench.port.writable.getWriter();
-    benchStartPump();
-    bench.running = true;
-    appendLog("benchLog", `[portal] benchmarking ${images.length} images from ${dataset}…\n`);
-    for(let k=0; k<images.length && bench.running; k++){
+    // Unified raw acquire (releases any prior flash/control/camera flow, opens the
+    // port, starts the shared line-pump that logs to benchLog + feeds waitFor()).
+    await serialOpenRaw({ logId:"benchLog", baudRate:BENCH_BAUD });
+    await sleep(300);
+    setMsg($("benchMsg"),"Checking the board is ready…","warn");
+    await benchDiagnose();
+    appendLog("benchLog", `[portal] board ready — benchmarking ${images.length} images from ${dataset}…\n`);
+    for(let k=0; k<images.length && running && Serial.port; k++){
       const im = images[k];
       const frame = await benchImageToFrame(im.url);
+      if(frame.length !== BENCH_FRAME_BYTES) throw new Error(`frame size ${frame.length} != ${BENCH_FRAME_BYTES}`);
       setMsg($("benchMsg"), `Benchmarking… ${k+1}/${images.length}`, "warn");
-      try { await benchWaitFor(/READY/, 20000); }
-      catch(e){ throw new Error("no READY from deploy benchmark firmware"); }
-      await bench.writer.write(frame);
-      const line = await benchWaitFor(/^RESULT,/, 25000);
+      try { await serialWaitFor(/READY/, 20000); }
+      catch(e){ throw new Error("NO_READY"); }
+      await serialSendBytes(frame);
+      const line = await serialWaitFor(/^RESULT,/, 25000);
       const p = line.split(",");
       const idx = parseInt(p[1], 10);
       const model = parseInt(p[2], 10) || 0, pre = parseInt(p[3], 10) || 0, dev = parseInt(p[4], 10) || 0;
@@ -682,12 +719,18 @@ $("benchRunBtn").onclick = async () => {
     renderBenchSummary(agg, images.length, true);
     setMsg($("benchMsg"), `Benchmark complete — ${agg.n} images.`, "ok");
   } catch(e){
+    running = false;
     renderBenchSummary(agg, images.length, true);
     const raw = e.message || String(e);
-    const m = /No port selected|cancell/i.test(raw) ? "Port selection cancelled."
-      : /no READY/i.test(raw) ? "No READY from the board. Flash deploy benchmark firmware, reset the board once, then run benchmark again."
-      : /timeout/i.test(raw) ? "No RESULT from the board. The board was found, but did not finish one inference frame."
-      : ("Benchmark failed: " + raw);
+    const m = /No port selected|cancell/i.test(raw)
+        ? "Port selection cancelled."
+      : /NO_DATA/.test(raw)
+        ? "No serial data at all. The board sent nothing. Check: (1) pick the ESP32-S3 USB-UART bridge COM port (not the USB-JTAG one); (2) close any other program using the port (Arduino Serial Monitor, idf.py monitor, PuTTY); (3) use a data-capable USB cable. Then run again."
+      : /NO_READY/.test(raw)
+        ? "The board is talking but never sent READY. It is probably not running the deploy benchmark firmware, or you opened the USB-JTAG interface instead of the UART bridge (READY is only sent on the UART bridge). Flash the deploy benchmark firmware (step A), pick the UART-bridge COM port, reset the board once, then run again."
+      : /timeout/i.test(raw)
+        ? "The board answered READY but returned no RESULT for a frame. The handshake worked but inference did not complete — confirm a model is flashed (step C), then try fewer images."
+        : ("Benchmark failed: " + raw);
     appendLog("benchLog", "\n[portal] " + m + "\n");
     setMsg($("benchMsg"), m, "bad");
   } finally {
@@ -709,9 +752,38 @@ $("clearCaptureClassBtn").onclick = () => {
 };
 $("predictFrameBtn").onclick = predictCurrentFrame;
 $("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn").disabled = !(latestCameraFrame && $("predictModel").value); };
-$("cameraStopBtn").onclick = async () => { await releaseCamera("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
+$("cameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
 $("fullCameraConnectBtn").onclick = async () => connectCameraPreview(FULL_CAMERA_UI);
-$("fullCameraStopBtn").onclick = async () => { await releaseCamera("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
+$("fullCameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
+
+// ---------- CAMERA + USB DEMO (full OV2640 control over the unified raw serial) ----------
+function usbCamCmd(cmd, label){
+  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }
+  cameraWrite(cmd)
+    .then(()=>setMsg($("usbCamCmdMsg"), (label||cmd)+" sent.", "ok"))
+    .catch(e=>setMsg($("usbCamCmdMsg"), "Send failed: "+(e.message||e), "bad"));
+}
+$("usbCamConnectBtn").onclick = async () => connectCameraPreview(USBCAM_UI);
+$("usbCamStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("usbCamLog"); setMsg($("usbCamMsg"), "Camera disconnected.", "ok"); };
+$("usbCamFormat").onchange   = (e) => usbCamCmd("f"+e.target.value, "pixel format");
+$("usbCamSize").onchange     = (e) => usbCamCmd("s"+e.target.value, "resolution");
+$("usbCamStreamOn").onclick  = () => usbCamCmd("d1", "stream on");
+$("usbCamStreamOff").onclick = () => usbCamCmd("d0", "stream off");
+$("usbCamBrightness").oninput  = (e) => setText("usbBriVal", e.target.value);
+$("usbCamBrightness").onchange = (e) => usbCamCmd("b"+e.target.value, "brightness");
+$("usbCamContrast").oninput    = (e) => setText("usbConVal", e.target.value);
+$("usbCamContrast").onchange   = (e) => usbCamCmd("t"+e.target.value, "contrast");
+$("usbCamSaturation").oninput  = (e) => setText("usbSatVal", e.target.value);
+$("usbCamSaturation").onchange = (e) => usbCamCmd("x"+e.target.value, "saturation");
+$("usbCamAec").onchange    = (e) => usbCamCmd("e"+e.target.value, "AEC");
+$("usbCamAgc").onchange    = (e) => usbCamCmd("g"+e.target.value, "AGC");
+$("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "AWB");
+$("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "mirror");
+$("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "flip");
+$("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("w"+ts, "capture to flash"); };
+$("usbCamListBtn").onclick = () => usbCamCmd("l", "list files");
+$("usbCamMscBtn").onclick  = () => usbCamCmd("usb", "expose USB drive");
+$("usbCamRawBtn").onclick  = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, c); };
 function copyText(text, msgEl, okMsg){
   const done=()=>setMsg(msgEl, okMsg, "ok");
   const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"Copy failed — select manually.","bad"); } document.body.removeChild(ta); };
@@ -751,19 +823,44 @@ async function resetSerialBoardToApp(port, logId){
     await sleep(800);
   } catch(e){ appendLog(logId, "Serial cleanup warning: manual reset — "+(e.message||e)+"\n"); }
 }
+// Pulse EN via DTR/RTS to reboot the board so it re-emits its boot banner + READY.
+// (No-op on native USB-Serial-JTAG, where control lines do not reset the chip; the
+// deploy benchmark firmware also re-prints READY every ~1s while idle, so raw flows
+// still recover.)
+async function pulseResetToApp(port, logId){
+  if(!port || typeof port.setSignals !== "function") return;
+  try {
+    await port.setSignals({ dataTerminalReady:false, requestToSend:true });   // EN low
+    await sleep(120);
+    await port.setSignals({ dataTerminalReady:false, requestToSend:false });  // EN high → boot app
+    if(logId) appendLog(logId, "[portal] pulsed board reset (waiting for boot)…\n");
+  } catch(_){}
+}
 
 // ======================================================================
-// Shared Web Serial state + ONE cleanup helper used by every flash flow.
+// UNIFIED WEB SERIAL LIFECYCLE
 // ======================================================================
-// Flash (esptool-js) connection state. `meta` (model offset) is kept across flows.
-let esp = { port:null, transport:null, loader:null, chip:null, meta:null };
-// Raw-serial control connection (Output demo LED/PWM). Also released centrally.
-let ctrlPort=null, ctrlWriter=null, ctrlReader=null;
-let camPort=null, camWriter=null, camReader=null, camStop=false, camObjectUrl=null;
-// Raw-serial benchmark connection (Deploy page, in-browser Web Serial benchmark).
-let bench = { port:null, reader:null, writer:null, buf:"", lines:[], waiters:[], pumping:false, running:false };
+// Exactly ONE serial port is open at a time. Every workflow — flash (esptool-js),
+// output control, OV2640 camera, camera+USB demo, and the on-device benchmark —
+// acquires the port through espConnect()/serialOpenRaw() (both release any prior
+// owner first) and hands it back through serialRelease(). serialRelease() is the
+// single teardown: stop the pump, cancel the reader, release the writer, reject
+// pending line-waiters, reset the board into app mode, close the port, clear all
+// state and restore the UI. It never throws and is safe to call repeatedly.
+const Serial = {
+  port:null, mode:null,          // mode: 'flash' | 'raw' | null
+  acquiring:false, logId:null,
+  // raw line-pump
+  reader:null, writer:null, pumping:false, buf:"", lines:[], waiters:[], onLine:null,
+  // esptool-js flash session
+  transport:null, loader:null, chip:null,
+};
+let flashMeta = null;            // model-partition offset metadata, kept across flows
+let camObjectUrl = null;
+let camAsm = { receiving:false, lines:[], meta:{} };   // OV2640 frame assembler state
 const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:"cameraStopBtn" };
 const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
+const USBCAM_UI       = { msgId:"usbCamMsg", logId:"usbCamLog", imgId:"usbCamPreview", placeholderId:"usbCamPlaceholder", resultId:"usbCamResult", connectBtn:"usbCamConnectBtn", stopBtn:"usbCamStopBtn" };
 let camUi = MODEL_CAMERA_UI;
 
 // Firmware flash targets (one class day / runtime mode per target).
@@ -772,32 +869,6 @@ const MODELFW = { target:"model_finetune",   meta:null, imagesEl:"modelFwImages"
 const BENCHFW = { target:"deploy_benchmark", meta:null, imagesEl:"benchFwImages",  statusEl:"benchFwStatus",  logEl:"benchFwLog",  flashBtn:"benchFwFlashBtn",  refreshBtn:"benchFwRefreshBtn" };
 const MAINFW  = { target:"main_board",       meta:null, imagesEl:"mainFwImages",   statusEl:"mainFwStatus",   logEl:"mainFwLog",   flashBtn:"mainFwFlashBtn",   refreshBtn:"mainFwRefreshBtn" };
 
-async function releaseCamera(logId){
-  if(!camPort && !camReader && !camWriter){ return; }
-  camStop = true;
-  const log = (s)=>{ if(logId) appendLog(logId, s); };
-  try { if(camReader){ try{ await camReader.cancel(); }catch(_){} try{ camReader.releaseLock(); }catch(_){} } } catch(_){}
-  try { if(camWriter){ try{ await camWriter.write(new TextEncoder().encode("d0\n")); }catch(_){} try{ camWriter.releaseLock(); }catch(_){} } } catch(_){}
-  try { await releasePortLocks(camPort); } catch(e){ log("Camera cleanup warning: "+(e.message||e)+"\n"); }
-  camPort=null; camWriter=null; camReader=null;
-  if($("cameraStopBtn")) $("cameraStopBtn").disabled = true;
-  if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !webSerialSupport().ok;
-  if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = true;
-  if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !webSerialSupport().ok;
-  log("Camera serial port released.\n");
-}
-async function releaseBench(logId){
-  if(!bench.port && !bench.reader && !bench.writer){ return; }
-  bench.pumping = false; bench.running = false;
-  const log = (s)=>{ if(logId) appendLog(logId, s); };
-  try { if(bench.reader){ try{ await bench.reader.cancel(); }catch(_){} try{ bench.reader.releaseLock(); }catch(_){} } } catch(_){}
-  try { if(bench.writer){ try{ bench.writer.releaseLock(); }catch(_){} } } catch(_){}
-  try { await releasePortLocks(bench.port); } catch(e){ log("Benchmark cleanup warning: "+(e.message||e)+"\n"); }
-  // reject any pending line waiters so the benchmark loop unwinds
-  bench.waiters.forEach(w=>{ try{ clearTimeout(w.timer); w.reject(new Error("serial released")); }catch(_){} });
-  bench.port=null; bench.reader=null; bench.writer=null; bench.buf=""; bench.lines=[]; bench.waiters=[];
-  if($("benchRunBtn")) $("benchRunBtn").disabled = false;
-}
 // Force-release any leftover stream locks on a raw SerialPort, then close it.
 async function releasePortLocks(port){
   if(!port) return;
@@ -806,57 +877,130 @@ async function releasePortLocks(port){
   try { await port.close(); } catch(_){}
 }
 
-// THE shared cleanup. Runs in every flash flow's finally() and before every new
-// flow. Fully releases the board's serial port so the next workflow can reuse it
-// without a page refresh. Never throws.
+// THE single serial teardown. Runs before every acquire and in every flow's
+// finally(). Fully releases the board's port so the next workflow reuses it
+// with no page refresh. Idempotent; never throws.
 async function releaseSerial(logId){
+  logId = logId || Serial.logId;
   const log = (s)=>{ if(logId) appendLog(logId, s); };
-  if(!esp.transport && !esp.loader && !esp.port && !ctrlPort && !camPort && !bench.port){ return; }
+  if(!Serial.port && !Serial.transport && !Serial.loader){
+    Serial.acquiring = false; syncFlashButtons(); return;
+  }
   log("Releasing serial port...\n");
-  // 1) esptool-js post-flash reset (hard_reset) so the board reboots into the app.
-  try {
-    if(esp.loader && typeof esp.loader.after === "function") { await esp.loader.after("hard_reset"); }
-    else if(esp.loader && typeof esp.loader.hardReset === "function") { await esp.loader.hardReset(); }
-  } catch(e){ log("Serial cleanup warning: reset — "+(e.message||e)+"\n"); }
-  await resetSerialBoardToApp(esp.port, logId);
-  // 2) disconnect the esptool transport (closes the device, releases its reader).
-  try { if(esp.transport && typeof esp.transport.disconnect === "function") { await esp.transport.disconnect(); } }
-  catch(e){ log("Serial cleanup warning: disconnect — "+(e.message||e)+"\n"); }
-  try { await releasePortLocks(esp.port); }
-  catch(e){ log("Serial cleanup warning: locks — "+(e.message||e)+"\n"); }
-  // 3) tear down the raw-serial control/camera connections if any.
-  try {
-    if(ctrlReader){ try{ await ctrlReader.cancel(); }catch(_){} try{ ctrlReader.releaseLock(); }catch(_){} }
-    if(ctrlWriter){ try{ ctrlWriter.releaseLock(); }catch(_){} }
-    await releasePortLocks(ctrlPort);
-  } catch(e){ log("Serial cleanup warning: control — "+(e.message||e)+"\n"); }
-  try { await releaseCamera(logId); }
-  catch(e){ log("Serial cleanup warning: camera — "+(e.message||e)+"\n"); }
-  try { await releaseBench(logId); }
-  catch(e){ log("Serial cleanup warning: benchmark — "+(e.message||e)+"\n"); }
+  // 1) stop the raw line-pump and unblock anything waiting on a line.
+  Serial.pumping = false;
+  Serial.waiters.forEach(w=>{ try{ clearTimeout(w.timer); w.reject(new Error("serial released")); }catch(_){} });
+  Serial.waiters = []; Serial.lines = []; Serial.buf = "";
+  try { if(Serial.reader){ try{ await Serial.reader.cancel(); }catch(_){} try{ Serial.reader.releaseLock(); }catch(_){} } } catch(_){}
+  // 2) mode-specific reset so the board reboots into its app.
+  if(Serial.mode === "flash"){
+    try {
+      if(Serial.loader && typeof Serial.loader.after === "function") { await Serial.loader.after("hard_reset"); }
+      else if(Serial.loader && typeof Serial.loader.hardReset === "function") { await Serial.loader.hardReset(); }
+    } catch(e){ log("Serial cleanup warning: reset — "+(e.message||e)+"\n"); }
+    try { if(Serial.transport && typeof Serial.transport.disconnect === "function") { await Serial.transport.disconnect(); } }
+    catch(e){ log("Serial cleanup warning: disconnect — "+(e.message||e)+"\n"); }
+  } else if(Serial.mode === "raw"){
+    try { if(Serial.writer){ try{ Serial.writer.releaseLock(); }catch(_){} } } catch(_){}
+    await resetSerialBoardToApp(Serial.port, logId);
+  }
+  // 3) force-close the underlying port.
+  try { await releasePortLocks(Serial.port); }
+  catch(e){ log("Serial cleanup warning: close — "+(e.message||e)+"\n"); }
   // 4) clear all connection state.
-  esp.port=null; esp.transport=null; esp.loader=null; esp.chip=null;
-  ctrlPort=null; ctrlWriter=null; ctrlReader=null;
+  Serial.port=null; Serial.transport=null; Serial.loader=null; Serial.chip=null; Serial.mode=null;
+  Serial.reader=null; Serial.writer=null; Serial.onLine=null; Serial.logId=null; Serial.acquiring=false;
   log("Serial port released.\n");
-  // 5) return the whole UI to a clean disconnected state.
+  // 5) restore a clean disconnected UI.
   syncFlashButtons();
 }
+// Back-compat aliases — every camera/benchmark call site funnels into the one teardown.
+async function releaseCamera(logId){ await releaseSerial(logId); }
+async function releaseBench(logId){ await releaseSerial(logId); }
 
-// Clean disconnected UI state for all flash/control flows.
+// Raw-serial acquire: release any prior owner, open the chosen port, and start the
+// shared line-pump. `onLine` (optional) receives each decoded line for flows that
+// assemble their own protocol (camera); otherwise lines are logged and fed to the
+// waitFor()/nextLine() queue (benchmark / control echo).
+async function serialOpenRaw({ logId, baudRate=115200, bufferSize=0, onLine=null }){
+  if(Serial.acquiring) throw new Error("serial acquire already in progress");
+  await releaseSerial(logId);
+  Serial.acquiring = true;
+  try {
+    const port = await navigator.serial.requestPort();
+    await port.open(bufferSize ? { baudRate, bufferSize } : { baudRate });
+    Serial.port = port; Serial.mode = "raw"; Serial.logId = logId; Serial.onLine = onLine;
+    await clearSerialResetSignals(port);
+    Serial.writer = port.writable.getWriter();
+    serialStartPump();
+    return port;
+  } finally { Serial.acquiring = false; }
+}
+// Background reader: split the byte stream into lines and dispatch them.
+function serialStartPump(){
+  Serial.reader = Serial.port.readable.getReader();
+  Serial.pumping = true; Serial.buf = ""; Serial.lines = []; Serial.waiters = [];
+  (async ()=>{
+    const dec = new TextDecoder();
+    try {
+      while(Serial.pumping){
+        const { value, done } = await Serial.reader.read();
+        if(done) break;
+        if(!value) continue;
+        Serial.buf += dec.decode(value, { stream:true });
+        let nl;
+        while((nl = Serial.buf.indexOf("\n")) >= 0){
+          const line = Serial.buf.slice(0, nl).replace(/\r$/, "");
+          Serial.buf = Serial.buf.slice(nl + 1);
+          if(Serial.onLine){ try{ Serial.onLine(line); }catch(_){} continue; }
+          if(Serial.logId) appendLog(Serial.logId, line + "\n");
+          if(Serial.waiters.length){ const w = Serial.waiters.shift(); clearTimeout(w.timer); w.resolve(line); }
+          else { Serial.lines.push(line); if(Serial.lines.length > 800) Serial.lines.shift(); }
+        }
+      }
+    } catch(e){ /* reader cancelled on release */ }
+    finally { try{ if(Serial.reader) Serial.reader.releaseLock(); }catch(_){} }
+  })();
+}
+async function serialSend(str){
+  if(!Serial.writer) throw new Error("serial port not connected");
+  await Serial.writer.write(new TextEncoder().encode(str));
+}
+async function serialSendBytes(u8){
+  if(!Serial.writer) throw new Error("serial port not connected");
+  await Serial.writer.write(u8);
+}
+function serialNextLine(timeoutMs){
+  if(Serial.lines.length) return Promise.resolve(Serial.lines.shift());
+  return new Promise((resolve, reject)=>{
+    const timer = setTimeout(()=>{ const i = Serial.waiters.findIndex(x=>x.timer===timer); if(i>=0) Serial.waiters.splice(i,1); reject(new Error("serial read timeout")); }, timeoutMs);
+    Serial.waiters.push({ resolve, reject, timer });
+  });
+}
+async function serialWaitFor(re, timeoutMs){
+  const deadline = Date.now() + timeoutMs;
+  for(;;){ const line = await serialNextLine(Math.max(50, deadline - Date.now())); if(re.test(line)) return line; }
+}
+
+// Clean disconnected UI state for all flash/control/camera flows.
 function syncFlashButtons(){
   const sup = webSerialSupport().ok;
+  const rawConnected = Serial.mode === "raw" && !!Serial.port;
   if($("connectBtn")) $("connectBtn").disabled = !sup;
   if($("flashBtn")) $("flashBtn").disabled = true;   // model: must connect first
   if($("outFwFlashBtn")) $("outFwFlashBtn").disabled = !(sup && OUTFW.meta && OUTFW.meta.available);
   if($("modelFwFlashBtn")) $("modelFwFlashBtn").disabled = !(sup && MODELFW.meta && MODELFW.meta.available);
   if($("benchFwFlashBtn")) $("benchFwFlashBtn").disabled = !(sup && BENCHFW.meta && BENCHFW.meta.available);
   if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
-  ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","ledPinBtn","ledActiveBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
+  ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
   if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
-  if($("cameraStopBtn")) $("cameraStopBtn").disabled = !camPort;
+  if($("cameraStopBtn")) $("cameraStopBtn").disabled = !rawConnected;
   if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !sup;
-  if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !camPort;
+  if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !rawConnected;
+  if($("usbCamConnectBtn")) $("usbCamConnectBtn").disabled = !sup;
+  if($("usbCamStopBtn")) $("usbCamStopBtn").disabled = !rawConnected;
+  if($("benchRunBtn")) $("benchRunBtn").disabled = false;
 }
 
 // Shared connect + bootloader sync with a manual-boot retry (no_reset).
@@ -869,40 +1013,42 @@ function syncFlashButtons(){
 async function espConnect({ terminal, statusEl, logId }){
   const { ESPLoader, Transport } = await import(ESPTOOL_JS);
   await releaseSerial(logId);                                   // free any prior flow
-  setMsg($(statusEl), "Opening serial chooser…", "warn");
-  const port = await navigator.serial.requestPort();           // user gesture
-  esp.port = port;
-  esp.transport = new Transport(port, true);
-  esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal });
-
-  const manualOnly = $("bootMode") && $("bootMode").value === "manual";
-  if(manualOnly){
-    appendLog(logId, "\n[portal] Manual mode: hold BOOT, tap RESET/EN once, release BOOT after ~1s, then wait.\n");
-    setMsg($(statusEl), "Manual BOOT — hold BOOT, tap RESET/EN, release after ~1s…", "warn");
-    esp.chip = await withTimeout(esp.loader.main("no_reset"), 20000, serialTroubleshoot());
-    return esp.chip;
-  }
-
-  setMsg($(statusEl), "Connecting — entering bootloader…", "warn");
+  if(Serial.acquiring) throw new Error("serial acquire already in progress");
+  Serial.acquiring = true;
   try {
-    esp.chip = await withTimeout(esp.loader.main("default_reset"), 20000, "auto bootloader entry timed out");
-  } catch(e){
-    // Manual bootloader retry on the SAME transport (no close/reopen): ask the
-    // student to force download mode, then re-sync with no_reset.
-    appendLog(logId, `\n[portal] Auto reset failed: ${e.message||e}\n`);
-    appendLog(logId, "[portal] Hold BOOT, tap RESET/EN, release BOOT after ~1s — retrying…\n");
-    setMsg($(statusEl), "Hold BOOT, tap RESET/EN, release after ~1s — retrying…", "warn");
-    await new Promise(r=>setTimeout(r, 2500));
-    esp.chip = await withTimeout(esp.loader.main("no_reset"), 20000, serialTroubleshoot());
-  }
-  return esp.chip;
+    setMsg($(statusEl), "Opening serial chooser…", "warn");
+    const port = await navigator.serial.requestPort();         // user gesture
+    Serial.port = port; Serial.mode = "flash"; Serial.logId = logId;
+    Serial.transport = new Transport(port, true);
+    Serial.loader = new ESPLoader({ transport: Serial.transport, baudrate: 460800, romBaudrate: 115200, terminal });
+
+    const manualOnly = $("bootMode") && $("bootMode").value === "manual";
+    if(manualOnly){
+      appendLog(logId, "\n[portal] Manual mode: hold BOOT, tap RESET/EN once, release BOOT after ~1s, then wait.\n");
+      setMsg($(statusEl), "Manual BOOT — hold BOOT, tap RESET/EN, release after ~1s…", "warn");
+      Serial.chip = await withTimeout(Serial.loader.main("no_reset"), 20000, serialTroubleshoot());
+      return Serial.chip;
+    }
+    setMsg($(statusEl), "Connecting — entering bootloader…", "warn");
+    try {
+      Serial.chip = await withTimeout(Serial.loader.main("default_reset"), 20000, "auto bootloader entry timed out");
+    } catch(e){
+      // Manual bootloader retry on the SAME transport (no close/reopen): ask the
+      // student to force download mode, then re-sync with no_reset.
+      appendLog(logId, `\n[portal] Auto reset failed: ${e.message||e}\n`);
+      appendLog(logId, "[portal] Hold BOOT, tap RESET/EN, release BOOT after ~1s — retrying…\n");
+      setMsg($(statusEl), "Hold BOOT, tap RESET/EN, release after ~1s — retrying…", "warn");
+      await new Promise(r=>setTimeout(r, 2500));
+      Serial.chip = await withTimeout(Serial.loader.main("no_reset"), 20000, serialTroubleshoot());
+    }
+    return Serial.chip;
+  } finally { Serial.acquiring = false; }
 }
 
 
 // ---------- OV2640 browser preview (Web Serial raw CDC) ----------
 async function cameraWrite(cmd){
-  if(!camWriter) throw new Error("camera port not connected");
-  await camWriter.write(new TextEncoder().encode(cmd + "\n"));
+  await serialSend(cmd + "\n");
   appendLog(camUi.logId, "> " + cmd + "\n");
 }
 function classNameForIndex(idx){ return CLASS_LABELS[idx] || `class ${idx}`; }
@@ -939,67 +1085,49 @@ function renderCameraFrame(base64Data, meta){
   } catch(e){ appendLog(camUi.logId, "[camera] frame decode failed: "+(e.message||e)+"\n"); }
 }
 
-async function cameraReadLoop(){
-  const decoder = new TextDecoder();
-  let textBuf="", receiving=false, frameLines=[], meta={};
-  try {
-    while(camPort && !camStop){
-      const {value, done} = await camReader.read();
-      if(done) break;
-      textBuf += decoder.decode(value, {stream:true});
-      let idx;
-      while((idx=textBuf.indexOf("\n")) >= 0){
-        const line = textBuf.slice(0, idx).trim();
-        textBuf = textBuf.slice(idx + 1);
-        if(!line) continue;
-        if(line.startsWith("---START_IMAGE:")){
-          const p=line.split(":");
-          meta={format:Number(p[1]||4), width:Number(p[2]||0), height:Number(p[3]||0), size:Number(p[4]||0)};
-          receiving=true;
-          frameLines=[];
-        } else if(line.startsWith("---END_IMAGE---")){
-          if(receiving) renderCameraFrame(frameLines.join(""), meta);
-          receiving=false;
-          frameLines=[];
-        } else if(receiving){
-          frameLines.push(line);
-        } else if(line.startsWith("RESULT,")){
-          appendLog(camUi.logId, line + "\n");
-          updateGestureResult(line);
-        } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP/i.test(line)){
-          appendLog(camUi.logId, line + "\n");
-        }
-      }
-    }
-  } catch(e){ if(!camStop) appendLog(camUi.logId, "[camera] read stopped: "+(e.message||e)+"\n"); }
+// OV2640 line handler for the shared pump: assemble base64 JPEG frames between
+// ---START_IMAGE:…--- / ---END_IMAGE---, surface RESULT lines, log status lines.
+function cameraOnLine(rawLine){
+  const line = rawLine.trim();
+  if(!line) return;
+  if(line.startsWith("---START_IMAGE:")){
+    const p=line.split(":");
+    camAsm.meta={format:Number(p[1]||4), width:Number(p[2]||0), height:Number(p[3]||0), size:Number(p[4]||0)};
+    camAsm.receiving=true; camAsm.lines=[];
+  } else if(line.startsWith("---END_IMAGE---")){
+    if(camAsm.receiving) renderCameraFrame(camAsm.lines.join(""), camAsm.meta);
+    camAsm.receiving=false; camAsm.lines=[];
+  } else if(camAsm.receiving){
+    camAsm.lines.push(line);
+  } else if(line.startsWith("RESULT,")){
+    appendLog(camUi.logId, line + "\n");
+    updateGestureResult(line);
+  } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP|System|Streaming|SETTING|OK/i.test(line)){
+    appendLog(camUi.logId, line + "\n");
+  }
 }
 async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   camUi = ui;
   const sup=webSerialSupport();
   if(!sup.ok){ setMsg($(camUi.msgId), "OV2640 preview needs Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
-  await releaseSerial(camUi.logId);
+  if(Serial.acquiring){ setMsg($(camUi.msgId), "A serial connection is opening — please wait a moment.", "warn"); return; }
   $(camUi.logId).textContent="";
   setText(camUi.resultId, "Prediction: --");
   setMsg($(camUi.msgId), "Opening serial chooser for OV2640 preview...", "warn");
   try {
-    camStop=false;
-    camPort = await navigator.serial.requestPort();
-    await camPort.open({baudRate:115200, bufferSize:1048576});
-    await clearSerialResetSignals(camPort);
-    await sleep(800);
-    camWriter = camPort.writable.getWriter();
-    camReader = camPort.readable.getReader();
+    camAsm = { receiving:false, lines:[], meta:{} };
+    await serialOpenRaw({ logId:camUi.logId, baudRate:115200, bufferSize:1048576, onLine:cameraOnLine });
     if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
     if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
-    cameraReadLoop();
-    await cameraWrite("f3"); await new Promise(r=>setTimeout(r,250));
-    await cameraWrite("s1"); await new Promise(r=>setTimeout(r,250));
+    await sleep(400);
+    await cameraWrite("f3"); await sleep(250);
+    await cameraWrite("s1"); await sleep(250);
     await cameraWrite("d1");
     setMsg($(camUi.msgId), "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
   } catch(e){
     const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "Port selection cancelled." : "OV2640 connect failed: "+(e.message||e);
     setMsg($(camUi.msgId), msg, "bad");
-    await releaseCamera(camUi.logId);
+    await releaseSerial(camUi.logId);
   }
 }
 
@@ -1055,7 +1183,7 @@ $("connectBtn").onclick = async () => {
   const sup=webSerialSupport(); if(!sup.ok){ setMsg($("flashStatus"),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
   $("connectBtn").disabled=true;
   try {
-    if(!esp.meta){ try{ esp.meta=await api("/api/flash-meta"); }catch(e){ esp.meta={offset_int:3211264}; } }
+    if(!flashMeta){ try{ flashMeta=await api("/api/flash-meta"); }catch(e){ flashMeta={offset_int:3211264}; } }
     const chip=await espConnect({ terminal:modelTerminal, statusEl:"flashStatus", logId:"modelFlashLog" });
     setMsg($("flashStatus"),`Connected (${chip}). Select a model and Flash.`,"ok"); $("flashBtn").disabled=false;
   } catch(e){
@@ -1068,14 +1196,14 @@ $("connectBtn").onclick = async () => {
 };
 $("flashBtn").onclick = async () => {
   const path=$("flashArtifact").value;
-  if(!esp.loader){ setMsg($("flashStatus"),"Connect first.","bad"); return; }
+  if(!Serial.loader){ setMsg($("flashStatus"),"Connect first.","bad"); return; }
   if(!path){ setMsg($("flashStatus"),"Select a TFLite model.","bad"); return; }
-  const offset=(esp.meta&&esp.meta.offset_int)||3211264;
+  const offset=(flashMeta&&flashMeta.offset_int)||3211264;
   $("flashBtn").disabled=true; $("connectBtn").disabled=true;
   try { setMsg($("flashStatus"),"Downloading model…","warn");
     const resp=await fetch(ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(path)); if(!resp.ok) throw new Error("download failed ("+resp.status+")");
     const data=binaryString(await resp.arrayBuffer()); appendLog("modelFlashLog",`\n[portal] flashing ${path.split("/").pop()} (${data.length} bytes)\n`);
-    await esp.loader.writeFlash({ fileArray:[{data,address:offset}], flashSize:"keep",flashMode:"keep",flashFreq:"keep",eraseAll:false,compress:true,
+    await Serial.loader.writeFlash({ fileArray:[{data,address:offset}], flashSize:"keep",flashMode:"keep",flashFreq:"keep",eraseAll:false,compress:true,
       reportProgress:(i,w,t)=>{ const p=t?Math.round(w/t*100):0; setMsg($("flashStatus"),`Writing model… ${p}% (${w}/${t})`,"warn"); } });
     setMsg($("flashStatus"),"Flash succeeded — model updated. You can flash again or flash firmware.","ok");
   } catch(e){ setMsg($("flashStatus"),"Flash failed: "+(e.message||e)+" (see log)","bad"); }
@@ -1117,7 +1245,7 @@ function makeFwFlash(ids){
       for(const im of ids.meta.images){ const resp=await fetch(ORIGIN+im.url); if(!resp.ok) throw new Error("download failed for "+im.name+" ("+resp.status+")");
         fileArray.push({data:binaryString(await resp.arrayBuffer()),address:im.offset_int}); appendLog(ids.logEl,`  ${im.name}: ${im.size} bytes\n`); }
       setMsg($(ids.statusEl),"Writing firmware…","warn");
-      await esp.loader.writeFlash({ fileArray, flashSize:ids.meta.flash_size||"keep", flashMode:ids.meta.flash_mode||"keep", flashFreq:ids.meta.flash_freq||"keep",
+      await Serial.loader.writeFlash({ fileArray, flashSize:ids.meta.flash_size||"keep", flashMode:ids.meta.flash_mode||"keep", flashFreq:ids.meta.flash_freq||"keep",
         eraseAll:false, compress:true, reportProgress:(i,w,t)=>{ const im=ids.meta.images[i]; const p=t?Math.round(w/t*100):0;
           setMsg($(ids.statusEl),`Writing ${im?im.name:("image "+(i+1))} (${i+1}/${ids.meta.images.length})… ${p}%`,"warn"); } });
       setMsg($(ids.statusEl),"Firmware flash succeeded — board rebooting.","ok");
@@ -1136,42 +1264,29 @@ $("modelFwRefreshBtn").onclick = () => loadFirmware("model_finetune", MODELFW);
 $("benchFwRefreshBtn").onclick = () => loadFirmware("deploy_benchmark", BENCHFW);
 $("mainFwRefreshBtn").onclick = () => loadFirmware("main_board", MAINFW);
 
-// ---------- OUTPUT DEMO: raw-serial LED / PWM control ----------
+// ---------- OUTPUT DEMO: raw-serial LED / PWM control (unified lifecycle) ----------
 async function ctrlSend(cmd){
-  if(!ctrlWriter){ setMsg($("ctrlStatus"),"Connect for control first.","bad"); return; }
-  try { await ctrlWriter.write(new TextEncoder().encode(cmd+"\n")); appendLog("ctrlLog","> "+cmd+"\n"); }
+  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("ctrlStatus"),"Connect for control first.","bad"); return; }
+  try { await serialSend(cmd+"\n"); appendLog("ctrlLog","> "+cmd+"\n"); }
   catch(e){ setMsg($("ctrlStatus"),"Send failed: "+(e.message||e),"bad"); }
 }
 $("ctrlConnectBtn").onclick = async () => {
   const sup=webSerialSupport(); if(!sup.ok){ setMsg($("ctrlStatus"),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
+  if(Serial.acquiring){ setMsg($("ctrlStatus"),"A serial connection is opening — please wait a moment.","warn"); return; }
   try {
-    await releaseSerial("ctrlLog");                 // free any flash port (or a prior control session) first
-    ctrlPort=await navigator.serial.requestPort();
-    await ctrlPort.open({ baudRate:115200 });
-    await clearSerialResetSignals(ctrlPort);
-    await sleep(300);
-    ctrlWriter=ctrlPort.writable.getWriter();
     $("ctrlLog").textContent="";
-    ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","ledPinBtn","ledActiveBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
+    await serialOpenRaw({ logId:"ctrlLog", baudRate:115200 });   // releases any prior flow, opens, starts pump (echoes to ctrlLog)
+    ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
     setMsg($("ctrlStatus"),"Connected. Use the buttons / slider.","ok");
-    readCtrlLoop();
   } catch(e){ const raw=e.message||String(e);
     setMsg($("ctrlStatus"), /No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect failed: "+raw), "bad");
     await releaseSerial("ctrlLog"); }
 };
-async function readCtrlLoop(){
-  try { ctrlReader=ctrlPort.readable.getReader(); const dec=new TextDecoder();
-    for(;;){ const {value,done}=await ctrlReader.read(); if(done) break; if(value) appendLog("ctrlLog", dec.decode(value)); }
-  } catch(e){}
-  finally { try{ if(ctrlReader) ctrlReader.releaseLock(); }catch(_){} }
-}
 $("ledOnBtn").onclick   = () => ctrlSend("LED,1");
 $("ledOffBtn").onclick  = () => ctrlSend("LED,0");
 $("ledBlinkBtn").onclick= () => ctrlSend("BLINK");
 $("ledTestBtn").onclick = () => ctrlSend("TEST");
 $("ledStatusBtn").onclick = () => ctrlSend("STATUS");
-$("ledPinBtn").onclick = () => ctrlSend("PIN,"+($("ledPinInput").value||"38"));
-$("ledActiveBtn").onclick = () => ctrlSend("ACTIVE,"+$("ledActiveSelect").value);
 $("pwmSlider").oninput  = (e) => { setText("pwmVal", e.target.value); };
 $("pwmSlider").onchange = (e) => ctrlSend("PWM,"+e.target.value);
 

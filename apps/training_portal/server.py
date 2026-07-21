@@ -218,6 +218,7 @@ TOPIC_ROUTES = {
     "/deploy": "deploy",
     "/output": "output",
     "/firmware": "mainfw",
+    "/camera_usb": "camerausb",
 }
 
 
@@ -1154,6 +1155,7 @@ def create_app():
     @app.get("/deploy")
     @app.get("/output")
     @app.get("/firmware")
+    @app.get("/camera_usb")
     def index():
         return render_template("index.html", team=_logged_in_team(), topic=TOPIC_ROUTES.get(request.path, "dashboard"))
 

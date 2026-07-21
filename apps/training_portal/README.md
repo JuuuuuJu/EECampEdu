@@ -134,7 +134,7 @@ apps/training_portal/runs/
 
 ## Pages
 
-The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`. Firmware targets are separated by class: `firmware/model_finetune` is camera-only OV2640 preview/capture, `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
+The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, `/firmware`, and `/camera_usb` (full OV2640 camera + USB-storage control, modeled on `firmware/pc/tools/camera_controller.py`). Every Web Serial workflow — flash, model flash, benchmark, OV2640 preview, camera+USB demo, and output control — shares one lifecycle: exactly one port is open at a time, each flow releases the previous owner before acquiring, and the port is fully closed after every workflow. Firmware targets are separated by class: `firmware/model_finetune` is camera-only OV2640 preview/capture, `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
 Train/Quantize run as background jobs (shared job log / artifacts / history
 panels); the flash, OV2640 preview, and **`/deploy` on-device benchmark** all run
 in the browser via Web Serial against the board on the **student PC** (the AI PC

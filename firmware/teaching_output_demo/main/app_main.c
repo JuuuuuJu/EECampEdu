@@ -1,14 +1,21 @@
-// Output-class teaching demo: GPIO digital output + LEDC PWM brightness.
+// Output-class teaching demo: drives the on-board addressable RGB LED on GPIO38.
 //
-// Browser/Web Serial commands:
-//   LED,1 | LED,0        logical LED on/off using gpio_set_level
-//   PWM,<0-255>          LEDC PWM brightness
-//   BLINK | STOP         start/stop the while(1) blink loop
-//   TEST                 blink a short diagnostic pattern
-//   STATUS               report gpio, polarity, level, pwm, blink state
-//   PIN,<gpio>           switch teaching output pin at runtime for board debugging
-//   ACTIVE,<1|0>         set LED polarity (1=active high, 0=active low)
-//   LEVEL,<1|0>          raw gpio_set_level for scope/LED debugging
+// IMPORTANT: GPIO38 on this board is an *addressable* RGB LED (SK6812MINI-HS,
+// WS2812-family). It is driven by a timed one-wire (NRZ) protocol at ~800 kHz,
+// NOT by gpio_set_level() or LEDC PWM. A static logic level does nothing to it.
+// We therefore generate the waveform with the RMT peripheral (core IDF, no
+// external component needed, so builds work offline).
+//
+// Browser/Web Serial commands (unchanged so the portal works as-is):
+//   LED,1 | LED,0        turn the LED on (white at current level) / off
+//   PWM,<0-255>          brightness of the white on-color (0 = off)
+//   RGB,<r>,<g>,<b>      set an explicit color (0-255 each) and turn on
+//   BLINK | STOP         start/stop the blink loop
+//   TEST                 cycle red -> green -> blue -> white -> off (proves RGB)
+//   STATUS               report gpio, on/off, level, color, blink
+//   PIN,<gpio>           move the LED data pin at runtime (board debugging)
+//   ACTIVE,<1|0>         accepted but not applicable to an addressable LED
+//   LEVEL,<1|0>          raw on/off (alias of LED)
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,153 +24,182 @@
 #include <strings.h>
 
 #include "driver/gpio.h"
-#include "driver/ledc.h"
+#include "driver/rmt_tx.h"
+#include "driver/rmt_encoder.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#define DEFAULT_LED_GPIO  GPIO_NUM_38
-#define BLINK_PERIOD_MS   500
-
-#define LEDC_MODE         LEDC_LOW_SPEED_MODE
-#define LEDC_TIMER        LEDC_TIMER_0
-#define LEDC_CHANNEL      LEDC_CHANNEL_0
-#define LEDC_RES          LEDC_TIMER_8_BIT
-#define LEDC_FREQ_HZ      5000
-#define DUTY_MAX          255
+#define DEFAULT_LED_GPIO   GPIO_NUM_38
+#define BLINK_PERIOD_MS    500
+#define RMT_RESOLUTION_HZ  10000000   // 10 MHz -> 0.1 us per tick
 
 static const char *TAG = "OUTPUT_DEMO";
+
+// ---- RMT one-wire (SK6812/WS2812) driver ----------------------------------
+static rmt_channel_handle_t rmt_chan = NULL;
+static rmt_encoder_handle_t rmt_bytes_enc = NULL;
+
+// SK6812MINI-HS bit timing at 0.1 us/tick: T0H=0.3us, T0L=0.9us, T1H=0.6us,
+// T1L=0.6us. WS2812-compatible; msb_first, GRB byte order.
+static const rmt_symbol_word_t SK_BIT0 = { .level0 = 1, .duration0 = 3, .level1 = 0, .duration1 = 9 };
+static const rmt_symbol_word_t SK_BIT1 = { .level0 = 1, .duration0 = 6, .level1 = 0, .duration1 = 6 };
+
+// ---- logical LED state (serialized by g_lock) -----------------------------
 static gpio_num_t led_gpio = DEFAULT_LED_GPIO;
-static bool led_active_high = true;
-static bool blink_enabled = false;
-static bool pwm_mode = false;
-static int brightness = 0;
 static bool led_on = false;
+static int  level = 255;                 // brightness 0-255 applied to the on-color
+static uint8_t color_r = 255, color_g = 255, color_b = 255;  // white by default
+static bool blink_enabled = false;
+static bool blink_phase = false;
+static SemaphoreHandle_t g_lock = NULL;
 
-static int logical_to_raw(bool on) {
-    return led_active_high ? (on ? 1 : 0) : (on ? 0 : 1);
-}
+static uint8_t scale(uint8_t c) { return (uint8_t)((c * level + 127) / 255); }
 
-static bool valid_output_gpio(gpio_num_t gpio) {
-    return GPIO_IS_VALID_OUTPUT_GPIO(gpio);
-}
-
-static esp_err_t gpio_output_init(void) {
-    if (!valid_output_gpio(led_gpio)) {
-        ESP_LOGE(TAG, "GPIO%d is not a valid output GPIO", (int)led_gpio);
-        return ESP_ERR_INVALID_ARG;
-    }
-    esp_err_t err = gpio_reset_pin(led_gpio);
-    if (err != ESP_OK) return err;
-    err = gpio_set_direction(led_gpio, GPIO_MODE_OUTPUT);
-    if (err != ESP_OK) return err;
-    err = gpio_set_level(led_gpio, logical_to_raw(false));
-    pwm_mode = false;
+// Push one pixel to the LED. SK6812 wants Green, Red, Blue order.
+static esp_err_t led_show_rgb(uint8_t r, uint8_t g, uint8_t b) {
+    if (!rmt_chan || !rmt_bytes_enc) return ESP_ERR_INVALID_STATE;
+    const uint8_t grb[3] = { g, r, b };
+    rmt_transmit_config_t tx = { .loop_count = 0, .flags = { .eot_level = 0 } };
+    esp_err_t err = rmt_transmit(rmt_chan, rmt_bytes_enc, grb, sizeof(grb), &tx);
+    if (err == ESP_OK) err = rmt_tx_wait_all_done(rmt_chan, pdMS_TO_TICKS(100));
+    esp_rom_delay_us(120);   // hold the line low >80us so the LED latches the frame
     return err;
 }
 
-static esp_err_t ledc_output_init(void) {
-    if (!valid_output_gpio(led_gpio)) {
-        ESP_LOGE(TAG, "GPIO%d is not a valid LEDC output GPIO", (int)led_gpio);
-        return ESP_ERR_INVALID_ARG;
-    }
-    ledc_timer_config_t timer = {
-        .speed_mode = LEDC_MODE,
-        .duty_resolution = LEDC_RES,
-        .timer_num = LEDC_TIMER,
-        .freq_hz = LEDC_FREQ_HZ,
-        .clk_cfg = LEDC_AUTO_CLK,
+// Render current logical state (on/off * color * level) to the LED.
+static void led_render(void) {
+    esp_err_t err;
+    if (led_on) err = led_show_rgb(scale(color_r), scale(color_g), scale(color_b));
+    else        err = led_show_rgb(0, 0, 0);
+    if (err != ESP_OK) printf("ERR,led_show,%s\n", esp_err_to_name(err));
+}
+
+static esp_err_t led_driver_init(gpio_num_t gpio) {
+    rmt_tx_channel_config_t chan_cfg = {
+        .gpio_num = gpio,
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = RMT_RESOLUTION_HZ,
+        .mem_block_symbols = 64,
+        .trans_queue_depth = 4,
     };
-    esp_err_t err = ledc_timer_config(&timer);
+    esp_err_t err = rmt_new_tx_channel(&chan_cfg, &rmt_chan);
     if (err != ESP_OK) return err;
-    ledc_channel_config_t ch = {
-        .gpio_num = led_gpio,
-        .speed_mode = LEDC_MODE,
-        .channel = LEDC_CHANNEL,
-        .intr_type = LEDC_INTR_DISABLE,
-        .timer_sel = LEDC_TIMER,
-        .duty = 0,
-        .hpoint = 0,
-    };
-    err = ledc_channel_config(&ch);
-    if (err == ESP_OK) pwm_mode = true;
+
+    if (!rmt_bytes_enc) {
+        rmt_bytes_encoder_config_t enc_cfg = {
+            .bit0 = SK_BIT0,
+            .bit1 = SK_BIT1,
+            .flags = { .msb_first = 1 },
+        };
+        err = rmt_new_bytes_encoder(&enc_cfg, &rmt_bytes_enc);
+        if (err != ESP_OK) return err;
+    }
+    err = rmt_enable(rmt_chan);
     return err;
 }
 
-static void ensure_digital(void) {
-    if (pwm_mode) {
-        esp_err_t err = gpio_output_init();
-        if (err != ESP_OK) printf("ERR,gpio_init,%s\n", esp_err_to_name(err));
+// Rebuild the RMT channel on a different data GPIO (for PIN,<gpio>).
+static esp_err_t led_driver_reinit(gpio_num_t gpio) {
+    if (rmt_chan) {
+        rmt_disable(rmt_chan);
+        rmt_del_channel(rmt_chan);
+        rmt_chan = NULL;
     }
+    return led_driver_init(gpio);
 }
 
-static void ensure_pwm(void) {
-    if (!pwm_mode) {
-        esp_err_t err = ledc_output_init();
-        if (err != ESP_OK) printf("ERR,ledc_init,%s\n", esp_err_to_name(err));
-    }
-}
-
-static void led_digital(bool on) {
-    ensure_digital();
-    led_on = on;
-    const int raw = logical_to_raw(on);
-    esp_err_t err = gpio_set_level(led_gpio, raw);
-    if (err == ESP_OK) printf("LED,%s,gpio=%d,level=%d\n", on ? "ON" : "OFF", (int)led_gpio, raw);
-    else printf("ERR,gpio_set_level,%s\n", esp_err_to_name(err));
-    fflush(stdout);
-}
-
-static void led_raw_level(int raw) {
-    ensure_digital();
-    raw = raw ? 1 : 0;
-    esp_err_t err = gpio_set_level(led_gpio, raw);
-    led_on = led_active_high ? (raw != 0) : (raw == 0);
-    if (err == ESP_OK) printf("LEVEL,%d,gpio=%d\n", raw, (int)led_gpio);
-    else printf("ERR,gpio_set_level,%s\n", esp_err_to_name(err));
-    fflush(stdout);
-}
-
-static void led_pwm(int value) {
-    if (value < 0) value = 0;
-    if (value > DUTY_MAX) value = DUTY_MAX;
-    blink_enabled = false;
-    ensure_pwm();
-    brightness = value;
-    const int duty = led_active_high ? value : (DUTY_MAX - value);
-    esp_err_t err = ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty);
-    if (err == ESP_OK) err = ledc_update_duty(LEDC_MODE, LEDC_CHANNEL);
-    if (err == ESP_OK) printf("PWM,%d,gpio=%d,duty=%d\n", brightness, (int)led_gpio, duty);
-    else printf("ERR,ledc_set_duty,%s\n", esp_err_to_name(err));
-    fflush(stdout);
-}
-
+// ---- command helpers (assume g_lock held) ---------------------------------
 static void print_help(void) {
-    printf("Commands: LED,1 | LED,0 | PWM,<0-255> | BLINK | STOP | TEST | STATUS | PIN,<gpio> | ACTIVE,<1|0> | LEVEL,<1|0> | HELP\n");
+    printf("Commands: LED,1 | LED,0 | PWM,<0-255> | RGB,<r>,<g>,<b> | BLINK | STOP | TEST | STATUS | PIN,<gpio> | HELP\n");
     fflush(stdout);
 }
 
 static void print_status(void) {
-    int level = gpio_get_level(led_gpio);
-    printf("STATUS,gpio=%d,active_high=%d,level=%d,mode=%s,on=%d,pwm=%d,blink=%d\n",
-           (int)led_gpio, led_active_high ? 1 : 0, level,
-           pwm_mode ? "pwm" : "digital", led_on ? 1 : 0, brightness,
-           blink_enabled ? 1 : 0);
+    printf("STATUS,gpio=%d,type=addressable_sk6812,on=%d,level=%d,rgb=%d,%d,%d,blink=%d\n",
+           (int)led_gpio, led_on ? 1 : 0, level,
+           color_r, color_g, color_b, blink_enabled ? 1 : 0);
+    fflush(stdout);
+}
+
+static void set_led(bool on) {
+    blink_enabled = false;
+    led_on = on;
+    if (on && level == 0) level = 255;   // a bare "on" must be visible
+    led_render();
+    printf("LED,%s,gpio=%d,rgb=%d,%d,%d\n", on ? "ON" : "OFF",
+           (int)led_gpio, on ? scale(color_r) : 0, on ? scale(color_g) : 0, on ? scale(color_b) : 0);
+    fflush(stdout);
+}
+
+static void set_pwm(int value) {
+    if (value < 0) value = 0;
+    if (value > 255) value = 255;
+    blink_enabled = false;
+    level = value;
+    led_on = value > 0;
+    led_render();
+    printf("PWM,%d,gpio=%d\n", value, (int)led_gpio);
+    fflush(stdout);
+}
+
+static void set_rgb(int r, int g, int b) {
+    color_r = (uint8_t)(r < 0 ? 0 : r > 255 ? 255 : r);
+    color_g = (uint8_t)(g < 0 ? 0 : g > 255 ? 255 : g);
+    color_b = (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b);
+    blink_enabled = false;
+    led_on = true;
+    if (level == 0) level = 255;
+    led_render();
+    printf("RGB,%d,%d,%d,gpio=%d\n", color_r, color_g, color_b, (int)led_gpio);
     fflush(stdout);
 }
 
 static void diagnostic_test(void) {
     blink_enabled = false;
-    ensure_digital();
+    const int saved_level = level; const bool saved_on = led_on;
+    const uint8_t sr = color_r, sg = color_g, sb = color_b;
+    level = 255;
     printf("TEST,start,gpio=%d\n", (int)led_gpio);
     fflush(stdout);
-    for (int i = 0; i < 8; ++i) {
-        led_digital((i % 2) == 0);
-        vTaskDelay(pdMS_TO_TICKS(150));
+    const uint8_t seq[5][3] = { {255,0,0}, {0,255,0}, {0,0,255}, {255,255,255}, {0,0,0} };
+    const char *names[5] = { "red", "green", "blue", "white", "off" };
+    for (int i = 0; i < 5; ++i) {
+        led_show_rgb(seq[i][0], seq[i][1], seq[i][2]);
+        printf("TEST,%s\n", names[i]);
+        fflush(stdout);
+        vTaskDelay(pdMS_TO_TICKS(400));
     }
-    led_digital(false);
+    // restore prior logical state
+    level = saved_level; led_on = saved_on; color_r = sr; color_g = sg; color_b = sb;
+    led_render();
     printf("TEST,done\n");
+    fflush(stdout);
+}
+
+static void set_pin(int gpio) {
+    gpio_num_t next = (gpio_num_t)gpio;
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(next)) {
+        printf("ERR,bad_gpio,%d\n", gpio);
+        fflush(stdout);
+        return;
+    }
+    blink_enabled = false;
+    esp_err_t err = led_driver_reinit(next);
+    if (err != ESP_OK) {
+        printf("ERR,rmt_init,%s\n", esp_err_to_name(err));
+        fflush(stdout);
+        return;
+    }
+    led_gpio = next;
+    led_on = false;
+    led_render();                        // start the new pin's LED off
+    printf("PIN,%d\n", gpio);
     fflush(stdout);
 }
 
@@ -174,74 +210,67 @@ static void rstrip(char *s) {
     }
 }
 
-static void set_pin(int gpio) {
-    gpio_num_t next = (gpio_num_t)gpio;
-    if (!valid_output_gpio(next)) {
-        printf("ERR,bad_gpio,%d\n", gpio);
-        fflush(stdout);
-        return;
-    }
-    blink_enabled = false;
-    led_digital(false);
-    led_gpio = next;
-    esp_err_t err = gpio_output_init();
-    if (err == ESP_OK) printf("PIN,%d\n", gpio);
-    else printf("ERR,gpio_init,%s\n", esp_err_to_name(err));
-    fflush(stdout);
-}
-
 static void handle_command(char *line) {
     rstrip(line);
     char *comma = strchr(line, ',');
+    char *args = NULL;
     int value = 0;
     if (comma) {
-        *comma = '\0';
-        value = atoi(comma + 1);
+        args = comma + 1;
+        value = atoi(args);
     }
+    // Split the verb off (after capturing args) for the simple commands.
+    char verb[16] = {0};
+    size_t vlen = comma ? (size_t)(comma - line) : strlen(line);
+    if (vlen >= sizeof(verb)) vlen = sizeof(verb) - 1;
+    memcpy(verb, line, vlen);
 
-    if (strcasecmp(line, "LED") == 0) {
-        blink_enabled = false;
-        led_digital(value != 0);
-    } else if (strcasecmp(line, "PWM") == 0) {
-        led_pwm(value);
-    } else if (strcasecmp(line, "PIN") == 0) {
+    // Serialize with the blink loop so a command and a blink toggle can never
+    // interleave two writes to the LED.
+    if (g_lock) xSemaphoreTake(g_lock, portMAX_DELAY);
+
+    if (strcasecmp(verb, "LED") == 0) {
+        set_led(value != 0);
+    } else if (strcasecmp(verb, "PWM") == 0) {
+        set_pwm(value);
+    } else if (strcasecmp(verb, "RGB") == 0) {
+        int r = 0, g = 0, b = 0;
+        if (args && sscanf(args, "%d,%d,%d", &r, &g, &b) == 3) set_rgb(r, g, b);
+        else { printf("ERR,rgb_needs_r,g,b\n"); fflush(stdout); }
+    } else if (strcasecmp(verb, "PIN") == 0) {
         set_pin(value);
-    } else if (strcasecmp(line, "ACTIVE") == 0) {
-        blink_enabled = false;
-        led_active_high = value != 0;
-        gpio_output_init();
-        printf("ACTIVE,%d\n", led_active_high ? 1 : 0);
+    } else if (strcasecmp(verb, "ACTIVE") == 0) {
+        // Polarity does not apply to an addressable LED; accept for portal compat.
+        printf("ACTIVE,ignored_for_addressable_led\n");
         fflush(stdout);
-    } else if (strcasecmp(line, "LEVEL") == 0) {
-        blink_enabled = false;
-        led_raw_level(value);
-    } else if (strcasecmp(line, "on") == 0) {
-        blink_enabled = false;
-        led_digital(true);
-    } else if (strcasecmp(line, "off") == 0) {
-        blink_enabled = false;
-        led_digital(false);
-    } else if (strcasecmp(line, "toggle") == 0) {
-        blink_enabled = false;
-        led_digital(!led_on);
-    } else if (strcasecmp(line, "blink") == 0 || strcasecmp(line, "BLINK") == 0) {
-        ensure_digital();
+    } else if (strcasecmp(verb, "LEVEL") == 0) {
+        set_led(value != 0);
+    } else if (strcasecmp(verb, "on") == 0) {
+        set_led(true);
+    } else if (strcasecmp(verb, "off") == 0) {
+        set_led(false);
+    } else if (strcasecmp(verb, "toggle") == 0) {
+        set_led(!led_on);
+    } else if (strcasecmp(verb, "BLINK") == 0) {
+        if (level == 0) level = 255;
         blink_enabled = true;
+        blink_phase = false;
         printf("LED,BLINK,gpio=%d\n", (int)led_gpio);
         fflush(stdout);
-    } else if (strcasecmp(line, "stop") == 0 || strcasecmp(line, "STOP") == 0) {
-        blink_enabled = false;
-        led_digital(false);
-    } else if (strcasecmp(line, "TEST") == 0) {
+    } else if (strcasecmp(verb, "STOP") == 0) {
+        set_led(false);
+    } else if (strcasecmp(verb, "TEST") == 0) {
         diagnostic_test();
-    } else if (strcasecmp(line, "status") == 0 || strcasecmp(line, "STATUS") == 0) {
+    } else if (strcasecmp(verb, "STATUS") == 0) {
         print_status();
-    } else if (line[0] == '\0' || strcasecmp(line, "help") == 0 || strcasecmp(line, "HELP") == 0) {
+    } else if (verb[0] == '\0' || strcasecmp(verb, "HELP") == 0) {
         print_help();
     } else {
-        printf("ERR,unknown_command,%s\n", line);
+        printf("ERR,unknown_command,%s\n", verb);
         print_help();
     }
+
+    if (g_lock) xSemaphoreGive(g_lock);
 }
 
 static void serial_command_task(void *arg) {
@@ -257,26 +286,50 @@ static void serial_command_task(void *arg) {
 }
 
 void app_main(void) {
+    // The console is USB Serial/JTAG. printf() works without the driver, but
+    // READING host input (our LED commands) does NOT until the USB-Serial-JTAG
+    // VFS driver is installed and stdin is routed through it.
+    usb_serial_jtag_driver_config_t usj_cfg = USB_SERIAL_JTAG_DRIVER_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&usj_cfg));
+    usb_serial_jtag_vfs_use_driver();
+    usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_LF);   // browser sends "\n"
+    usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
+
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
 
-    esp_err_t err = gpio_output_init();
+    g_lock = xSemaphoreCreateMutex();
+
+    // Deterministic power-on state: addressable LED driver up, LED OFF, white
+    // on-color at full level, no blink. Same every boot / replug.
+    led_on = false; level = 255; blink_enabled = false;
+    color_r = color_g = color_b = 255;
+    esp_err_t err = led_driver_init(led_gpio);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "GPIO init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "RMT LED init failed: %s", esp_err_to_name(err));
+    } else {
+        led_render();   // ensure the LED starts OFF
     }
-    ESP_LOGI(TAG, "Output demo ready on GPIO%d active_high=%d.", (int)led_gpio, led_active_high ? 1 : 0);
-    printf("READY,OUTPUT_DEMO,gpio=%d,active_high=%d\n", (int)led_gpio, led_active_high ? 1 : 0);
+
+    ESP_LOGI(TAG, "Output demo ready on GPIO%d (addressable SK6812 RGB LED).", (int)led_gpio);
+    printf("READY,OUTPUT_DEMO,gpio=%d,type=addressable_sk6812\n", (int)led_gpio);
     print_help();
 
     xTaskCreate(serial_command_task, "serial_command_task", 4096, NULL, 5, NULL);
 
+    // Blink loop: toggles only while blinking, always under the shared lock so
+    // it can never race a command's LED write.
     while (true) {
-        if (blink_enabled) {
-            led_on = !led_on;
-            gpio_set_level(led_gpio, logical_to_raw(led_on));
-            vTaskDelay(pdMS_TO_TICKS(BLINK_PERIOD_MS));
-        } else {
-            vTaskDelay(pdMS_TO_TICKS(20));
+        bool blinking = false;
+        if (g_lock && xSemaphoreTake(g_lock, portMAX_DELAY) == pdTRUE) {
+            if (blink_enabled) {
+                blink_phase = !blink_phase;
+                if (blink_phase) led_show_rgb(scale(color_r), scale(color_g), scale(color_b));
+                else             led_show_rgb(0, 0, 0);
+                blinking = true;
+            }
+            xSemaphoreGive(g_lock);
         }
+        vTaskDelay(pdMS_TO_TICKS(blinking ? BLINK_PERIOD_MS : 50));
     }
 }
