@@ -20,6 +20,9 @@ Start (on the AI PC):
 """
 
 import argparse
+import base64
+import binascii
+import io
 import json
 import os
 import re
@@ -106,6 +109,9 @@ except Exception:  # pragma: no cover - portal still runs without it
 
 CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 NUM_CLASSES = 6
+MODEL_PREDICT_CACHE = {}
+MODEL_INPUT_SIZE = (96, 96)
+MAX_CAPTURE_IMAGE_BYTES = 8 * 1024 * 1024
 VALIDATION_RATIO = 0.2  # auto-split fraction when the zip has no validation split
 # ESP32-S3 model-partition offset (see firmware/main_board/partitions.csv). Served via
 # /api/flash-meta to the browser Web Serial flasher; never shown in the UI.
@@ -786,6 +792,125 @@ def _import_dataset(zip_path):
         shutil.rmtree(staging, ignore_errors=True)
 
 
+
+
+def _sanitize_class_name(name):
+    name = str(name or "").strip()
+    name = re.sub(r"[\\/:*?\"<>|\x00-\x1f]", "_", name)
+    name = re.sub(r"\s+", "_", name).strip("._ ")
+    if not name:
+        raise ValueError("Class name is required.")
+    if name in {".", ".."}:
+        raise ValueError("Class name is invalid.")
+    return name[:64]
+
+
+def _decode_image_payload(image_data):
+    text = str(image_data or "")
+    if not text:
+        raise ValueError("Missing image_data.")
+    if "," in text and text.lower().startswith("data:"):
+        header, text = text.split(",", 1)
+        mime = header.split(";", 1)[0].replace("data:", "") or "image/jpeg"
+    else:
+        mime = "image/jpeg"
+    try:
+        raw = base64.b64decode(text, validate=False)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError(f"Invalid base64 image data: {exc}")
+    if not raw:
+        raise ValueError("Image is empty.")
+    if len(raw) > MAX_CAPTURE_IMAGE_BYTES:
+        raise ValueError("Image is too large for classroom capture.")
+    ext = ".jpg" if mime in {"image/jpeg", "image/jpg"} else ".png"
+    return raw, mime, ext
+
+
+def _dataset_class_names():
+    names = set()
+    for split in ("train", "validation"):
+        root = DATASET_DIR / split
+        if root.is_dir():
+            for child in root.iterdir():
+                if child.is_dir() and _class_image_count(root, child.name) > 0:
+                    names.add(child.name)
+    # Do not use _current_class_order() here: it falls back to the default class
+    # names when no dataset exists, which would block students from creating
+    # their own six gesture names from scratch.
+    if class_map_lib is not None and CLASS_MAP_PATH.is_file():
+        saved = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
+        if saved:
+            names.update(saved)
+    return sorted(names)
+
+
+def _dataset_counts():
+    names = _dataset_class_names()
+    return {
+        name: {
+            "train": _class_image_count(DATASET_DIR / "train", name),
+            "validation": _class_image_count(DATASET_DIR / "validation", name),
+        }
+        for name in names
+    }
+
+
+def _refresh_class_map_from_dataset(extra_class=None):
+    names = set(_dataset_class_names())
+    if extra_class:
+        names.add(extra_class)
+    if len(names) > NUM_CLASSES:
+        raise ValueError(f"This teaching flow supports at most {NUM_CLASSES} gesture classes.")
+    if not names:
+        return None
+    return _write_class_map(sorted(names))
+
+
+def _preprocess_image_bytes_for_keras(raw, image_size=MODEL_INPUT_SIZE):
+    try:
+        from PIL import Image
+        import numpy as np
+    except ImportError as exc:
+        raise RuntimeError(f"Pillow/numpy missing on the AI PC environment: {exc}")
+    with Image.open(io.BytesIO(raw)) as img:
+        img = img.convert("L").resize(image_size)
+        arr = np.asarray(img, dtype="float32") / 255.0
+    return arr[None, ..., None]
+
+
+def _load_predict_model(model_id):
+    model_path = _resolve_keras_model_id(model_id)
+    if model_path is None or not model_path.is_file():
+        raise ValueError("Choose a valid .keras model first.")
+    stat = model_path.stat()
+    key = (str(model_path.resolve()), stat.st_mtime_ns)
+    cached = MODEL_PREDICT_CACHE.get(key)
+    if cached is not None:
+        return cached
+    MODEL_PREDICT_CACHE.clear()
+    try:
+        import numpy as np
+        import tensorflow as tf
+    except ImportError as exc:
+        raise RuntimeError(f"TensorFlow/numpy missing on the AI PC environment: {exc}")
+    num_classes = len(_current_class_order() or CLASS_NAMES)
+    try:
+        model = tf.keras.models.load_model(model_path, compile=False)
+    except Exception:
+        tool_dir = REPO_ROOT / "firmware" / "pc" / "tools"
+        sys.path.insert(0, str(tool_dir))
+        try:
+            import quantize_keras_model as qkm
+            model = qkm.load_keras_model_compat(tf, model_path, MODEL_INPUT_SIZE, num_classes)
+        finally:
+            try:
+                sys.path.remove(str(tool_dir))
+            except ValueError:
+                pass
+    cached = (model, np)
+    MODEL_PREDICT_CACHE[key] = cached
+    return cached
+
 # --------------------------------------------------------------------------- #
 # Command builders (allowlisted)
 # --------------------------------------------------------------------------- #
@@ -1145,6 +1270,7 @@ def create_app():
                 "default": True,  # no dataset imported yet
             }
         payload["output_actions"] = OUTPUT_ACTIONS
+        payload["dataset_counts"] = _dataset_counts()
         return jsonify(payload)
 
     @app.post("/api/class-map")
@@ -1278,31 +1404,60 @@ def create_app():
 
     @app.post("/api/model/ov2640/capture")
     def model_ov2640_capture():
-        """Placeholder endpoint for the OV2640-as-webcam teaching path.
-
-        Capturing labeled training images from the OV2640 requires the camera
-        firmware/app stream to be connected. The portal exposes a stable API
-        shape now, but does not pretend to capture images when no board stream
-        is attached.
-        """
+        """Save the latest browser-received OV2640 frame into the training dataset."""
         data = request.get_json(silent=True) or request.form.to_dict()
-        class_name = str(data.get("class_name") or "").strip()
-        source = str(data.get("source") or "ov2640").strip()
         try:
-            count = _safe_int(data.get("count", 1), "count", 1, 500)
+            class_name = _sanitize_class_name(data.get("class_name"))
+            split = str(data.get("split") or "train").strip().lower()
+            if split not in {"train", "validation"}:
+                raise ValueError("split must be 'train' or 'validation'.")
+            raw, _mime, ext = _decode_image_payload(data.get("image_data"))
+            _refresh_class_map_from_dataset(class_name)
         except ValueError as exc:
             abort(400, str(exc))
-        if source != "ov2640":
-            return jsonify({
-                "ok": False,
-                "message": "PC webcam capture is handled by the model preview demo; OV2640 dataset capture needs the camera firmware stream.",
-            }), 501
+        target_dir = DATASET_DIR / split / class_name
+        target_dir.mkdir(parents=True, exist_ok=True)
+        filename = f"ov2640_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
+        target = target_dir / filename
+        target.write_bytes(raw)
+        class_map_payload = _refresh_class_map_from_dataset(class_name)
         return jsonify({
-            "ok": False,
+            "ok": True,
             "class_name": class_name,
-            "count": count,
-            "message": "OV2640 dataset capture API is reserved for the camera stream integration. Flash/run the camera firmware path first; this portal will not ask students to type CLI commands.",
-        }), 501
+            "split": split,
+            "filename": filename,
+            "path": str(target.relative_to(REPO_ROOT)),
+            "size_bytes": len(raw),
+            "counts": _dataset_counts().get(class_name, {}),
+            "class_map": class_map_payload,
+        })
+
+    @app.post("/api/model/keras/predict")
+    def model_keras_predict():
+        """Run one captured OV2640 frame through a selected source .keras model on the AI PC."""
+        data = request.get_json(silent=True) or request.form.to_dict()
+        try:
+            model_id = str(data.get("model_name") or "").strip()
+            raw, _mime, _ext = _decode_image_payload(data.get("image_data"))
+            x = _preprocess_image_bytes_for_keras(raw)
+            model, np = _load_predict_model(model_id)
+            y = model.predict(x, verbose=0)
+            scores = np.asarray(y)[0].astype(float).tolist()
+            pred = int(np.argmax(scores)) if scores else -1
+            order = _current_class_order() or CLASS_NAMES
+            class_name = order[pred] if 0 <= pred < len(order) else f"class_{pred}"
+            confidence = float(scores[pred]) if 0 <= pred < len(scores) else None
+        except (ValueError, RuntimeError) as exc:
+            abort(400, str(exc))
+        return jsonify({
+            "ok": True,
+            "model_name": model_id,
+            "prediction": pred,
+            "class_name": class_name,
+            "confidence": confidence,
+            "scores": scores,
+            "class_order": order,
+        })
     @app.get("/api/serial-ports")
     def serial_ports():
         ports = _list_serial_ports()

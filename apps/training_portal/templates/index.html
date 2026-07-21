@@ -104,9 +104,17 @@
         <div><button id="ledOnBtn" disabled>LED ON</button></div>
         <div><button class="secondary" id="ledOffBtn" disabled>LED OFF</button></div>
         <div><button class="secondary" id="ledBlinkBtn" disabled>Blink</button></div>
+        <div><button class="secondary" id="ledTestBtn" disabled>TEST</button></div>
+        <div><button class="secondary" id="ledStatusBtn" disabled>STATUS</button></div>
       </div>
       <label style="margin-top:12px">Brightness (PWM): <span id="pwmVal">128</span> / 255</label>
       <input type="range" id="pwmSlider" min="0" max="255" value="128" disabled />
+      <div class="row compact" style="margin-top:10px">
+        <div><label>Debug GPIO</label><input type="number" id="ledPinInput" min="0" max="48" value="38" /></div>
+        <div><button class="secondary" id="ledPinBtn" disabled>Use GPIO</button></div>
+        <div><label>LED polarity</label><select id="ledActiveSelect"><option value="1">active high</option><option value="0">active low</option></select></div>
+        <div><button class="secondary" id="ledActiveBtn" disabled>Apply polarity</button></div>
+      </div>
       <div class="msg" id="ctrlStatus"></div>
       <label style="margin-top:10px">Board messages</label>
       <pre class="log" id="ctrlLog">Not connected.</pre>
@@ -142,6 +150,18 @@
         <img id="cameraPreview" alt="OV2640 preview" style="max-width:100%;max-height:420px;object-fit:contain;display:none" />
         <div class="note" id="cameraPlaceholder">No OV2640 frame yet.</div>
       </div>
+      <div class="row compact" style="margin-top:12px">
+        <div><label>Gesture class</label><select id="captureClass"></select></div>
+        <div><label>New class</label><input id="newClassName" placeholder="e.g. thumbs_up" /></div>
+        <div><label>Dataset split</label><select id="captureSplit"><option value="train">train</option><option value="validation">validation</option></select></div>
+      </div>
+      <div class="row compact">
+        <div><button id="saveFrameBtn" disabled>Save current frame to dataset</button></div>
+        <div><label>.keras model</label><select id="predictModel"></select></div>
+        <div><button class="secondary" id="predictFrameBtn" disabled>Predict current frame</button></div>
+        <div><label><input type="checkbox" id="livePredictToggle" /> Live .keras prediction</label></div>
+      </div>
+      <div class="msg" id="captureMsg"></div>
       <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
       <label style="margin-top:12px">Camera / model messages</label>
       <pre class="log" id="cameraLog">Connect OV2640 preview after the model finetune camera firmware is flashed.</pre>
@@ -329,6 +349,10 @@ let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTime
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 let CLASS_LABELS = [];
 let CLASS_ACTION_BY_NAME = {};
+let DATASET_COUNTS = {};
+let latestCameraFrame = null;
+let predictBusy = false;
+let lastPredictMs = 0;
 
 function $(id){ return document.getElementById(id); }
 function setText(t,x){ const el=(typeof t==="string")?$(t):t; if(el) el.textContent=x; }
@@ -369,7 +393,7 @@ async function init(){
   const r = await api("/api/recipes");
   RECIPES = r.recipes; KERAS_MODELS = r.available_keras_models || [];
   fillSelect($("quantFormat"), r.quant_formats); fillSelect($("quantGranularity"), r.quant_granularities);
-  populateQuantModels(); populateRecipes(); refreshClassMap(); refreshArtifacts(); refreshJobs();
+  populateQuantModels(); populateModelPredictModels(); populateRecipes(); refreshClassMap(); refreshArtifacts(); refreshJobs();
   setInterval(refreshJobs, 5000);
   initFlashPanel();
   loadFirmware("output_demo", OUTFW);   // default tab
@@ -383,6 +407,8 @@ async function refreshClassMap(){
     const m = await api("/api/class-map"); OUTPUT_ACTIONS = m.output_actions || OUTPUT_ACTIONS;
     CLASS_LABELS = (m.classes||[]).slice().sort((a,b)=>a.index-b.index).map(c=>c.name);
     CLASS_ACTION_BY_NAME = Object.fromEntries((m.classes||[]).map(c=>[c.name, c.action||""]));
+    DATASET_COUNTS = m.dataset_counts || {};
+    renderCaptureClassOptions();
     const host = $("classMapRows"); host.innerHTML = "";
     if(m.default){ host.innerHTML = '<div class="note">Import a dataset to map classes → robot actions.</div>'; return; }
     (m.classes||[]).forEach(c => {
@@ -412,8 +438,28 @@ function populateQuantModels(){
   if(!KERAS_MODELS.length){ const o=document.createElement("option"); o.value=""; o.textContent="(train or upload a .keras model first)"; sel.appendChild(o); return; }
   KERAS_MODELS.forEach(m=>{ const o=document.createElement("option"); o.value=m.id||m; o.textContent=m.label||m.id||m; sel.appendChild(o); });
   if(prev && Array.from(sel.options).some(o=>o.value===prev)) sel.value=prev;
+  populateModelPredictModels();
 }
-async function refreshModelList(){ const r=await api("/api/recipes"); RECIPES=r.recipes; KERAS_MODELS=r.available_keras_models||[]; populateQuantModels(); }
+function populateModelPredictModels(){
+  const sel=$("predictModel"); if(!sel) return;
+  const prev=sel.value; sel.innerHTML="";
+  if(!KERAS_MODELS.length){ const o=document.createElement("option"); o.value=""; o.textContent="(train a .keras model first)"; sel.appendChild(o); return; }
+  KERAS_MODELS.forEach(m=>{ const o=document.createElement("option"); o.value=m.id||m; o.textContent=m.label||m.id||m; sel.appendChild(o); });
+  if(prev && Array.from(sel.options).some(o=>o.value===prev)) sel.value=prev;
+}
+function renderCaptureClassOptions(){
+  const sel=$("captureClass"); if(!sel) return;
+  const prev=sel.value; sel.innerHTML="";
+  const labels = CLASS_LABELS.length ? CLASS_LABELS : Object.keys(DATASET_COUNTS || {}).sort();
+  if(!labels.length){ const o=document.createElement("option"); o.value=""; o.textContent="(type a new class)"; sel.appendChild(o); return; }
+  labels.forEach(name=>{ const c=DATASET_COUNTS[name]||{}; const o=document.createElement("option"); o.value=name; o.textContent=`${name} (${c.train||0} train / ${c.validation||0} val)`; sel.appendChild(o); });
+  if(prev && Array.from(sel.options).some(o=>o.value===prev)) sel.value=prev;
+}
+function selectedCaptureClass(){
+  const fresh=($("newClassName")?.value||"").trim();
+  return fresh || ($("captureClass")?.value||"").trim();
+}
+async function refreshModelList(){ const r=await api("/api/recipes"); RECIPES=r.recipes; KERAS_MODELS=r.available_keras_models||[]; populateQuantModels(); populateModelPredictModels(); }
 function populateRecipes(){
   const fw=$("framework").value, sel=$("recipe"); sel.innerHTML="";
   RECIPES.filter(r=>r.framework===fw).forEach(r=>{ const o=document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o); });
@@ -650,6 +696,9 @@ $("modelPreviewBtn").onclick = async () => {
   catch(e){ setMsg($("modelMsg"), "Preview failed: "+e.message, "bad"); }
 };
 $("cameraConnectBtn").onclick = async () => connectCameraPreview(MODEL_CAMERA_UI);
+$("saveFrameBtn").onclick = saveCurrentFrameToDataset;
+$("predictFrameBtn").onclick = predictCurrentFrame;
+$("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn").disabled = !(latestCameraFrame && $("predictModel").value); };
 $("cameraStopBtn").onclick = async () => { await releaseCamera("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
 $("fullCameraConnectBtn").onclick = async () => connectCameraPreview(FULL_CAMERA_UI);
 $("fullCameraStopBtn").onclick = async () => { await releaseCamera("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
@@ -792,7 +841,7 @@ function syncFlashButtons(){
   if($("modelFwFlashBtn")) $("modelFwFlashBtn").disabled = !(sup && MODELFW.meta && MODELFW.meta.available);
   if($("benchFwFlashBtn")) $("benchFwFlashBtn").disabled = !(sup && BENCHFW.meta && BENCHFW.meta.available);
   if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
-  ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
+  ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","ledPinBtn","ledActiveBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
   if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
   if($("cameraStopBtn")) $("cameraStopBtn").disabled = !camPort;
@@ -862,18 +911,24 @@ function updateGestureResult(line){
 function renderCameraFrame(base64Data, meta){
   const img=$(camUi.imgId), ph=$(camUi.placeholderId);
   try {
-    const raw = atob(base64Data.replace(/\s+/g,""));
+    const clean = base64Data.replace(/\s+/g,"");
+    const raw = atob(clean);
     const bytes = new Uint8Array(raw.length);
     for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
     const mime = Number(meta.format)===4 || Number(meta.format)===3 ? "image/jpeg" : "image/bmp";
+    latestCameraFrame = { base64: clean, meta, mime, bytes: bytes.length, dataUrl: `data:${mime};base64,${clean}` };
     if(camObjectUrl) URL.revokeObjectURL(camObjectUrl);
     camObjectUrl = URL.createObjectURL(new Blob([bytes], {type:mime}));
     img.src = camObjectUrl;
     img.style.display="block";
     if(ph) ph.style.display="none";
+    if($("saveFrameBtn")) $("saveFrameBtn").disabled = false;
+    if($("predictFrameBtn")) $("predictFrameBtn").disabled = !($("predictModel") && $("predictModel").value);
     setMsg(camUi.msgId, `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes`, "ok");
+    maybeLivePredict();
   } catch(e){ appendLog(camUi.logId, "[camera] frame decode failed: "+(e.message||e)+"\n"); }
 }
+
 async function cameraReadLoop(){
   const decoder = new TextDecoder();
   let textBuf="", receiving=false, frameLines=[], meta={};
@@ -937,6 +992,42 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     await releaseCamera(camUi.logId);
   }
 }
+
+async function saveCurrentFrameToDataset(){
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
+  const className = selectedCaptureClass();
+  if(!className){ setMsg($("captureMsg"), "Choose or type a gesture class first.", "bad"); return; }
+  setMsg($("captureMsg"), "Saving captured frame...", "warn");
+  try {
+    const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, image_data:latestCameraFrame.dataUrl})});
+    setMsg($("captureMsg"), `Saved ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
+    $("newClassName").value="";
+    await refreshClassMap();
+  } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
+}
+async function predictCurrentFrame(){
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
+  const model = $("predictModel")?.value || "";
+  if(!model){ setMsg($("captureMsg"), "Choose a .keras model first.", "bad"); return; }
+  if(predictBusy) return;
+  predictBusy = true;
+  try {
+    const r = await api("/api/model/keras/predict", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({model_name:model, image_data:latestCameraFrame.dataUrl})});
+    const conf = r.confidence==null ? "" : ` confidence ${(Number(r.confidence)*100).toFixed(1)}%`;
+    const action = CLASS_ACTION_BY_NAME[r.class_name] ? ` -> ${CLASS_ACTION_BY_NAME[r.class_name]}` : "";
+    setText("modelGestureResult", `Prediction: ${r.prediction} (${r.class_name})${action}${conf}`);
+    setMsg($("captureMsg"), `Predicted ${r.class_name}${conf}`, "ok");
+  } catch(e){ setMsg($("captureMsg"), "Predict failed: "+e.message, "bad"); }
+  finally { predictBusy = false; }
+}
+function maybeLivePredict(){
+  if(!$("livePredictToggle") || !$("livePredictToggle").checked) return;
+  const now=Date.now();
+  if(now - lastPredictMs < 1200 || predictBusy) return;
+  lastPredictMs = now;
+  predictCurrentFrame();
+}
+
 // ---------- FLASH MODEL (.tflite) ----------
 const modelTerminal = makeTerminal("modelFlashLog", (line)=>{ const s=String(line);
   if(/Erasing/i.test(s)) setMsg($("flashStatus"),"Erasing…","warn");
@@ -1051,7 +1142,7 @@ $("ctrlConnectBtn").onclick = async () => {
     await sleep(300);
     ctrlWriter=ctrlPort.writable.getWriter();
     $("ctrlLog").textContent="";
-    ["ledOnBtn","ledOffBtn","ledBlinkBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
+    ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","ledPinBtn","ledActiveBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
     setMsg($("ctrlStatus"),"Connected. Use the buttons / slider.","ok");
     readCtrlLoop();
   } catch(e){ const raw=e.message||String(e);
@@ -1067,6 +1158,10 @@ async function readCtrlLoop(){
 $("ledOnBtn").onclick   = () => ctrlSend("LED,1");
 $("ledOffBtn").onclick  = () => ctrlSend("LED,0");
 $("ledBlinkBtn").onclick= () => ctrlSend("BLINK");
+$("ledTestBtn").onclick = () => ctrlSend("TEST");
+$("ledStatusBtn").onclick = () => ctrlSend("STATUS");
+$("ledPinBtn").onclick = () => ctrlSend("PIN,"+($("ledPinInput").value||"38"));
+$("ledActiveBtn").onclick = () => ctrlSend("ACTIVE,"+$("ledActiveSelect").value);
 $("pwmSlider").oninput  = (e) => { setText("pwmVal", e.target.value); };
 $("pwmSlider").onchange = (e) => ctrlSend("PWM,"+e.target.value);
 
