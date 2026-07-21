@@ -28,7 +28,7 @@ The portal is a thin, safe launcher around scripts that already live in the repo
 | Train · Mini ResNet (PyTorch) | `model_finetune/pytorch/train_mini_resnet.py` |
 | Quantize | `firmware/pc/tools/quantize_keras_model.py` |
 
-Features: upload a dataset `.zip` (exactly six class folders, **any names**),
+Features: upload a dataset `.zip` (one folder per gesture class, **any names**, **two or more** classes — the dataset may hold more than six),
 map each class to a robot action (`up/down/left/right/clamp/release`, saved to
 `class_mapping.json`), pick framework + recipe, start training, start quantization,
 watch **live job logs**, and list/download generated artifacts (`.keras`,
@@ -70,24 +70,29 @@ the gateway port-forwarding table), see [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Dataset zip layout
 
-Upload **one zip** with exactly **six** class folders — **any names**. The layout
-is auto-detected:
+Upload **one zip** with **one folder per gesture class** — **any names**, **two or
+more** classes. The dataset may hold **more than six** classes; each training /
+inference run uses an **active set of up to six** (chosen on the Model finetune
+page). The layout is auto-detected:
 
 ```
 dataset.zip            (auto-split into train/validation)
 ├── n1/  *.jpg
 ├── n2/  *.jpg
-├── …          (six folders, any names)
-└── n6/  *.jpg
+├── …          (any number of folders, any names)
+└── nN/  *.jpg
 
 dataset.zip            (kept as-is if it already has splits)
-├── train/{n1..n6}/*.jpg
-└── validation/{n1..n6}/*.jpg
+├── train/{n1..nN}/*.jpg
+└── validation/{n1..nN}/*.jpg
 ```
 
-The discovered class order is saved to `model_finetune/dataset/class_mapping.json`
-and used by training, quantization, benchmark, and the student PC control app.
-Any six names work — nothing is hardcoded.
+All classes are imported to disk. The **active** class set (≤6) is saved to
+`model_finetune/dataset/class_mapping.json` as `class_order`, and training,
+quantization, benchmark, preview inference, and the student PC control app all use
+that same active set. On import the active set defaults to the first six classes
+alphabetically; change it anytime with the active-class checkboxes. Nothing is
+hardcoded.
 
 ## Safety model
 

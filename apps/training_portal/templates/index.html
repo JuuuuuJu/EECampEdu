@@ -134,11 +134,18 @@
     <div class="card">
       <h2><span class="step">B.</span>Dataset &amp; train</h2>
       <p class="note">Uploaded or captured images are stored as processed model inputs: <code>96x96 grayscale PNG</code>.</p>
-      <label>Dataset zip (six class folders, any names)</label>
+      <label>Dataset zip (one folder per gesture class, any names)</label>
       <input type="file" id="datasetFile" accept=".zip" />
       <button id="uploadBtn">Upload &amp; import</button>
       <div class="msg" id="uploadMsg"></div>
-      <div id="classMapRows" style="margin-top:10px"><div class="note">Import a dataset to map classes → robot actions.</div></div>
+      <p class="note">Your dataset can hold <b>more than six</b> classes (collect extras, replace gestures). Each
+         training / inference run uses an <b>active set of up to <span id="maxActive">6</span></b> classes.</p>
+      <label style="margin-top:10px">Active gesture classes (choose up to <span id="maxActiveLabel">6</span>)</label>
+      <div id="activeClassRows"><div class="note">Import a dataset or capture frames to add gesture classes.</div></div>
+      <button class="secondary" id="saveActiveClassesBtn">Save active classes</button>
+      <div class="msg" id="activeClassMsg"></div>
+      <label style="margin-top:14px">Map active classes → robot actions</label>
+      <div id="classMapRows" style="margin-top:6px"><div class="note">Select active classes above to map them to robot actions.</div></div>
       <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
       <div class="msg" id="classMapMsg"></div>
       <div class="row" style="margin-top:12px">
@@ -406,9 +413,12 @@ const INITIAL_TOPIC = "{{ topic }}";
 const TEAM = "{{ team }}";
 let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTimer = null;
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
-let CLASS_LABELS = [];
+let CLASS_LABELS = [];            // ACTIVE class names (model output order)
 let CLASS_ACTION_BY_NAME = {};
 let DATASET_COUNTS = {};
+let AVAILABLE_CLASSES = [];        // all gesture classes present in the dataset
+let ACTIVE_CLASSES = [];           // the <= MAX_ACTIVE classes used for train/infer
+let MAX_ACTIVE = 6;
 let latestCameraFrame = null;
 let predictBusy = false;
 let lastPredictMs = 0;
@@ -464,12 +474,19 @@ async function init(){
 async function refreshClassMap(){
   try {
     const m = await api("/api/class-map"); OUTPUT_ACTIONS = m.output_actions || OUTPUT_ACTIONS;
+    MAX_ACTIVE = m.max_active || 6;
+    DATASET_COUNTS = m.dataset_counts || {};
+    AVAILABLE_CLASSES = (m.available_classes && m.available_classes.length) ? m.available_classes.slice() : Object.keys(DATASET_COUNTS).sort();
+    ACTIVE_CLASSES = m.default ? [] : (m.class_order || []).slice();
     CLASS_LABELS = (m.classes||[]).slice().sort((a,b)=>a.index-b.index).map(c=>c.name);
     CLASS_ACTION_BY_NAME = Object.fromEntries((m.classes||[]).map(c=>[c.name, c.action||""]));
-    DATASET_COUNTS = m.dataset_counts || {};
+    if($("maxActive")) setText("maxActive", MAX_ACTIVE);
+    if($("maxActiveLabel")) setText("maxActiveLabel", MAX_ACTIVE);
     renderCaptureClassOptions();
+    renderActiveClassRows();
+    // Action-mapping rows: ACTIVE classes only.
     const host = $("classMapRows"); host.innerHTML = "";
-    if(m.default){ host.innerHTML = '<div class="note">Import a dataset to map classes → robot actions.</div>'; return; }
+    if(!(m.classes||[]).length){ host.innerHTML = '<div class="note">Select active classes above to map them to robot actions.</div>'; return; }
     (m.classes||[]).forEach(c => {
       const row=document.createElement("div"); row.className="row compact";
       const opts=['<option value="">(none)</option>'].concat(OUTPUT_ACTIONS.map(a=>`<option value="${a}" ${c.action===a?"selected":""}>${a}</option>`)).join("");
@@ -478,11 +495,49 @@ async function refreshClassMap(){
     });
   } catch(e){}
 }
+// Active-class picker: one checkbox per available class, capped at MAX_ACTIVE.
+function renderActiveClassRows(){
+  const host=$("activeClassRows"); if(!host) return;
+  host.innerHTML="";
+  if(!AVAILABLE_CLASSES.length){ host.innerHTML='<div class="note">Import a dataset or capture frames to add gesture classes.</div>'; return; }
+  AVAILABLE_CLASSES.forEach(name=>{
+    const c=DATASET_COUNTS[name]||{};
+    const checked=ACTIVE_CLASSES.includes(name);
+    const row=document.createElement("label");
+    row.className="imglist"; row.style.display="flex"; row.style.justifyContent="space-between"; row.style.alignItems="center"; row.style.gap="8px"; row.style.cursor="pointer";
+    row.innerHTML=`<span><input type="checkbox" data-active-class="${name}" ${checked?"checked":""} style="width:auto;margin-right:6px" />${name}</span>`
+      +`<span class="note">${(c.train||0)} train / ${(c.validation||0)} val</span>`;
+    host.appendChild(row);
+  });
+  host.querySelectorAll('input[data-active-class]').forEach(cb=>cb.onchange=enforceActiveLimit);
+  enforceActiveLimit();
+}
+function checkedActiveClasses(){
+  return Array.from(document.querySelectorAll('#activeClassRows input[data-active-class]:checked')).map(cb=>cb.dataset.activeClass);
+}
+function enforceActiveLimit(){
+  const boxes=Array.from(document.querySelectorAll('#activeClassRows input[data-active-class]'));
+  const n=boxes.filter(b=>b.checked).length;
+  boxes.forEach(b=>{ b.disabled = (!b.checked && n>=MAX_ACTIVE); });
+  const msg=$("activeClassMsg");
+  if(msg && !msg.textContent) setMsg(msg, `${n} / ${MAX_ACTIVE} selected.`, n?"":"warn");
+}
+$("saveActiveClassesBtn").onclick = async () => {
+  const active=checkedActiveClasses();
+  if(!active.length){ setMsg($("activeClassMsg"),"Select at least one class.","bad"); return; }
+  if(active.length>MAX_ACTIVE){ setMsg($("activeClassMsg"),`Select at most ${MAX_ACTIVE} classes.`,"bad"); return; }
+  setMsg($("activeClassMsg"),"Saving active classes…","warn");
+  try { await api("/api/class-map",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})});
+    setMsg($("activeClassMsg"),`Active classes saved (${active.length}). Training, quantization, benchmark, and inference will use these.`,"ok");
+    await refreshClassMap();
+  } catch(e){ setMsg($("activeClassMsg"),"Save failed: "+e.message,"bad"); }
+};
 $("saveClassMapBtn").onclick = async () => {
   const actions={}; document.querySelectorAll('#classMapRows select[data-class]').forEach(s=>actions[s.dataset.class]=s.value);
+  if(!Object.keys(actions).length){ setMsg($("classMapMsg"),"Select active classes first.","bad"); return; }
   setMsg($("classMapMsg"),"Saving…","warn");
   try { await api("/api/class-map",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({actions})});
-        setMsg($("classMapMsg"),"Action mapping saved.","ok"); }
+        setMsg($("classMapMsg"),"Action mapping saved.","ok"); await refreshClassMap(); }
   catch(e){ setMsg($("classMapMsg"),"Save failed: "+e.message,"bad"); }
 };
 
@@ -509,10 +564,10 @@ function populateModelPredictModels(){
 function renderCaptureClassOptions(){
   const sel=$("captureClass"); if(!sel) return;
   const prev=sel.value; sel.innerHTML="";
-  const labels = CLASS_LABELS.length ? CLASS_LABELS : Object.keys(DATASET_COUNTS || {}).sort();
+  const labels = AVAILABLE_CLASSES.length ? AVAILABLE_CLASSES : Object.keys(DATASET_COUNTS || {}).sort();
   const blank=document.createElement("option");
   blank.value="";
-  blank.textContent=labels.length ? "(choose a saved class or type a new one)" : "(type a new class)";
+  blank.textContent=labels.length ? "(choose a class to add to, or type a new one)" : "(type a new class)";
   sel.appendChild(blank);
   if(!labels.length) return;
   labels.forEach(name=>{ const c=DATASET_COUNTS[name]||{}; const o=document.createElement("option"); o.value=name; o.textContent=`${name} (${c.train||0} train / ${c.validation||0} val)`; sel.appendChild(o); });
