@@ -249,21 +249,23 @@
       <table><thead><tr><th>Model</th><th>Format</th><th>TFLite accuracy</th><th>Samples</th><th>Output variation</th></tr></thead>
         <tbody id="reportsBody"><tr><td colspan="5" class="note">No quantization reports yet.</td></tr></tbody></table>
 
-      <h2 style="margin-top:18px">On-device benchmark (AI PC)</h2>
-      <p class="note">Runs on the <b>AI PC server</b> against an ESP32-S3 connected to the
-         <b>AI PC's</b> USB. The live log appears in <b>Live job log</b> below; a summary shows here.</p>
-      <div class="row">
-        <div><label>Model (.tflite)</label><select id="benchModel"></select></div>
-        <div><label>Dataset</label><select id="benchDataset"></select></div>
-        <div><label>Serial port (AI PC)</label><select id="benchPort"></select></div>
-      </div>
+      <h2 style="margin-top:18px">On-device benchmark (in your browser)</h2>
+      <p class="note">Runs entirely in <b>your browser over Web Serial</b> against the ESP32-S3 plugged
+         into <b>your PC</b> — no install, no AI-PC serial port. Flash the <b>deploy benchmark firmware</b>
+         and your model first, then run this. Use <b>Chrome or Edge</b>. The AI PC only serves the
+         dataset images.</p>
       <div class="row compact">
-        <div><button id="benchRunBtn">Run benchmark</button></div>
-        <div><button class="secondary" id="benchRefreshBtn">Refresh ports/datasets</button></div>
+        <div><label>Dataset</label><select id="benchDataset"></select></div>
+        <div><label>Images to test</label><input type="number" id="benchLimit" min="1" max="2000" value="60" /></div>
+        <div style="display:flex;align-items:flex-end"><button id="benchRunBtn">Connect ESP32-S3 &amp; run benchmark</button></div>
       </div>
       <div class="msg" id="benchMsg"></div>
-      <div id="benchNote" class="note"></div>
       <table style="margin-top:10px"><tbody id="benchSummary"></tbody></table>
+      <label style="margin-top:12px">Benchmark log</label>
+      <pre class="log" id="benchLog">Flash the deploy benchmark firmware + a model, then click “Connect ESP32-S3 &amp; run benchmark”.</pre>
+      <p class="note">Output-similarity vs a PC reference (Top-1/MAE/Cosine) is available from the
+         developer CLI benchmark (see docs/LOCAL_LEGACY_README.md); the browser benchmark reports
+         on-device accuracy, latency, and throughput.</p>
     </div>
   </section>
 
@@ -323,7 +325,7 @@
 const ORIGIN = window.location.origin;
 const INITIAL_TOPIC = "{{ topic }}";
 const TEAM = "{{ team }}";
-let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTimer = null, benchJobId = null;
+let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTimer = null;
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 let CLASS_LABELS = [];
 let CLASS_ACTION_BY_NAME = {};
@@ -468,8 +470,7 @@ async function pollLog(){
   try { const r=await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
     if(r.data){ $("log").textContent+=r.data; $("log").scrollTop=$("log").scrollHeight; } logOffset=r.offset;
     $("jobPill").textContent=`${currentJobId} — ${r.status}`+(r.returncode!==null?` (rc=${r.returncode})`:"");
-    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; refreshArtifacts(); refreshJobs(); refreshReports();
-      if(currentJobId===benchJobId){ parseBenchSummary($("log").textContent, r.status); } }
+    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; refreshArtifacts(); refreshJobs(); refreshReports(); }
   } catch(e){}
 }
 async function refreshArtifacts(){
@@ -477,15 +478,8 @@ async function refreshArtifacts(){
     if(!r.artifacts.length) tb.innerHTML='<tr><td colspan="5" class="note">No artifacts yet.</td></tr>';
     r.artifacts.forEach(a=>{ const tr=document.createElement("tr"); const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
       tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`; tb.appendChild(tr); });
-    fillFlashArtifacts(r.artifacts); fillModelOnnx(r.artifacts); fillBenchModels(r.artifacts);
+    fillFlashArtifacts(r.artifacts); fillModelOnnx(r.artifacts);
   } catch(e){}
-}
-function fillBenchModels(list){
-  const sel=$("benchModel"); if(!sel) return; const prev=sel.value;
-  const tfl=(list||[]).filter(a=>a.name.toLowerCase().endsWith(".tflite")); sel.innerHTML="";
-  if(!tfl.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no .tflite yet — quantize first)"; sel.appendChild(o); return; }
-  tfl.forEach(a=>{ const o=document.createElement("option"); o.value=a.path; o.textContent=a.name; sel.appendChild(o); });
-  if(prev) sel.value=prev;
 }
 function fillFlashArtifacts(list){
   const sel=$("flashArtifact"), prev=sel.value;
@@ -512,63 +506,140 @@ async function refreshReports(){
         <td>${acc}</td><td>${x.tflite_samples??"—"}</td><td>${x.output_variation!=null?Number(x.output_variation).toFixed(4):"—"}</td>`; tb.appendChild(tr); });
   } catch(e){}
 }
-// ---------- on-device benchmark (server-side job) ----------
+// ---------- on-device benchmark (BROWSER Web Serial; board on the student PC) ----------
+// Same transport idea as flashing: the browser talks to the ESP32-S3 on the
+// student's own PC. The AI PC only serves dataset images. Protocol matches the
+// deploy benchmark firmware (RuntimeMode::kTestUartFrame): board prints a line
+// containing READY, host writes a raw 160x160 grayscale frame, board replies
+// RESULT,<idx>,<model_us>,<preprocess_us>,<device_us>,<scores...>. 115200 baud.
+const BENCH_W = 160, BENCH_H = 160, BENCH_BAUD = 115200;
+
 async function loadBenchOptions(){
   try {
     const o = await api("/api/benchmark/options");
-    const dsel = $("benchDataset"); dsel.innerHTML = "";
+    const dsel = $("benchDataset"); if(!dsel) return; dsel.innerHTML = "";
     (o.datasets||[]).forEach(d=>{ const opt=document.createElement("option"); opt.value=d.id; opt.textContent=`${d.id} (${d.count} imgs)`; dsel.appendChild(opt); });
     if(!(o.datasets||[]).length){ const opt=document.createElement("option"); opt.value=""; opt.textContent="(no benchmark dataset found)"; dsel.appendChild(opt); }
-    const psel = $("benchPort"); psel.innerHTML = "";
-    (o.ports||[]).forEach(p=>{ const opt=document.createElement("option"); opt.value=p.device; opt.textContent=p.device+(p.description?(" — "+p.description):""); psel.appendChild(opt); });
-    const note = $("benchNote");
-    if(!(o.ports||[]).length){
-      const opt=document.createElement("option"); opt.value=""; opt.textContent="(no serial port on the AI PC)"; psel.appendChild(opt);
-      note.innerHTML = "No ESP32-S3 serial port on the <b>AI PC</b>. If the board is plugged into <b>your own PC</b>, "
-        + "the AI PC can't reach it — from the student PC only <b>browser flashing</b> works, not this benchmark. "
-        + "Benchmark runs only when the board is connected to the AI PC.";
-    } else { note.textContent = ""; }
   } catch(e){}
 }
-$("benchRefreshBtn").onclick = loadBenchOptions;
-$("benchRunBtn").onclick = async () => {
-  const model=$("benchModel").value, dataset=$("benchDataset").value, port=$("benchPort").value;
-  if(!model){ setMsg($("benchMsg"),"Select a .tflite model (quantize first).","bad"); return; }
-  if(!dataset){ setMsg($("benchMsg"),"No benchmark dataset available on the AI PC.","bad"); return; }
-  if(!port){ setMsg($("benchMsg"),"No AI PC serial port — connect the ESP32-S3 to the AI PC.","bad"); return; }
-  setMsg($("benchMsg"),"Starting benchmark…","warn"); $("benchSummary").innerHTML="";
-  try {
-    const job=await api("/api/benchmark",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,dataset,port})});
-    benchJobId=job.id; setMsg($("benchMsg"),"Benchmark running — live log below.","ok"); attachLog(job.id); refreshJobs();
-  } catch(e){ setMsg($("benchMsg"),"Could not start: "+e.message+" (a job may be running)","bad"); }
-};
-function parseBenchSummary(text, status){
-  const rows=[]; let m;
-  const add=(re,label,fmt)=>{ if(m=text.match(re)) rows.push([label, fmt?fmt(m):m[1]]); };
-  add(/Images Processed\s*:\s*(\d+)/, "Images processed");
-  add(/Label Accuracy\s*:\s*(\d+)\/(\d+)\s*\(([\d.]+)%\)/, "Label accuracy", m=>`${m[1]}/${m[2]} (${m[3]}%)`);
-  add(/Average Model Latency\s*:\s*([\d.]+)\s*ms/, "Avg model latency", m=>m[1]+" ms");
-  add(/Average Preprocess Latency\s*:\s*([\d.]+)\s*ms/, "Avg preprocess latency", m=>m[1]+" ms");
-  add(/Average Device Compute\s*:\s*([\d.]+)\s*ms/, "Avg device compute", m=>m[1]+" ms");
-  add(/Model-only Throughput\s*:\s*([\d.]+)\s*FPS/, "Throughput (model)", m=>m[1]+" FPS");
-  add(/End-to-end UART Throughput\s*:\s*([\d.]+)\s*FPS/, "Throughput (end-to-end)", m=>m[1]+" FPS");
-  add(/Top-1 Match\s*:\s*(\d+)\/(\d+)\s*\(([\d.]+)%\)/, "Top-1 match", m=>`${m[1]}/${m[2]} (${m[3]}%)`);
-  add(/Average Score MAE\s*:\s*([\d.]+)/, "Score MAE");
-  add(/Max Score Error\s*:\s*([\d.]+)/, "Max error");
-  add(/Average Cosine\s*:\s*([\d.]+)/, "Cosine similarity");
-  const tb=$("benchSummary");
-  if(!rows.length){
-    const portFail=/Failed to open port|could not open port|\[ERROR\]|No such file or directory/i.test(text);
-    const why = portFail
-      ? "Benchmark could not reach an ESP32-S3 on the AI PC serial port. Connect the board to the AI PC (or, if it's on your own PC, only browser flashing is possible)."
-      : (status==="failed" ? "Benchmark failed — check the log." : "No summary parsed — check the log.");
-    tb.innerHTML=`<tr><td class="note">${why}</td></tr>`;
-    setMsg($("benchMsg"), portFail ? "No board on the AI PC serial port." : "Benchmark produced no summary.", "bad");
-    return;
-  }
-  tb.innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
-  setMsg($("benchMsg"), "Benchmark finished.", status==="failed"?"bad":"ok");
+
+// Background pump: read the raw serial port, split into lines, hand to waiters.
+function benchStartPump(){
+  bench.reader = bench.port.readable.getReader();
+  bench.pumping = true; bench.buf = ""; bench.lines = []; bench.waiters = [];
+  (async ()=>{
+    const dec = new TextDecoder();
+    try {
+      while(bench.pumping){
+        const { value, done } = await bench.reader.read();
+        if(done) break;
+        if(value){
+          bench.buf += dec.decode(value);
+          let nl;
+          while((nl = bench.buf.indexOf("\n")) >= 0){
+            const line = bench.buf.slice(0, nl).replace(/\r$/, "");
+            bench.buf = bench.buf.slice(nl + 1);
+            appendLog("benchLog", line + "\n");
+            if(bench.waiters.length){ const w = bench.waiters.shift(); clearTimeout(w.timer); w.resolve(line); }
+            else bench.lines.push(line);
+          }
+        }
+      }
+    } catch(e){ /* reader cancelled on cleanup */ }
+    finally { try{ if(bench.reader) bench.reader.releaseLock(); }catch(_){} }
+  })();
 }
+function benchNextLine(timeoutMs){
+  if(bench.lines.length) return Promise.resolve(bench.lines.shift());
+  return new Promise((resolve, reject)=>{
+    const timer = setTimeout(()=>{ const i = bench.waiters.findIndex(x=>x.timer===timer); if(i>=0) bench.waiters.splice(i,1); reject(new Error("serial read timeout")); }, timeoutMs);
+    bench.waiters.push({ resolve, reject, timer });
+  });
+}
+async function benchWaitFor(re, timeoutMs){
+  const deadline = Date.now() + timeoutMs;
+  for(;;){ const line = await benchNextLine(Math.max(50, deadline - Date.now())); if(re.test(line)) return line; }
+}
+async function benchImageToFrame(url){
+  const resp = await fetch(ORIGIN + url); if(!resp.ok) throw new Error("image fetch failed ("+resp.status+")");
+  const bmp = await createImageBitmap(await resp.blob());
+  const cv = document.createElement("canvas"); cv.width = BENCH_W; cv.height = BENCH_H;
+  const cx = cv.getContext("2d"); cx.drawImage(bmp, 0, 0, BENCH_W, BENCH_H);
+  const d = cx.getImageData(0, 0, BENCH_W, BENCH_H).data;
+  const out = new Uint8Array(BENCH_W * BENCH_H);
+  for(let i=0, j=0; i<d.length; i+=4, j++){ out[j] = Math.round(0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2]); }
+  return out;
+}
+function renderBenchSummary(agg, total, done){
+  const acc = agg.labeled ? `${agg.correct}/${agg.labeled} (${(agg.correct/agg.labeled*100).toFixed(1)}%)` : "—";
+  const avg = (v,n)=> n ? (v/n/1000).toFixed(2)+" ms" : "—";
+  const fps = agg.model && agg.n ? (1e6/(agg.model/agg.n)).toFixed(1)+" FPS" : "—";
+  const rows = [
+    ["Images processed", `${agg.n}${done?"":" / "+total}`],
+    ["Label accuracy", acc],
+    ["Avg model latency", avg(agg.model, agg.n)],
+    ["Avg preprocess latency", avg(agg.pre, agg.preN)],
+    ["Avg device compute", avg(agg.dev, agg.preN)],
+    ["Throughput (model)", fps],
+  ];
+  $("benchSummary").innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
+}
+$("benchRunBtn").onclick = async () => {
+  const dataset = $("benchDataset").value;
+  const limit = Math.max(1, Math.min(2000, parseInt($("benchLimit").value||"60", 10)));
+  if(!dataset){ setMsg($("benchMsg"),"Pick a dataset.","bad"); return; }
+  const sup = webSerialSupport();
+  if(!sup.ok){ setMsg($("benchMsg"), sup.reason==="insecure-http" ? "Benchmark needs HTTPS (secure context) — open the https:// portal." : "Use Chrome or Edge for the browser benchmark.", "bad"); return; }
+  // class order → expected label index
+  let order = [];
+  try { order = (await api("/api/class-map")).class_order || []; } catch(e){}
+  let images = [];
+  try { images = (await api(`/api/benchmark/images?dataset=${encodeURIComponent(dataset)}&limit=${limit}`)).images || []; }
+  catch(e){ setMsg($("benchMsg"),"Could not load dataset images: "+e.message,"bad"); return; }
+  if(!images.length){ setMsg($("benchMsg"),"No images in that dataset.","bad"); return; }
+
+  $("benchRunBtn").disabled = true; $("benchSummary").innerHTML = ""; $("benchLog").textContent = "";
+  await releaseSerial("benchLog");   // free any prior flash/control/camera session first
+  const agg = { n:0, correct:0, labeled:0, model:0, pre:0, dev:0, preN:0 };
+  try {
+    setMsg($("benchMsg"),"Opening serial chooser — pick your ESP32-S3…","warn");
+    bench.port = await navigator.serial.requestPort();
+    await bench.port.open({ baudRate: BENCH_BAUD });
+    bench.writer = bench.port.writable.getWriter();
+    benchStartPump();
+    bench.running = true;
+    appendLog("benchLog", `[portal] benchmarking ${images.length} images from ${dataset}…\n`);
+    for(let k=0; k<images.length && bench.running; k++){
+      const im = images[k];
+      const frame = await benchImageToFrame(im.url);
+      setMsg($("benchMsg"), `Benchmarking… ${k+1}/${images.length}`, "warn");
+      await benchWaitFor(/READY/, 15000);
+      await bench.writer.write(frame);
+      const line = await benchWaitFor(/^RESULT,/, 20000);
+      const p = line.split(",");
+      const idx = parseInt(p[1], 10);
+      const model = parseInt(p[2], 10) || 0, pre = parseInt(p[3], 10) || 0, dev = parseInt(p[4], 10) || 0;
+      agg.n++; agg.model += model;
+      if(pre){ agg.pre += pre; agg.dev += dev; agg.preN++; }
+      const exp = order.indexOf(im.label);
+      if(exp >= 0){ agg.labeled++; if(exp === idx) agg.correct++; }
+      renderBenchSummary(agg, images.length, false);
+    }
+    renderBenchSummary(agg, images.length, true);
+    setMsg($("benchMsg"), `Benchmark complete — ${agg.n} images.`, "ok");
+  } catch(e){
+    renderBenchSummary(agg, images.length, true);
+    const raw = e.message || String(e);
+    const m = /No port selected|cancell/i.test(raw) ? "Port selection cancelled."
+      : /timeout/i.test(raw) ? "No RESULT from the board. Flash the deploy benchmark firmware first, and close other serial monitors."
+      : ("Benchmark failed: " + raw);
+    appendLog("benchLog", "\n[portal] " + m + "\n");
+    setMsg($("benchMsg"), m, "bad");
+  } finally {
+    await releaseSerial("benchLog");   // always release the port for the next flash/benchmark
+  }
+  $("benchRunBtn").disabled = false;
+};
 $("modelPreviewBtn").onclick = async () => {
   setMsg($("modelMsg"), "Starting AI-PC webcam preview job...", "warn");
   try { const job = await api("/api/model/preview", {method:"POST"}); currentJobId = job.id; attachLog(job.id); refreshJobs(); setMsg($("modelMsg"), "Preview job started on the AI PC. Watch Live job log.", "ok"); }
@@ -609,6 +680,8 @@ let esp = { port:null, transport:null, loader:null, chip:null, meta:null };
 // Raw-serial control connection (Output demo LED/PWM). Also released centrally.
 let ctrlPort=null, ctrlWriter=null, ctrlReader=null;
 let camPort=null, camWriter=null, camReader=null, camStop=false, camObjectUrl=null;
+// Raw-serial benchmark connection (Deploy page, in-browser Web Serial benchmark).
+let bench = { port:null, reader:null, writer:null, buf:"", lines:[], waiters:[], pumping:false, running:false };
 const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:"cameraStopBtn" };
 const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
 let camUi = MODEL_CAMERA_UI;
@@ -633,6 +706,18 @@ async function releaseCamera(logId){
   if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !webSerialSupport().ok;
   log("Camera serial port released.\n");
 }
+async function releaseBench(logId){
+  if(!bench.port && !bench.reader && !bench.writer){ return; }
+  bench.pumping = false; bench.running = false;
+  const log = (s)=>{ if(logId) appendLog(logId, s); };
+  try { if(bench.reader){ try{ await bench.reader.cancel(); }catch(_){} try{ bench.reader.releaseLock(); }catch(_){} } } catch(_){}
+  try { if(bench.writer){ try{ bench.writer.releaseLock(); }catch(_){} } } catch(_){}
+  try { await releasePortLocks(bench.port); } catch(e){ log("Benchmark cleanup warning: "+(e.message||e)+"\n"); }
+  // reject any pending line waiters so the benchmark loop unwinds
+  bench.waiters.forEach(w=>{ try{ clearTimeout(w.timer); w.reject(new Error("serial released")); }catch(_){} });
+  bench.port=null; bench.reader=null; bench.writer=null; bench.buf=""; bench.lines=[]; bench.waiters=[];
+  if($("benchRunBtn")) $("benchRunBtn").disabled = false;
+}
 // Force-release any leftover stream locks on a raw SerialPort, then close it.
 async function releasePortLocks(port){
   if(!port) return;
@@ -646,7 +731,7 @@ async function releasePortLocks(port){
 // without a page refresh. Never throws.
 async function releaseSerial(logId){
   const log = (s)=>{ if(logId) appendLog(logId, s); };
-  if(!esp.transport && !esp.loader && !esp.port && !ctrlPort && !camPort){ return; }
+  if(!esp.transport && !esp.loader && !esp.port && !ctrlPort && !camPort && !bench.port){ return; }
   log("Releasing serial port...\n");
   // 1) esptool-js post-flash reset (hard_reset) so the board reboots into the app.
   try {
@@ -666,6 +751,8 @@ async function releaseSerial(logId){
   } catch(e){ log("Serial cleanup warning: control — "+(e.message||e)+"\n"); }
   try { await releaseCamera(logId); }
   catch(e){ log("Serial cleanup warning: camera — "+(e.message||e)+"\n"); }
+  try { await releaseBench(logId); }
+  catch(e){ log("Serial cleanup warning: benchmark — "+(e.message||e)+"\n"); }
   // 4) clear all connection state.
   esp.port=null; esp.transport=null; esp.loader=null; esp.chip=null;
   ctrlPort=null; ctrlWriter=null; ctrlReader=null;
@@ -691,46 +778,41 @@ function syncFlashButtons(){
   if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !camPort;
 }
 
-// Shared connect + bootloader sync. Auto mode tries USB reset first, then fully
-// reopens the serial port and retries in manual BOOT mode. Manual mode skips
-// reset and only syncs with a board already held in ROM bootloader.
+// Shared connect + bootloader sync with a manual-boot retry (no_reset).
+// The Transport + ESPLoader are created ONCE on the chosen port; the retry
+// re-syncs on the SAME open transport (main("no_reset")) rather than closing
+// and reopening the port. On the ESP32-S3 USB-Serial-JTAG bridge, closing and
+// recreating the Transport between attempts makes the reopen fail almost every
+// time, so we keep a single transport for the whole connect. The bootMode
+// select lets the student force manual-BOOT-only (skip the auto reset attempt).
 async function espConnect({ terminal, statusEl, logId }){
   const { ESPLoader, Transport } = await import(ESPTOOL_JS);
   await releaseSerial(logId);                                   // free any prior flow
   setMsg($(statusEl), "Opening serial chooser…", "warn");
   const port = await navigator.serial.requestPort();           // user gesture
-
-  async function trySync(resetMode, label){
-    appendLog(logId, `\n[portal] ${label}: opening port and syncing (${resetMode})...\n`);
-    esp.port = port;
-    esp.transport = new Transport(port, true);
-    esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal });
-    setMsg($(statusEl), `${label} — entering bootloader…`, "warn");
-    return await withTimeout(esp.loader.main(resetMode), 18000, `${label} timed out`);
-  }
+  esp.port = port;
+  esp.transport = new Transport(port, true);
+  esp.loader = new ESPLoader({ transport: esp.transport, baudrate: 460800, romBaudrate: 115200, terminal });
 
   const manualOnly = $("bootMode") && $("bootMode").value === "manual";
   if(manualOnly){
     appendLog(logId, "\n[portal] Manual mode: hold BOOT, tap RESET/EN once, release BOOT after ~1s, then wait.\n");
-    esp.chip = await trySync("no_reset", "Manual BOOT sync");
+    setMsg($(statusEl), "Manual BOOT — hold BOOT, tap RESET/EN, release after ~1s…", "warn");
+    esp.chip = await withTimeout(esp.loader.main("no_reset"), 20000, serialTroubleshoot());
     return esp.chip;
   }
 
+  setMsg($(statusEl), "Connecting — entering bootloader…", "warn");
   try {
-    esp.chip = await trySync("default_reset", "Auto reset sync");
+    esp.chip = await withTimeout(esp.loader.main("default_reset"), 20000, "auto bootloader entry timed out");
   } catch(e){
+    // Manual bootloader retry on the SAME transport (no close/reopen): ask the
+    // student to force download mode, then re-sync with no_reset.
     appendLog(logId, `\n[portal] Auto reset failed: ${e.message||e}\n`);
-    appendLog(logId, "[portal] Retrying with manual BOOT. Hold BOOT, tap RESET/EN, release BOOT after ~1s.\n");
-    setMsg($(statusEl), "Auto reset failed. Prepare manual BOOT retry…", "warn");
-    try { if(esp.transport && typeof esp.transport.disconnect === "function") await esp.transport.disconnect(); } catch(_){}
-    try { await releasePortLocks(esp.port); } catch(_){}
-    esp.transport=null; esp.loader=null; esp.chip=null;
-    await new Promise(r=>setTimeout(r, 1500));
-    try {
-      esp.chip = await trySync("no_reset", "Manual BOOT retry");
-    } catch(e2){
-      throw new Error(`${serialTroubleshoot()} Last error: ${e2.message||e2}`);
-    }
+    appendLog(logId, "[portal] Hold BOOT, tap RESET/EN, release BOOT after ~1s — retrying…\n");
+    setMsg($(statusEl), "Hold BOOT, tap RESET/EN, release after ~1s — retrying…", "warn");
+    await new Promise(r=>setTimeout(r, 2500));
+    esp.chip = await withTimeout(esp.loader.main("no_reset"), 20000, serialTroubleshoot());
   }
   return esp.chip;
 }

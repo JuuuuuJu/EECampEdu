@@ -136,7 +136,10 @@ apps/training_portal/runs/
 
 The GUI is split into top-menu routes so the flows stay separate: `/model_finetune`, `/deploy`, `/output`, and `/firmware`. Firmware targets are separated by class: `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
 Train/Quantize run as background jobs (shared job log / artifacts / history
-panels); the flash and OV2640 preview flows run in the browser via Web Serial.
+panels); the flash, OV2640 preview, and **`/deploy` on-device benchmark** all run
+in the browser via Web Serial against the board on the **student PC** (the AI PC
+only serves dataset images through `/api/benchmark/images`). No AI-PC serial port
+and no student-PC Python are involved.
 
 ## Flashing (browser Web Serial)
 

@@ -887,45 +887,53 @@ def _benchmark_datasets():
     return out
 
 
-def build_benchmark_command(params):
-    """Build the allowlisted benchmark command (no shell, validated args)."""
-    script = (REPO_ROOT / BENCHMARK_SCRIPT).resolve()
-    if not script.is_file():
-        raise ValueError(f"Benchmark script missing: {BENCHMARK_SCRIPT}")
+def _benchmark_dataset_dir(ds_id):
+    """Resolve an allowlisted benchmark dataset id to its directory, or None."""
+    for key, d in BENCHMARK_DATASET_DIRS:
+        if key == ds_id and d.is_dir():
+            return d.resolve()
+    return None
 
-    # Model: an existing .tflite artifact (resolved inside the allowed roots).
-    model_rel = params.get("model")
-    if not model_rel:
-        raise ValueError("model is required (select a .tflite artifact)")
-    candidate = (REPO_ROOT / model_rel).resolve() if not os.path.isabs(model_rel) else Path(model_rel)
-    model_path = _resolve_within_roots(candidate)
-    if model_path is None or not model_path.is_file() or model_path.suffix.lower() != ".tflite":
-        raise ValueError("model must be an existing .tflite artifact")
 
-    # Dataset: one of the allowlisted dataset dirs.
-    ds_id = params.get("dataset")
-    datasets = {d["id"]: d for d in _benchmark_datasets()}
-    if ds_id not in datasets:
-        raise ValueError(
-            "dataset must be one of "
-            + (", ".join(datasets) if datasets else "(none found — provide benchmark images first)")
-        )
-    data_dir = (REPO_ROOT / datasets[ds_id]["path"]).resolve()
+def _benchmark_images(ds_id, limit=200):
+    """List up to `limit` images under a benchmark dataset, round-robin across class
+    folders so every class is represented. Each item: {name (rel), label, url}.
 
-    # Serial port on the AI PC (validated shape; the board must be on THIS machine).
-    port = (params.get("port") or "").strip()
-    if not SERIAL_PORT_RE.match(port):
-        raise ValueError("port must look like /dev/ttyACM0 or COM6 (ESP32-S3 on the AI PC)")
-
-    cmd = [
-        sys.executable, str(script),
-        "--model", str(model_path),
-        "--data-dir", str(data_dir),
-        "--port", port,
-    ]
-    if params.get("baudrate") not in (None, ""):
-        cmd += ["--baudrate", str(_safe_int(params["baudrate"], "baudrate", 1200, 4000000))]
-    return cmd
+    Images are served to the BROWSER (which flashes/benchmarks the board on the
+    student PC), so nothing here touches a serial port on the AI PC.
+    """
+    root = _benchmark_dataset_dir(ds_id)
+    if root is None:
+        return []
+    by_class = {}
+    for p in sorted(root.rglob("*")):
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
+            label = p.parent.name
+            by_class.setdefault(label, []).append(p)
+    # round-robin interleave classes up to `limit`
+    ordered, idx = [], 0
+    classes = sorted(by_class)
+    while len(ordered) < limit and classes:
+        progressed = False
+        for label in classes:
+            files = by_class.get(label) or []
+            if idx < len(files):
+                ordered.append((label, files[idx]))
+                progressed = True
+                if len(ordered) >= limit:
+                    break
+        if not progressed:
+            break
+        idx += 1
+    out = []
+    for label, p in ordered:
+        rel = str(p.resolve().relative_to(root))
+        out.append({
+            "label": label,
+            "name": rel,
+            "url": f"/api/benchmark/image?dataset={ds_id}&name={rel}",
+        })
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1304,27 +1312,45 @@ def create_app():
 
     @app.get("/api/benchmark/options")
     def benchmark_options():
-        """Datasets + serial ports the portal offers for the on-device benchmark."""
-        return jsonify({
-            "datasets": _benchmark_datasets(),
-            "ports": _list_serial_ports() or [],
-        })
+        """Datasets the portal offers for the browser Web Serial benchmark.
 
-    @app.post("/api/benchmark")
-    def benchmark():
-        """Run the on-device benchmark as a background job (AI-PC-side only)."""
-        data = request.get_json(silent=True) or request.form.to_dict()
+        The benchmark runs in the STUDENT's browser over Web Serial against the
+        board on the student PC — the AI PC only serves the dataset images, so no
+        AI-PC serial port is involved.
+        """
+        return jsonify({"datasets": _benchmark_datasets()})
+
+    @app.get("/api/benchmark/images")
+    def benchmark_images():
+        """List dataset images (label + URL) for the browser benchmark to fetch."""
+        ds_id = request.args.get("dataset", "")
         try:
-            cmd = build_benchmark_command(data)
-        except ValueError as exc:
-            abort(400, str(exc))
-        # Force the score-similarity comparison on so the summary includes it.
+            limit = max(1, min(2000, int(request.args.get("limit", "120"))))
+        except ValueError:
+            limit = 120
+        if _benchmark_dataset_dir(ds_id) is None:
+            abort(404, "Unknown or empty benchmark dataset.")
+        images = _benchmark_images(ds_id, limit=limit)
+        return jsonify({"dataset": ds_id, "count": len(images), "images": images})
+
+    @app.get("/api/benchmark/image")
+    def benchmark_image():
+        """Serve one dataset image (allowlisted to the dataset dir, image types only)."""
+        ds_id = request.args.get("dataset", "")
+        root = _benchmark_dataset_dir(ds_id)
+        if root is None:
+            abort(404, "Unknown benchmark dataset.")
+        rel = request.args.get("name", "")
+        if not rel:
+            abort(400, "Missing 'name'.")
+        candidate = (root / rel).resolve()
         try:
-            job = jobs.start("benchmark", f"benchmark:{Path(data.get('model','')).name}", cmd,
-                             env={"BENCHMARK_COMPARE_OUTPUT": "1"})
-        except JobBusyError as exc:
-            return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
-        return jsonify(job.to_dict()), 202
+            candidate.relative_to(root)
+        except ValueError:
+            abort(403, "Path outside dataset directory.")
+        if not candidate.is_file() or candidate.suffix.lower() not in IMAGE_EXTENSIONS:
+            abort(404, "Image not found.")
+        return send_file(str(candidate))
 
     @app.get("/api/jobs")
     def list_jobs():

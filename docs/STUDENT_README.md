@@ -31,10 +31,14 @@ Purpose: quantize, flash model, and benchmark deployment quality.
 2. Pick a trained `.keras` model.
 3. Choose a deployable quantization format, usually `int8 / per-channel`.
 4. Click **Start quantization** and wait for a `.tflite` artifact and report.
-5. Plug in the ESP32-S3 main board, then use **Flash model**. The model partition offset is hidden.
-6. If the board is connected to the AI PC, click **Run benchmark**. The portal shows label accuracy, model latency, device compute latency, throughput/FPS, Top-1 match, MAE, Max Error, and Cosine Similarity.
+5. Plug the ESP32-S3 main board into **your PC**, then use **Flash model**. The model partition offset is hidden.
+6. Pick a **dataset** and how many **images to test**, then click **Connect ESP32-S3 & run benchmark**. This runs
+   **in your browser over Web Serial** against the board on your PC (the AI PC only serves the images) — pick your
+   board in the port chooser. The portal shows label accuracy, model latency, preprocess latency, device compute,
+   and throughput/FPS. (Flash the **deploy benchmark firmware** first so the board answers with `RESULT` lines.)
 
-Expected result: model flashing succeeds and benchmark results appear in the page log/table.
+Expected result: model flashing succeeds and benchmark results appear in the page table + log. Use **Chrome or Edge**
+over the `https://` portal address. You never plug the board into the AI PC and never run Python.
 
 ## Output Page
 

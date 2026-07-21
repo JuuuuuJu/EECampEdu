@@ -48,7 +48,7 @@ Restart after changing Python, HTML, CSS, JS, README-served text, env vars, or c
 ## Portal Pages
 
 - `/model_finetune`: dataset upload, class-to-action mapping, TensorFlow/PyTorch training, full/main-board firmware flash, and browser-side OV2640 preview + live prediction. OV2640 is like flashing: the browser borrows the serial port from the student PC; the AI PC server does not directly own that camera USB port.
-- `/deploy`: deploy benchmark firmware flash, quantization, model flashing, AI-PC-side benchmark.
+- `/deploy`: deploy benchmark firmware flash, quantization, model flashing, and **browser Web Serial benchmark** (runs on the student PC's board; the AI PC only serves dataset images).
 - `/output`: output teaching firmware flash + LED/PWM controls.
 - `/firmware`: full main board firmware flash + live OV2640 preview/inference.
 
@@ -87,7 +87,15 @@ apps/training_portal/runs/jobs/    live job logs
 
 ## Benchmark
 
-Benchmark is started from `/deploy` and runs on the AI PC. The ESP32-S3 must be physically connected to the AI PC USB port. If the board is plugged into a student's PC, browser flashing can work, but AI-PC-side benchmark cannot access that serial port.
+The student benchmark on `/deploy` runs **in the browser over Web Serial**, exactly like browser flashing: the
+ESP32-S3 stays on the **student's PC**, and the AI PC server only serves the dataset images
+(`GET /api/benchmark/options`, `/api/benchmark/images`, `/api/benchmark/image`). There is **no** AI-PC serial port
+and **no** server-side benchmark job. Students flash the deploy benchmark firmware + model, pick a dataset, and the
+browser streams frames to the board and reads `RESULT` lines to compute accuracy/latency/throughput.
+
+**Developer/teacher CLI fallback** (optional, when you deliberately put a board on this machine): run the reference
+benchmark manually — see `docs/LOCAL_LEGACY_README.md` (`firmware/pc/benchmark/run_benchmark_png.py`). It additionally
+computes PC-reference output similarity (Top-1 / MAE / Max Error / Cosine).
 
 ## Background Service 2: Local Camera / Control App
 
