@@ -635,8 +635,8 @@ def _copy_class_images(class_root, target, class_names):
                 continue
             rel = img.relative_to(src_class)
             safe_parts = [re.sub(r"[^A-Za-z0-9._-]", "_", part) for part in rel.parts]
-            dest_name = "__".join(safe_parts)
-            shutil.copy2(img, dest_class / dest_name)
+            dest_name = f"{Path('__'.join(safe_parts)).stem}.png"
+            _save_processed_model_image(img, dest_class / dest_name)
             n += 1
         counts[class_name] = n
     total = sum(counts.values())
@@ -656,6 +656,40 @@ def _list_class_images(src_class):
 def _safe_dest_name(img, src_class):
     rel = img.relative_to(src_class)
     return "__".join(re.sub(r"[^A-Za-z0-9._-]", "_", part) for part in rel.parts)
+
+
+def _processed_dest_name(img, src_class):
+    stem = Path(_safe_dest_name(img, src_class)).stem
+    return f"{stem}.png"
+
+
+def _save_processed_model_image(src_path, dest_path, image_size=MODEL_INPUT_SIZE):
+    """Store training images in the same grayscale 96x96 format used by inference."""
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError(f"Pillow missing on the AI PC environment: {exc}")
+    try:
+        with Image.open(src_path) as img:
+            img = img.convert("L").resize(image_size)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(dest_path, format="PNG")
+    except Exception as exc:
+        raise ValueError(f"Failed to preprocess image {src_path.name}: {exc}") from exc
+
+
+def _save_processed_model_image_bytes(raw, dest_path, image_size=MODEL_INPUT_SIZE):
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise ValueError(f"Pillow missing on the AI PC environment: {exc}")
+    try:
+        with Image.open(io.BytesIO(raw)) as img:
+            img = img.convert("L").resize(image_size)
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            img.save(dest_path, format="PNG")
+    except Exception as exc:
+        raise ValueError(f"Failed to preprocess captured frame: {exc}") from exc
 
 
 def _copy_class_images_autosplit(class_root, class_names, val_ratio):
@@ -683,7 +717,7 @@ def _copy_class_images_autosplit(class_root, class_names, val_ratio):
         (val_dest / class_name).mkdir(parents=True, exist_ok=True)
         for i, img in enumerate(images):
             dest_root = val_dest if i in val_idx else train_dest
-            shutil.copy2(img, dest_root / class_name / _safe_dest_name(img, src_class))
+            _save_processed_model_image(img, dest_root / class_name / _processed_dest_name(img, src_class))
             if i in val_idx:
                 val_counts[class_name] += 1
             else:
@@ -1411,15 +1445,18 @@ def create_app():
             split = str(data.get("split") or "train").strip().lower()
             if split not in {"train", "validation"}:
                 raise ValueError("split must be 'train' or 'validation'.")
-            raw, _mime, ext = _decode_image_payload(data.get("image_data"))
+            raw, _mime, _ext = _decode_image_payload(data.get("image_data"))
             _refresh_class_map_from_dataset(class_name)
         except ValueError as exc:
             abort(400, str(exc))
         target_dir = DATASET_DIR / split / class_name
         target_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"ov2640_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}{ext}"
+        filename = f"ov2640_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
         target = target_dir / filename
-        target.write_bytes(raw)
+        try:
+            _save_processed_model_image_bytes(raw, target)
+        except ValueError as exc:
+            abort(400, str(exc))
         class_map_payload = _refresh_class_map_from_dataset(class_name)
         return jsonify({
             "ok": True,
@@ -1427,7 +1464,8 @@ def create_app():
             "split": split,
             "filename": filename,
             "path": str(target.relative_to(REPO_ROOT)),
-            "size_bytes": len(raw),
+            "size_bytes": target.stat().st_size,
+            "preprocess": "grayscale_96x96_png",
             "counts": _dataset_counts().get(class_name, {}),
             "class_map": class_map_payload,
         })

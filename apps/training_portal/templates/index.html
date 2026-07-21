@@ -137,7 +137,32 @@
     </div>
 
     <div class="card">
-      <h2><span class="step">B.</span>Model class — capture → train → preview</h2>
+      <h2><span class="step">B.</span>Dataset &amp; train</h2>
+      <p class="note">Uploaded or captured images are stored as processed model inputs: <code>96x96 grayscale PNG</code>.</p>
+      <label>Dataset zip (six class folders, any names)</label>
+      <input type="file" id="datasetFile" accept=".zip" />
+      <button id="uploadBtn">Upload &amp; import</button>
+      <div class="msg" id="uploadMsg"></div>
+      <div id="classMapRows" style="margin-top:10px"><div class="note">Import a dataset to map classes → robot actions.</div></div>
+      <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
+      <div class="msg" id="classMapMsg"></div>
+      <div class="row" style="margin-top:12px">
+        <div><label>Framework</label><select id="framework"><option value="tensorflow">TensorFlow</option><option value="pytorch">PyTorch</option></select></div>
+        <div><label>Model recipe</label><select id="recipe"></select></div>
+      </div>
+      <div class="note" id="recipeDesc"></div>
+      <div class="row" id="tuning">
+        <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
+        <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default" /></div>
+        <div><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
+      </div>
+      <label><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
+      <button id="trainBtn">Start training</button>
+      <div class="msg" id="trainMsg"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">C.</span>Model class — capture → train → preview</h2>
       <p class="note">Training runs on the AI PC. OV2640 preview uses the browser to borrow the ESP32-S3 serial port, the same idea as browser flashing.</p>
       <div class="row compact">
         <div><button id="modelPreviewBtn">Start AI-PC webcam preview</button></div>
@@ -157,6 +182,7 @@
       </div>
       <div class="row compact">
         <div><button id="saveFrameBtn" disabled>Save current frame to dataset</button></div>
+        <div><button class="secondary" id="clearCaptureClassBtn">Clear class selection</button></div>
         <div><label>.keras model</label><select id="predictModel"></select></div>
         <div><button class="secondary" id="predictFrameBtn" disabled>Predict current frame</button></div>
         <div><label><input type="checkbox" id="livePredictToggle" /> Live .keras prediction</label></div>
@@ -191,34 +217,9 @@
       <pre class="log" id="benchFwLog">Flash this before running Deploy benchmark.</pre>
     </div>
 
-    <!-- Dataset + training (prep) -->
-    <div class="card">
-      <h2><span class="step">B.</span>Dataset &amp; train (optional prep)</h2>
-      <label>Dataset zip (six class folders, any names)</label>
-      <input type="file" id="datasetFile" accept=".zip" />
-      <button id="uploadBtn">Upload &amp; import</button>
-      <div class="msg" id="uploadMsg"></div>
-      <div id="classMapRows" style="margin-top:10px"><div class="note">Import a dataset to map classes → robot actions.</div></div>
-      <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
-      <div class="msg" id="classMapMsg"></div>
-      <div class="row" style="margin-top:12px">
-        <div><label>Framework</label><select id="framework"><option value="tensorflow">TensorFlow</option><option value="pytorch">PyTorch</option></select></div>
-        <div><label>Model recipe</label><select id="recipe"></select></div>
-      </div>
-      <div class="note" id="recipeDesc"></div>
-      <div class="row" id="tuning">
-        <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
-        <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default" /></div>
-        <div><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
-      </div>
-      <label><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
-      <button id="trainBtn">Start training</button>
-      <div class="msg" id="trainMsg"></div>
-    </div>
-
     <!-- Quantize -->
     <div class="card">
-      <h2><span class="step">C.</span>Quantize → TFLite</h2>
+      <h2><span class="step">B.</span>Quantize → TFLite</h2>
       <label>Source .keras model</label>
       <select id="quantModel"></select>
       <div class="row compact">
@@ -239,7 +240,7 @@
 
     <!-- Flash model (Web Serial) -->
     <div class="card">
-      <h2><span class="step">D.</span>Flash model partition (.tflite)</h2>
+      <h2><span class="step">C.</span>Flash model partition (.tflite)</h2>
       <p class="note">Flashes only the model into its partition — the main board firmware is untouched.
          Chrome/Edge; the browser asks you to pick the serial port. No offsets shown.</p>
       <label>TFLite model</label>
@@ -264,7 +265,7 @@
 
     <!-- Results / benchmark -->
     <div class="card">
-      <h2><span class="step">E.</span>Results &amp; benchmark</h2>
+      <h2><span class="step">D.</span>Results &amp; benchmark</h2>
       <p class="note">PC-side quantization results (computed on the AI PC during quantization):</p>
       <table><thead><tr><th>Model</th><th>Format</th><th>TFLite accuracy</th><th>Samples</th><th>Output variation</th></tr></thead>
         <tbody id="reportsBody"><tr><td colspan="5" class="note">No quantization reports yet.</td></tr></tbody></table>
@@ -451,7 +452,11 @@ function renderCaptureClassOptions(){
   const sel=$("captureClass"); if(!sel) return;
   const prev=sel.value; sel.innerHTML="";
   const labels = CLASS_LABELS.length ? CLASS_LABELS : Object.keys(DATASET_COUNTS || {}).sort();
-  if(!labels.length){ const o=document.createElement("option"); o.value=""; o.textContent="(type a new class)"; sel.appendChild(o); return; }
+  const blank=document.createElement("option");
+  blank.value="";
+  blank.textContent=labels.length ? "(choose a saved class or type a new one)" : "(type a new class)";
+  sel.appendChild(blank);
+  if(!labels.length) return;
   labels.forEach(name=>{ const c=DATASET_COUNTS[name]||{}; const o=document.createElement("option"); o.value=name; o.textContent=`${name} (${c.train||0} train / ${c.validation||0} val)`; sel.appendChild(o); });
   if(prev && Array.from(sel.options).some(o=>o.value===prev)) sel.value=prev;
 }
@@ -697,6 +702,11 @@ $("modelPreviewBtn").onclick = async () => {
 };
 $("cameraConnectBtn").onclick = async () => connectCameraPreview(MODEL_CAMERA_UI);
 $("saveFrameBtn").onclick = saveCurrentFrameToDataset;
+$("clearCaptureClassBtn").onclick = () => {
+  if($("captureClass")) $("captureClass").value = "";
+  if($("newClassName")) $("newClassName").value = "";
+  setMsg($("captureMsg"), "Class selection cleared.", "ok");
+};
 $("predictFrameBtn").onclick = predictCurrentFrame;
 $("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn").disabled = !(latestCameraFrame && $("predictModel").value); };
 $("cameraStopBtn").onclick = async () => { await releaseCamera("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
@@ -1000,7 +1010,7 @@ async function saveCurrentFrameToDataset(){
   setMsg($("captureMsg"), "Saving captured frame...", "warn");
   try {
     const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, image_data:latestCameraFrame.dataUrl})});
-    setMsg($("captureMsg"), `Saved ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
+    setMsg($("captureMsg"), `Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
     $("newClassName").value="";
     await refreshClassMap();
   } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
