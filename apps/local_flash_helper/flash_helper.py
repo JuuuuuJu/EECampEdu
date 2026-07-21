@@ -35,7 +35,7 @@ from urllib.parse import urlparse
 from flask import Flask, jsonify, request
 
 DEFAULT_FLASH_OFFSET = "0x310000"   # ESP32-S3 model partition (per project layout)
-DEFAULT_BAUD = 460800
+DEFAULT_BAUD = 921600
 DEFAULT_CHIP = "esp32s3"
 FLASH_TIMEOUT_SECONDS = 240
 DOWNLOAD_TIMEOUT_SECONDS = 120

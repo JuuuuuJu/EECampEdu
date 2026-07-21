@@ -37,6 +37,12 @@ section *Arbitrary Class Names & Robot-Action Mapping* for the full flow.
 
 ## Run (on the AI PC)
 
+**Recommended: run it as a systemd user service** (`./deploy/install_services.sh`,
+then `systemctl --user start eecamp-portal`) — see
+[`docs/AIPC_SERVER_README.md`](../../docs/AIPC_SERVER_README.md) for the full
+start/stop/status/log commands. The direct invocation below is equivalent and useful
+for one-off runs.
+
 Recommended — **HTTPS on port 8080** (a secure context, so browser **Web Serial
 flashing** works). Port 8080 serves HTTPS when `--https` is set; there is **one
 port** for both the site and flashing (no separate 8443):
@@ -162,6 +168,14 @@ via the Web Serial API — no install, no Python, no `127.0.0.1`. Students use
   - `/deploy`: `firmware/deploy_benchmark/build` (`RuntimeMode::kTestUartFrame`, benchmark-only frame input).
   - `/output`: `firmware/teaching_output_demo/build` (GPIO/LED/PWM class firmware).
   If a target is not built, that page tells the instructor which firmware folder to build first. Offsets are hidden unless **developer mode** (header checkbox) is on.
+
+**Flash baud rate.** A **Flash baud** selector in the page header sets the write baud
+used by **every** flashing flow (model partition *and* all firmware targets). The
+default is **460800** (safe and fast); options are 115200 / 230400 / 460800 / 921600.
+The initial ROM sync always stays at **115200** regardless of this setting, so a bad
+choice never blocks the bootloader handshake — it only changes the write speed. If
+flashing is unreliable (long/cheap USB cable, some USB-UART bridges), lower it to
+230400 or 115200; the chosen value is echoed at the top of each flash log.
 
 Both use the vendored [esptool-js](static/vendor/esptool-js/) (offline, pinned);
 each page section has its own status line + flash log (connect → bootloader → erase →

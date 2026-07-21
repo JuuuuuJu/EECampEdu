@@ -63,6 +63,9 @@
      <label style="display:inline;margin-left:14px;color:var(--muted)"><input type="checkbox" id="devMode" style="width:auto"> developer mode (show flash offsets)</label>
      <label style="display:inline;margin-left:14px;color:var(--muted)">Flash sync:
        <select id="bootMode" style="width:auto;padding:2px 6px;margin-left:4px"><option value="auto">auto + manual retry</option><option value="manual">manual BOOT only</option></select>
+     </label>
+     <label style="display:inline;margin-left:14px;color:var(--muted)" title="Baud rate used for all Web Serial flashing (model partition + firmware). ROM sync stays at 115200; this is the write speed. Lower it if flashing is unreliable.">Flash baud:
+       <select id="flashBaud" style="width:auto;padding:2px 6px;margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800" selected>460800 (default)</option><option value="921600">921600</option></select>
      </label></p>
 </header>
 
@@ -858,6 +861,13 @@ const ESPTOOL_JS = "/static/vendor/esptool-js/bundle.js";
 function withTimeout(p, ms, m){ let t; return Promise.race([p, new Promise((_,rej)=>t=setTimeout(()=>rej(new Error(m)),ms))]).finally(()=>clearTimeout(t)); }
 function serialTroubleshoot(){ return "Board not responding. Checklist: (1) Chrome/Edge over HTTPS or localhost; (2) close other serial monitors (Arduino/idf.py monitor/PuTTY); (3) hold BOOT, click connect, tap RESET/EN, release BOOT after ~1s; (4) use a data USB cable."; }
 function webSerialSupport(){ if(navigator.serial) return {ok:true}; if(!window.isSecureContext) return {ok:false,reason:"insecure-http"}; return {ok:false,reason:"unsupported-browser"}; }
+// Flashing write baud from the header selector, applied to every flash flow
+// (model partition + firmware). ROM sync always stays at 115200. Safe default 460800.
+const FLASH_BAUDS = [115200, 230400, 460800, 921600];
+function flashBaudValue(){
+  const v = parseInt(($("flashBaud") && $("flashBaud").value) || "460800", 10);
+  return FLASH_BAUDS.includes(v) ? v : 460800;
+}
 function makeTerminal(logId,onLine){ return { clean(){ const el=$(logId); if(el) el.textContent=""; },
   writeLine(d){ appendLog(logId,d+"\n"); if(onLine) onLine(d); }, write(d){ appendLog(logId,d); if(onLine) onLine(d); } }; }
 function binaryString(ab){ const b=new Uint8Array(ab); let s=""; for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return s; }
@@ -1074,8 +1084,10 @@ async function espConnect({ terminal, statusEl, logId }){
     setMsg($(statusEl), "Opening serial chooser…", "warn");
     const port = await navigator.serial.requestPort();         // user gesture
     Serial.port = port; Serial.mode = "flash"; Serial.logId = logId;
+    const flashBaud = flashBaudValue();                        // header selector; default 460800
+    appendLog(logId, `\n[portal] flash baud ${flashBaud} (ROM sync 115200)\n`);
     Serial.transport = new Transport(port, true);
-    Serial.loader = new ESPLoader({ transport: Serial.transport, baudrate: 460800, romBaudrate: 115200, terminal });
+    Serial.loader = new ESPLoader({ transport: Serial.transport, baudrate: flashBaud, romBaudrate: 115200, terminal });
 
     const manualOnly = $("bootMode") && $("bootMode").value === "manual";
     if(manualOnly){

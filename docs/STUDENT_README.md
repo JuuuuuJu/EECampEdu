@@ -69,5 +69,6 @@ Requires the **main board firmware** (flash it on the Firmware page). Plug the E
 - Close Arduino Serial Monitor, `idf.py monitor`, PuTTY, or any other program using the port.
 - Only one serial workflow runs at a time. After one finishes, wait for the status to say released before starting the next one — no page refresh needed.
 - If auto-reset fails while flashing: hold BOOT, click connect, tap RESET/EN, release BOOT after about 1 second.
+- **Flash baud:** the header has a **Flash baud** selector used for all flashing (model + firmware). Leave it at **460800**; if flashing is unreliable, lower it to **230400** or **115200** and try again. (Connecting always syncs at 115200 first, so this only affects write speed.)
 - Use a data-capable USB cable.
 - **Benchmark:** pick the ESP32-S3 **UART-bridge** COM port (not the USB-JTAG one) — the `READY` handshake only appears there. If the portal reports "no serial data," the port is wrong or in use; if it reports "talking but no READY," flash the deploy benchmark firmware and pick the UART-bridge port.

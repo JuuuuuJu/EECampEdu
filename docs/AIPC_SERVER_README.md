@@ -23,27 +23,49 @@ export EECAMP_PORTAL_SECRET='change-this-session-secret'
 export EECAMP_TEAM_PASSWORDS='{"team01":"...","team02":"..."}'
 ```
 
-## Background Service 1: Training Portal
+## Background Service 1: Training Portal (systemd)
 
-Recommended: HTTPS on port 8080, because browser Web Serial flashing needs a secure context.
+The portal runs as a **systemd user service** (`eecamp-portal`) — no `sudo` for daily
+start/stop/status/logs, and it restarts on failure and at boot. It serves HTTPS on
+port 8080 (browser Web Serial flashing needs a secure context).
+
+**Install once** (creates + enables the user service, and `deploy/eecamp-portal.env`
+for secrets):
 
 ```bash
 cd ~/EECampEdu
-conda activate eecampedu
-mkdir -p apps/training_portal/runs
-nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 --https \
-  > apps/training_portal/runs/server.log 2>&1 &
+./deploy/install_services.sh              # portal only
+# ./deploy/install_services.sh --with-camera   # also install the camera app service
+# edit secrets, then restart:
+nano deploy/eecamp-portal.env             # set EECAMP_PORTAL_SECRET / team passwords
 ```
 
-Check / log / stop:
+If a portal is still running from the old `nohup` method, stop it first so both do
+not bind port 8080: `pkill -f "apps/training_portal/server.py"`.
+
+**Manage** (no sudo):
 
 ```bash
-curl -sk https://127.0.0.1:8080/api/health
-tail -f apps/training_portal/runs/server.log
-pkill -f "apps/training_portal/server.py"
+systemctl --user start   eecamp-portal      # start
+systemctl --user stop    eecamp-portal      # stop
+systemctl --user restart eecamp-portal      # restart (after code/env/cert changes)
+systemctl --user status  eecamp-portal      # status
+journalctl  --user -u eecamp-portal -f      # live logs
+curl -sk https://127.0.0.1:8080/api/health  # health check
 ```
 
-Restart after changing Python, HTML, CSS, JS, README-served text, env vars, or certificates. Existing job logs remain under `apps/training_portal/runs/jobs/`.
+Or use the wrapper: `./deploy/eecampctl.sh {start|stop|restart|status|logs} [portal|camera]`.
+
+**Run without an active login** (survive logout / reboot) — the only step needing sudo,
+run once:
+
+```bash
+sudo loginctl enable-linger $USER
+```
+
+The unit is generated from `deploy/systemd/eecamp-portal.service.in` (interpreter and
+repo path substituted at install time). Restart the service after changing Python, HTML,
+CSS, JS, env vars, or certificates. Job logs remain under `apps/training_portal/runs/jobs/`.
 
 ## Portal Pages
 
@@ -104,16 +126,21 @@ browser streams frames to the board and reads `RESULT` lines to compute accuracy
 benchmark manually — see `docs/LOCAL_LEGACY_README.md` (`firmware/pc/benchmark/run_benchmark_png.py`). It additionally
 computes PC-reference output similarity (Top-1 / MAE / Max Error / Cosine).
 
-## Background Service 2: Local Camera / Control App
+## Background Service 2: Local Camera / Control App (systemd)
 
-This is optional and runs on the PC that physically owns the USB hardware. The portal now has a browser-side OV2640 preview path; use this helper only when testing live gesture/result forwarding outside the portal.
+Optional, and runs on the **student PC** that physically owns the USB hardware (not
+the AI PC). The portal now has a browser-side OV2640 preview path; use this helper only
+when testing live gesture/result forwarding outside the portal. It is packaged as the
+`eecamp-camera-app` user service.
 
 ```bash
-conda activate eecampedu
-nohup python apps/local_camera_app/preview_app.py > camera_app.log 2>&1 &
+cd ~/EECampEdu
+./deploy/install_services.sh --with-camera   # installs both portal + camera app units
+systemctl --user start  eecamp-camera-app     # start / stop / restart / status
+systemctl --user status eecamp-camera-app
+journalctl  --user -u eecamp-camera-app -f    # live logs
 curl http://127.0.0.1:8770/health
-tail -f camera_app.log
-pkill -f "local_camera_app/preview_app.py"
+# or: ./deploy/eecampctl.sh start camera
 ```
 
 ## Flash Helper
