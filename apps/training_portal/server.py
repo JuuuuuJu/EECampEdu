@@ -86,6 +86,11 @@ FIRMWARE_TARGETS = {
         "build_dir": REPO_ROOT / "firmware" / "main_board" / "build",
         "build_hint": "firmware/main_board with RuntimeMode::kCameraUsbMsc",
     },
+    "camera_usb_demo": {
+        "label": "Camera + USB demo firmware",
+        "build_dir": REPO_ROOT / "firmware" / "camera_usb_demo" / "build",
+        "build_hint": "firmware/camera_usb_demo",
+    },
     "output_demo": {
         "label": "Output demo (GPIO/LED/PWM) firmware",
         "build_dir": REPO_ROOT / "firmware" / "teaching_output_demo" / "build",

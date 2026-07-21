@@ -325,9 +325,32 @@
     <div class="card">
       <h2>Camera + USB demo</h2>
       <p class="note">Full OV2640 camera control over Web Serial, modeled on the developer
-         <code>camera_controller.py</code>. Requires the <b>main board firmware</b> — flash it on the
-         <b>Main board firmware</b> tab first. The ESP32-S3 is plugged into <b>your PC</b>; the browser
-         borrows the serial port (no Python, no <code>127.0.0.1</code>). Use <b>Chrome or Edge</b>.</p>
+         <code>camera_controller.py</code>. The ESP32-S3 is plugged into <b>your PC</b>; the browser
+         borrows the serial port. Use <b>Chrome or Edge</b>.</p>
+    </div>
+
+    <!-- Step 1: Flash Firmware -->
+    <div class="card">
+      <h2><span class="step">1.</span>Flash Camera &amp; USB demo firmware</h2>
+      <p class="note">Flashes the <b>Camera &amp; USB demo firmware</b> (camera + USB CDC/MSC, no TFLite inference).
+         Required for this demo page. Offsets come from the ESP-IDF build (<code>flasher_args.json</code>)
+         and are hidden unless developer mode is on.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
+      <div id="usbFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <div class="row">
+        <div><button id="usbFwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
+        <div><button class="secondary" id="usbFwRefreshBtn">Re-check build</button></div>
+      </div>
+      <div class="msg" id="usbFwStatus"></div>
+      <label style="margin-top:12px">Flash log</label>
+      <pre class="log" id="usbFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+    </div>
+
+    <!-- Step 2: Camera Preview and settings -->
+    <div class="card">
+      <h2><span class="step">2.</span>Connect camera &amp; preview</h2>
+      <p class="note">After flashing, connect the camera stream to test parameters and capture frames.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect the camera stream and storage.</p>
       <div class="row compact">
         <div><button id="usbCamConnectBtn">Connect camera</button></div>
         <div><button class="secondary" id="usbCamStopBtn" disabled>Disconnect</button></div>
@@ -337,8 +360,8 @@
         <img id="usbCamPreview" alt="OV2640 camera+USB preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none" />
         <div class="note" id="usbCamPlaceholder">No camera frame yet.</div>
       </div>
-      <div class="big" id="usbCamResult" style="margin-top:12px">Prediction: --</div>
     </div>
+
 
     <div class="card">
       <h2>Camera settings</h2>
@@ -363,6 +386,10 @@
         <div><label>Mirror</label><select id="usbCamMirror"><option value="0">off</option><option value="1">on</option></select></div>
         <div><label>Flip</label><select id="usbCamFlip"><option value="0">off</option><option value="1">on</option></select></div>
       </div>
+      <div class="row compact">
+        <div><label>Manual exposure (AEC value): <span id="usbAecVal">300</span></label><input type="range" id="usbCamExposure" min="0" max="1200" step="10" value="300" disabled /></div>
+        <div><label>Manual gain (AGC value): <span id="usbAgcVal">0</span></label><input type="range" id="usbCamGain" min="0" max="30" step="1" value="0" disabled /></div>
+      </div>
     </div>
 
     <div class="card">
@@ -371,32 +398,53 @@
       <div class="row compact">
         <div><button class="secondary" id="usbCamCaptureBtn">Capture to flash</button></div>
         <div><button class="secondary" id="usbCamListBtn">List files</button></div>
-        <div><button class="secondary" id="usbCamMscBtn">Expose as USB drive</button></div>
-      </div>
-      <div class="row compact">
-        <div><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · v300 · k0 · format" /></div>
+        <div style="flex:2; min-width:240px"><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · format · l" /></div>
         <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
       </div>
       <div class="msg" id="usbCamCmdMsg"></div>
       <label style="margin-top:12px">Camera / USB messages</label>
       <pre class="log tall" id="usbCamLog">Connect the camera to begin.</pre>
     </div>
+
+    <!-- Step 3: Maze Challenge -->
+    <div class="card">
+      <h2><span class="step">3.</span>Maze challenge</h2>
+      <p class="note">Find the secret message hidden in the maze image using your ESP32-S3 local flash storage.</p>
+      <div style="margin-top:12px;text-align:center">
+        <img id="stegoImg" src="/static/stego_dual.png" alt="Maze Steganography Hint" style="max-width:100%;max-height:360px;border:1px solid var(--border);border-radius:8px;object-fit:contain" onerror="this.style.display='none'" />
+      </div>
+      <p class="note" style="margin-top:12px"><b>Instructions:</b></p>
+      <ol class="note" style="padding-left:20px;line-height:1.6">
+        <li>Solve the puzzle and find the hidden folders on your PC.</li>
+        <li>Use the camera settings tool below to help solve the image.</li>
+      </ol>
+      <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
+        <label style="font-weight:bold;display:block;margin-bottom:8px">Submit Flag:</label>
+        <div style="display:flex;gap:12px;align-items:center;max-width:500px">
+          <input type="text" id="mazeFlagInput" placeholder="EE{...}" style="flex:1;padding:8px;border-radius:4px;border:1px solid var(--border);background:#0f172a;color:#fff" />
+          <button id="mazePrizeBtn" disabled style="padding:8px 16px;border-radius:4px;margin-top:0">Claim Prize 🎁</button>
+        </div>
+        <div id="mazeFeedback" class="msg" style="margin-top:8px;display:none"></div>
+      </div>
+    </div>
   </section>
 
   <!-- ==================== SHARED (deploy jobs) ==================== -->
-  <div class="card">
-    <h2>Live job log <span class="pill" id="jobPill"></span></h2>
-    <pre class="log tall" id="log">No job selected. Start a training or quantization job (Deploy tab).</pre>
-  </div>
-  <div class="card">
-    <h2>Generated artifacts <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
-    <table><thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
-      <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody></table>
-  </div>
-  <div class="card">
-    <h2>Job history</h2>
-    <table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
-      <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
+  <div id="sharedJobPanels">
+    <div class="card">
+      <h2>Live job log <span class="pill" id="jobPill"></span></h2>
+      <pre class="log tall" id="log">No job selected. Start a training or quantization job (Deploy tab).</pre>
+    </div>
+    <div class="card">
+      <h2>Generated artifacts <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
+      <table><thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+        <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody></table>
+    </div>
+    <div class="card">
+      <h2>Job history</h2>
+      <table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
+        <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
+    </div>
   </div>
 </main>
 
@@ -412,6 +460,8 @@ let DATASET_COUNTS = {};
 let latestCameraFrame = null;
 let predictBusy = false;
 let lastPredictMs = 0;
+let fpsStart = 0, frameCount = 0, currentFps = 0;
+let previousFormat = "3";
 
 function $(id){ return document.getElementById(id); }
 function setText(t,x){ const el=(typeof t==="string")?$(t):t; if(el) el.textContent=x; }
@@ -436,9 +486,13 @@ function activateTopic(topic, push){
   const pane=$("pane-"+topic); if(pane) pane.classList.add('active');
   if(push && PATH_BY_TOPIC[topic] && window.location.pathname !== PATH_BY_TOPIC[topic]) history.pushState({topic}, "", PATH_BY_TOPIC[topic]);
   if(topic==="mainfw") loadFirmware("main_board", MAINFW);
+  if(topic==="camerausb") loadFirmware("camera_usb_demo", USBFW);
   if(topic==="output") loadFirmware("output_demo", OUTFW);
   if(topic==="model"){ loadFirmware("model_finetune", MODELFW); refreshModelDemo(); }
   if(topic==="deploy"){ loadFirmware("deploy_benchmark", BENCHFW); refreshReports(); loadBenchOptions(); }
+  
+  const panels = $("sharedJobPanels");
+  if(panels) panels.style.display = (topic === "camerausb") ? "none" : "block";
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -457,7 +511,7 @@ async function init(){
   initFlashPanel();
   loadFirmware("output_demo", OUTFW);   // default tab
   loadBenchOptions();
-  $("devMode").onchange = () => { renderFwImages(OUTFW); renderFwImages(MODELFW); renderFwImages(BENCHFW); renderFwImages(MAINFW); };
+  $("devMode").onchange = () => { renderFwImages(OUTFW); renderFwImages(MODELFW); renderFwImages(BENCHFW); renderFwImages(MAINFW); renderFwImages(USBFW); };
 }
 
 // ---------- class map ----------
@@ -765,8 +819,30 @@ function usbCamCmd(cmd, label){
 }
 $("usbCamConnectBtn").onclick = async () => connectCameraPreview(USBCAM_UI);
 $("usbCamStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("usbCamLog"); setMsg($("usbCamMsg"), "Camera disconnected.", "ok"); };
-$("usbCamFormat").onchange   = (e) => usbCamCmd("f"+e.target.value, "pixel format");
-$("usbCamSize").onchange     = (e) => usbCamCmd("s"+e.target.value, "resolution");
+$("usbCamFormat").onchange = async (e) => {
+  const fmt = e.target.value; // "0"=Gray, "1"=RGB, "2"=YUV, "3"=JPEG
+  const sizeSelect = $("usbCamSize");
+  if (fmt === "3") { // JPEG
+    sizeSelect.value = "1"; // default to QQVGA
+    for (let opt of sizeSelect.options) {
+      opt.disabled = (opt.value === "0"); // disable 96x96
+    }
+    usbCamCmd("f3", "pixel format");
+    await sleep(400);
+    usbCamCmd("s1", "resolution");
+  } else { // Raw formats
+    sizeSelect.value = "1"; // reset to QQVGA (s1) first safely
+    for (let opt of sizeSelect.options) {
+      const val = parseInt(opt.value, 10);
+      opt.disabled = (val >= 3); // limit max resolution to QVGA (disable >= VGA)
+    }
+    // Safety lock: decrease resolution first, wait, then switch format second
+    usbCamCmd("s1", "resolution");
+    await sleep(400);
+    usbCamCmd("f" + fmt, "pixel format");
+  }
+};
+$("usbCamSize").onchange = (e) => usbCamCmd("s"+e.target.value, "resolution");
 $("usbCamStreamOn").onclick  = () => usbCamCmd("d1", "stream on");
 $("usbCamStreamOff").onclick = () => usbCamCmd("d0", "stream off");
 $("usbCamBrightness").oninput  = (e) => setText("usbBriVal", e.target.value);
@@ -775,15 +851,34 @@ $("usbCamContrast").oninput    = (e) => setText("usbConVal", e.target.value);
 $("usbCamContrast").onchange   = (e) => usbCamCmd("t"+e.target.value, "contrast");
 $("usbCamSaturation").oninput  = (e) => setText("usbSatVal", e.target.value);
 $("usbCamSaturation").onchange = (e) => usbCamCmd("x"+e.target.value, "saturation");
-$("usbCamAec").onchange    = (e) => usbCamCmd("e"+e.target.value, "AEC");
-$("usbCamAgc").onchange    = (e) => usbCamCmd("g"+e.target.value, "AGC");
+$("usbCamAec").onchange    = (e) => { usbCamCmd("e"+e.target.value, "AEC"); $("usbCamExposure").disabled = (e.target.value === "1"); };
+$("usbCamAgc").onchange    = (e) => { usbCamCmd("g"+e.target.value, "AGC"); $("usbCamGain").disabled = (e.target.value === "1"); };
+$("usbCamExposure").oninput  = (e) => setText("usbAecVal", e.target.value);
+$("usbCamExposure").onchange = (e) => usbCamCmd("v"+e.target.value, "exposure value");
+$("usbCamGain").oninput      = (e) => setText("usbAgcVal", e.target.value);
+$("usbCamGain").onchange     = (e) => usbCamCmd("a"+e.target.value, "gain value");
 $("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "AWB");
 $("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "mirror");
 $("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "flip");
 $("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("w"+ts, "capture to flash"); };
 $("usbCamListBtn").onclick = () => usbCamCmd("l", "list files");
-$("usbCamMscBtn").onclick  = () => usbCamCmd("usb", "expose USB drive");
 $("usbCamRawBtn").onclick  = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, c); };
+$("mazeFlagInput").oninput = (e) => {
+  const flag = e.target.value.trim();
+  const btn = $("mazePrizeBtn");
+  const fb = $("mazeFeedback");
+  if (flag === "EE{MAZE_SOLVER_2026_SHIFT_MINUS_TWO}") {
+    btn.disabled = false;
+    setMsg(fb, "Correct flag! Click Claim Prize!", "ok");
+    fb.style.display = "block";
+  } else {
+    btn.disabled = true;
+    fb.style.display = "none";
+  }
+};
+$("mazePrizeBtn").onclick = () => {
+  window.open("https://youtu.be/dQw4w9WgXcQ?si=LRyftWD4T8sjpXdH", "_blank");
+};
 function copyText(text, msgEl, okMsg){
   const done=()=>setMsg(msgEl, okMsg, "ok");
   const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"Copy failed — select manually.","bad"); } document.body.removeChild(ta); };
@@ -868,6 +963,7 @@ const OUTFW   = { target:"output_demo",      meta:null, imagesEl:"outFwImages", 
 const MODELFW = { target:"model_finetune",   meta:null, imagesEl:"modelFwImages",  statusEl:"modelFwStatus",  logEl:"modelFwLog",  flashBtn:"modelFwFlashBtn",  refreshBtn:"modelFwRefreshBtn" };
 const BENCHFW = { target:"deploy_benchmark", meta:null, imagesEl:"benchFwImages",  statusEl:"benchFwStatus",  logEl:"benchFwLog",  flashBtn:"benchFwFlashBtn",  refreshBtn:"benchFwRefreshBtn" };
 const MAINFW  = { target:"main_board",       meta:null, imagesEl:"mainFwImages",   statusEl:"mainFwStatus",   logEl:"mainFwLog",   flashBtn:"mainFwFlashBtn",   refreshBtn:"mainFwRefreshBtn" };
+const USBFW   = { target:"camera_usb_demo",  meta:null, imagesEl:"usbFwImages",    statusEl:"usbFwStatus",    logEl:"usbFwLog",    flashBtn:"usbFwFlashBtn",    refreshBtn:"usbFwRefreshBtn" };
 
 // Force-release any leftover stream locks on a raw SerialPort, then close it.
 async function releasePortLocks(port){
@@ -992,6 +1088,7 @@ function syncFlashButtons(){
   if($("modelFwFlashBtn")) $("modelFwFlashBtn").disabled = !(sup && MODELFW.meta && MODELFW.meta.available);
   if($("benchFwFlashBtn")) $("benchFwFlashBtn").disabled = !(sup && BENCHFW.meta && BENCHFW.meta.available);
   if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
+  if($("usbFwFlashBtn")) $("usbFwFlashBtn").disabled = !(sup && USBFW.meta && USBFW.meta.available);
   ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
   if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
@@ -1071,16 +1168,97 @@ function renderCameraFrame(base64Data, meta){
     const raw = atob(clean);
     const bytes = new Uint8Array(raw.length);
     for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
-    const mime = Number(meta.format)===4 || Number(meta.format)===3 ? "image/jpeg" : "image/bmp";
-    latestCameraFrame = { base64: clean, meta, mime, bytes: bytes.length, dataUrl: `data:${mime};base64,${clean}` };
-    if(camObjectUrl) URL.revokeObjectURL(camObjectUrl);
-    camObjectUrl = URL.createObjectURL(new Blob([bytes], {type:mime}));
-    img.src = camObjectUrl;
+    let dataUrl;
+    const fmt = Number(meta.format);
+    const mime = fmt === 4 ? "image/jpeg" : "image/bmp";
+    
+    if (fmt === 4) { // JPEG
+      if (camObjectUrl) URL.revokeObjectURL(camObjectUrl);
+      camObjectUrl = URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"}));
+      dataUrl = camObjectUrl;
+    } else { // Raw formats: 3=Grayscale, 0=RGB565, 1=YUV422
+      const canvas = document.createElement("canvas");
+      canvas.width = meta.width;
+      canvas.height = meta.height;
+      const ctx = canvas.getContext("2d");
+      const imgData = ctx.createImageData(meta.width, meta.height);
+      
+      if (fmt === 3) { // Grayscale
+        const len = Math.min(bytes.length, meta.width * meta.height);
+        for (let i = 0; i < len; i++) {
+          const val = bytes[i];
+          const idx = i * 4;
+          imgData.data[idx] = val;
+          imgData.data[idx+1] = val;
+          imgData.data[idx+2] = val;
+          imgData.data[idx+3] = 255;
+        }
+      } else if (fmt === 0) { // RGB565
+        const len = Math.min(bytes.length / 2, meta.width * meta.height);
+        for (let i = 0; i < len; i++) {
+          const b1 = bytes[i*2];
+          const b2 = bytes[i*2+1];
+          const p = (b1 << 8) | b2;
+          const r = ((p >> 11) & 0x1F) * 8;
+          const g = ((p >> 5) & 0x3F) * 4;
+          const b = (p & 0x1F) * 8;
+          const idx = i * 4;
+          imgData.data[idx] = r;
+          imgData.data[idx+1] = g;
+          imgData.data[idx+2] = b;
+          imgData.data[idx+3] = 255;
+        }
+      } else if (fmt === 1) { // YUV422
+        const len = Math.min(bytes.length, meta.width * meta.height * 2);
+        for (let i = 0, j = 0; i < len - 3; i += 4, j += 8) {
+          const y0 = bytes[i];
+          const u  = bytes[i+1] - 128;
+          const y1 = bytes[i+2];
+          const v  = bytes[i+3] - 128;
+
+          let r0 = y0 + 1.402 * v;
+          let g0 = y0 - 0.344136 * u - 0.714136 * v;
+          let b0 = y0 + 1.772 * u;
+
+          let r1 = y1 + 1.402 * v;
+          let g1 = y1 - 0.344136 * u - 0.714136 * v;
+          let b1 = y1 + 1.772 * u;
+
+          imgData.data[j]   = Math.max(0, Math.min(255, r0));
+          imgData.data[j+1] = Math.max(0, Math.min(255, g0));
+          imgData.data[j+2] = Math.max(0, Math.min(255, b0));
+          imgData.data[j+3] = 255;
+
+          imgData.data[j+4] = Math.max(0, Math.min(255, r1));
+          imgData.data[j+5] = Math.max(0, Math.min(255, g1));
+          imgData.data[j+6] = Math.max(0, Math.min(255, b1));
+          imgData.data[j+7] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      dataUrl = canvas.toDataURL("image/jpeg");
+    }
+    
+    latestCameraFrame = { base64: clean, meta, mime, bytes: bytes.length, dataUrl: dataUrl.startsWith("data:") ? dataUrl : `data:image/jpeg;base64,${clean}` };
+    img.src = dataUrl;
     img.style.display="block";
     if(ph) ph.style.display="none";
     if($("saveFrameBtn")) $("saveFrameBtn").disabled = false;
     if($("predictFrameBtn")) $("predictFrameBtn").disabled = !($("predictModel") && $("predictModel").value);
-    setMsg(camUi.msgId, `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes`, "ok");
+    
+    // FPS calculation
+    const now = Date.now();
+    if(!fpsStart) { fpsStart = now; frameCount = 0; }
+    frameCount++;
+    const elapsed = now - fpsStart;
+    if(elapsed >= 1000) {
+      currentFps = ((frameCount * 1000) / elapsed).toFixed(1);
+      fpsStart = now;
+      frameCount = 0;
+    }
+    const fpsText = currentFps ? ` (${currentFps} fps)` : "";
+    setMsg(camUi.msgId, `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes${fpsText}`, "ok");
+    
     maybeLivePredict();
   } catch(e){ appendLog(camUi.logId, "[camera] frame decode failed: "+(e.message||e)+"\n"); }
 }
@@ -1102,7 +1280,7 @@ function cameraOnLine(rawLine){
   } else if(line.startsWith("RESULT,")){
     appendLog(camUi.logId, line + "\n");
     updateGestureResult(line);
-  } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP|System|Streaming|SETTING|OK/i.test(line)){
+  } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP|System|Streaming|SETTING|OK|FILE|Total|^-|^\s*-|---/i.test(line)){
     appendLog(camUi.logId, line + "\n");
   }
 }
@@ -1115,10 +1293,20 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   setText(camUi.resultId, "Prediction: --");
   setMsg($(camUi.msgId), "Opening serial chooser for OV2640 preview...", "warn");
   try {
+    fpsStart = 0;
+    frameCount = 0;
+    currentFps = 0;
     camAsm = { receiving:false, lines:[], meta:{} };
     await serialOpenRaw({ logId:camUi.logId, baudRate:115200, bufferSize:1048576, onLine:cameraOnLine });
     if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
     if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
+    if(ui === USBCAM_UI){
+      $("usbCamFormat").value = "3";
+      $("usbCamSize").value = "1";
+      for(let opt of $("usbCamSize").options){
+        opt.disabled = (opt.value === "0");
+      }
+    }
     await sleep(400);
     await cameraWrite("f3"); await sleep(250);
     await cameraWrite("s1"); await sleep(250);
@@ -1259,10 +1447,12 @@ $("outFwFlashBtn").onclick = makeFwFlash(OUTFW);
 $("modelFwFlashBtn").onclick = makeFwFlash(MODELFW);
 $("benchFwFlashBtn").onclick = makeFwFlash(BENCHFW);
 $("mainFwFlashBtn").onclick = makeFwFlash(MAINFW);
+$("usbFwFlashBtn").onclick = makeFwFlash(USBFW);
 $("outFwRefreshBtn").onclick = () => loadFirmware("output_demo", OUTFW);
 $("modelFwRefreshBtn").onclick = () => loadFirmware("model_finetune", MODELFW);
 $("benchFwRefreshBtn").onclick = () => loadFirmware("deploy_benchmark", BENCHFW);
 $("mainFwRefreshBtn").onclick = () => loadFirmware("main_board", MAINFW);
+$("usbFwRefreshBtn").onclick = () => loadFirmware("main_board", USBFW);
 
 // ---------- OUTPUT DEMO: raw-serial LED / PWM control (unified lifecycle) ----------
 async function ctrlSend(cmd){

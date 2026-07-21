@@ -603,6 +603,10 @@ static void usb_cdc_command_task(void *pvParameters) {
                         
                         usb_list_files();
 
+                        // CRITICAL FIX: Give the serial TX queue time to fully transmit the list to the PC
+                        // before triggering a USB re-enumeration/mount change.
+                        vTaskDelay(pdMS_TO_TICKS(1000));
+
                         // 3. Resume the stream if it was running
                         if (was_streaming) {
                             streaming_mode = true;
