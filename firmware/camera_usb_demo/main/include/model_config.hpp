@@ -59,7 +59,7 @@ constexpr const char *USB_MSC_MOUNT_PATH = "/usb";
 
 // Camera + USB CDC/MSC integration mode. CDC can stream base64 frames to the
 // PC camera controller, and MSC exposes the FAT /usb storage partition. The
-// current camera_usb storage command writes latest.raw/latest.meta/latest.bmp.
+// current camera_usb storage command writes LATEST.RAW/LATEST.MET/LATEST.BMP.
 constexpr bool CAMERA_USB_CONTINUOUS_CAPTURE = true;
 constexpr bool CAMERA_USB_KEEP_SEQUENCE = true;
 constexpr int CAMERA_USB_CAPTURE_INTERVAL_MS = 250;

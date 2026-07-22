@@ -81,12 +81,59 @@ static esp_err_t apply_camera_config_locked() {
     return camera_capture_reinit((int)format_from_code(g_format_code), (int)size_from_code(g_size_code));
 }
 
-static void set_streaming(bool enabled) {
-    if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        g_streaming = enabled;
-        xSemaphoreGive(g_camera_mutex);
+static esp_err_t apply_camera_config_with_fallback_locked(const char *reason) {
+    struct Candidate {
+        int format_code;
+        int size_code;
+        const char *name;
+    };
+    const Candidate candidates[] = {
+        {g_format_code, g_size_code, "requested"},
+        {3, 1, "fallback jpeg qqvga"},
+        {0, 1, "fallback grayscale qqvga"},
+        {0, 0, "fallback grayscale 96x96"},
+    };
+
+    esp_err_t last_err = ESP_FAIL;
+    int tried_format = -1;
+    int tried_size = -1;
+    for (const Candidate &candidate : candidates) {
+        if (candidate.format_code == tried_format && candidate.size_code == tried_size) {
+            continue;
+        }
+        tried_format = candidate.format_code;
+        tried_size = candidate.size_code;
+        g_format_code = candidate.format_code;
+        g_size_code = candidate.size_code;
+        last_err = apply_camera_config_locked();
+        if (last_err == ESP_OK) {
+            cdc_printf("[ModelFinetune] Camera config ok: f%d s%d (%s, %s)\n",
+                       g_format_code, g_size_code, candidate.name, reason);
+            return ESP_OK;
+        }
+        cdc_printf("WARN,camera_config_failed,f%d,s%d,%s,%s\n",
+                   g_format_code, g_size_code, candidate.name, esp_err_to_name(last_err));
     }
-    cdc_printf("[ModelFinetune] Streaming: %s\n", enabled ? "ENABLED" : "DISABLED");
+    cdc_printf("ERROR,camera_config_all_failed,%s\n", esp_err_to_name(last_err));
+    return last_err;
+}
+
+static void set_streaming(bool enabled) {
+    esp_err_t err = ESP_OK;
+    if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+        if (enabled) {
+            err = apply_camera_config_with_fallback_locked("stream start");
+        }
+        g_streaming = enabled && (err == ESP_OK);
+        xSemaphoreGive(g_camera_mutex);
+    } else {
+        err = ESP_ERR_TIMEOUT;
+    }
+    if (err == ESP_OK) {
+        cdc_printf("[ModelFinetune] Streaming: %s\n", enabled ? "ENABLED" : "DISABLED");
+    } else {
+        cdc_printf("ERROR,camera_stream_unavailable,%s\n", esp_err_to_name(err));
+    }
 }
 
 static void camera_stream_task(void *pv) {
@@ -120,20 +167,39 @@ static esp_err_t capture_once(bool send_to_pc, bool save_to_storage) {
     }
     was_streaming = g_streaming;
     g_streaming = false;
+    err = apply_camera_config_with_fallback_locked("capture");
+    if (err != ESP_OK) {
+        g_streaming = was_streaming;
+        xSemaphoreGive(g_camera_mutex);
+        cdc_printf("ERROR,camera_config_for_capture,%s\n", esp_err_to_name(err));
+        return err;
+    }
     CameraFrame frame = {};
     err = camera_capture_frame(&frame);
+    if (err != ESP_OK) {
+        cdc_printf("WARN,camera_capture_retry,%s\n", esp_err_to_name(err));
+        err = apply_camera_config_with_fallback_locked("capture retry");
+        if (err == ESP_OK) {
+            err = camera_capture_frame(&frame);
+        }
+    }
     if (err == ESP_OK) {
         if (send_to_pc) send_frame_to_pc(frame);
         if (save_to_storage) {
-            usb_msc_mount_to_app();
-            vTaskDelay(pdMS_TO_TICKS(100));
-            err = photo_storage_write_capture(frame, "capture");
-            if (err == ESP_OK) {
-                cdc_printf("[ModelFinetune] Saved capture frame to ESP storage.\n");
+            err = usb_msc_mount_to_app();
+            if (err != ESP_OK) {
+                cdc_printf("ERROR,storage_mount_app,%s\n", esp_err_to_name(err));
             } else {
-                cdc_printf("ERROR,photo_storage_write,%s\n", esp_err_to_name(err));
+                cdc_printf("[ModelFinetune] Storage switched to ESP app side. Saving capture...\n");
+                vTaskDelay(pdMS_TO_TICKS(700));
+                err = photo_storage_write_capture(frame, "capture");
+                if (err == ESP_OK) {
+                    cdc_printf("[ModelFinetune] Saved capture frame to ESP storage.\n");
+                } else {
+                    cdc_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(err), photo_storage_last_error());
+                }
             }
-            usb_msc_mount_to_pc();
+            (void)usb_msc_mount_to_pc();
         }
         camera_capture_release(&frame);
     } else {
@@ -152,12 +218,10 @@ static void reconfigure_camera() {
     }
     was_streaming = g_streaming;
     g_streaming = false;
-    esp_err_t err = apply_camera_config_locked();
-    g_streaming = was_streaming;
+    esp_err_t err = apply_camera_config_with_fallback_locked("manual config");
+    g_streaming = was_streaming && (err == ESP_OK);
     xSemaphoreGive(g_camera_mutex);
-    if (err == ESP_OK) {
-        cdc_printf("[ModelFinetune] Camera config ok: f%d s%d\n", g_format_code, g_size_code);
-    } else {
+    if (err != ESP_OK) {
         cdc_printf("ERROR,camera_config,%s\n", esp_err_to_name(err));
     }
 }
@@ -178,7 +242,19 @@ static void handle_command(char *cmd) {
     if (!*cmd) return;
 
     if (strcasecmp(cmd, "h") == 0 || strcasecmp(cmd, "help") == 0) {
-        cdc_printf("Commands: d1/d0 stream, c capture-to-PC, w save numbered photo, usb expose MSC, f0..f3 format, s0..s5 size, reboot\n");
+        cdc_printf("Commands: d1/d0 stream, c capture-to-PC, w save numbered photo, usb expose MSC, input status, f0..f3 format, s0..s5 size, reboot\n");
+        return;
+    }
+    if (strcasecmp(cmd, "input") == 0) {
+        const InputControlsSnapshot snapshot = input_controls_get_snapshot();
+        cdc_printf("INPUT_STATUS,encoder=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,enc_level=%d,clk=%d,dt=%d\n",
+                   (long)snapshot.encoder_position,
+                   (unsigned long)snapshot.encoder_button_presses,
+                   (unsigned long)snapshot.button2_presses,
+                   snapshot.button2_level,
+                   snapshot.encoder_button_level,
+                   snapshot.encoder_clk_level,
+                   snapshot.encoder_dt_level);
         return;
     }
     if (strcasecmp(cmd, "reboot") == 0) {
@@ -234,13 +310,26 @@ static void usb_command_task(void *pv) {
     usb_cdc_msg_t msg;
     QueueHandle_t q = usb_cdc_get_queue();
     char cmd[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
+    size_t cmd_len = 0;
     while (true) {
         if (xQueueReceive(q, &msg, portMAX_DELAY) == pdTRUE && msg.buf_len > 0) {
-            size_t len = msg.buf_len;
-            if (len > CONFIG_TINYUSB_CDC_RX_BUFSIZE) len = CONFIG_TINYUSB_CDC_RX_BUFSIZE;
-            memcpy(cmd, msg.buf, len);
-            cmd[len] = '\0';
-            handle_command(cmd);
+            for (size_t i = 0; i < msg.buf_len; ++i) {
+                const char ch = static_cast<char>(msg.buf[i]);
+                if (ch == '\r' || ch == '\n') {
+                    cmd[cmd_len] = '\0';
+                    if (cmd_len > 0) {
+                        handle_command(cmd);
+                    }
+                    cmd_len = 0;
+                    continue;
+                }
+                if (cmd_len < CONFIG_TINYUSB_CDC_RX_BUFSIZE) {
+                    cmd[cmd_len++] = ch;
+                } else {
+                    cmd_len = 0;
+                    cdc_printf("ERROR,command_too_long\n");
+                }
+            }
         }
     }
 }
@@ -251,23 +340,34 @@ static void usb_command_task(void *pv) {
 static void input_controls_monitor_task(void *pv) {
     (void)pv;
     InputControlsSnapshot previous = input_controls_get_snapshot();
+    cdc_printf("INPUT_STATUS,encoder=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,enc_level=%d,clk=%d,dt=%d\n",
+               (long)previous.encoder_position,
+               (unsigned long)previous.encoder_button_presses,
+               (unsigned long)previous.button2_presses,
+               previous.button2_level,
+               previous.encoder_button_level,
+               previous.encoder_clk_level,
+               previous.encoder_dt_level);
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
         if (current.encoder_position != previous.encoder_position ||
             current.encoder_button_presses != previous.encoder_button_presses ||
-            current.button2_presses != previous.button2_presses) {
+            current.button2_presses != previous.button2_presses ||
+            current.button2_level != previous.button2_level) {
             const bool shutter_pressed = current.button2_presses != previous.button2_presses;
-            cdc_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,clk=%d,dt=%d\n",
+            cdc_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d\n",
                        (long)current.encoder_position,
                        (long)(current.encoder_position - previous.encoder_position),
                        (unsigned long)current.encoder_button_presses,
                        (unsigned long)current.button2_presses,
+                       current.button2_level,
                        current.encoder_clk_level,
                        current.encoder_dt_level);
             if (shutter_pressed) {
                 usb_cdc_msg_t msg = {};
                 msg.buf[0] = 'w';
-                msg.buf_len = 1;
+                msg.buf[1] = '\n';
+                msg.buf_len = 2;
                 msg.itf = 0;
                 QueueHandle_t q = usb_cdc_get_queue();
                 if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
@@ -291,9 +391,15 @@ extern "C" void app_main(void) {
     }
     usb_composite_init();
     photo_storage_init();
-    esp_err_t err = camera_capture_reinit((int)format_from_code(g_format_code), (int)size_from_code(g_size_code));
+    esp_err_t err = ESP_OK;
+    if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
+        err = apply_camera_config_with_fallback_locked("boot");
+        xSemaphoreGive(g_camera_mutex);
+    } else {
+        err = ESP_ERR_TIMEOUT;
+    }
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "OV2640 init failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "OV2640 init failed after fallback: %s", esp_err_to_name(err));
     }
     if (ENABLE_INPUT_CONTROLS) {
         esp_err_t in_err = input_controls_init();

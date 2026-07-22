@@ -315,24 +315,43 @@ static void usb_cdc_command_task(void *pvParameters) {
     usb_cdc_msg_t msg;
     QueueHandle_t q = usb_cdc_get_queue();
     char cmd_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
+    size_t cmd_len = 0;
 
     while (true) {
         if (xQueueReceive(q, &msg, portMAX_DELAY)) {
             if (msg.buf_len > 0) {
-                // Null-terminate the command
-                memcpy(cmd_buf, msg.buf, msg.buf_len);
-                cmd_buf[msg.buf_len] = '\0';
-
-                // Strip trailing newlines or carriage returns
-                while (msg.buf_len > 0 && (cmd_buf[msg.buf_len - 1] == '\n' || cmd_buf[msg.buf_len - 1] == '\r')) {
-                    cmd_buf[msg.buf_len - 1] = '\0';
-                    msg.buf_len--;
+                bool command_ready = false;
+                for (size_t i = 0; i < msg.buf_len; ++i) {
+                    const char ch = static_cast<char>(msg.buf[i]);
+                    if (ch == '\r' || ch == '\n') {
+                        cmd_buf[cmd_len] = '\0';
+                        command_ready = (cmd_len > 0);
+                        cmd_len = 0;
+                        break;
+                    }
+                    if (cmd_len < CONFIG_TINYUSB_CDC_RX_BUFSIZE) {
+                        cmd_buf[cmd_len++] = ch;
+                    } else {
+                        cmd_len = 0;
+                        dual_printf("ERROR,command_too_long\n");
+                    }
                 }
 
-                if (strlen(cmd_buf) == 0) continue;
+                if (!command_ready) continue;
 
                 // Parse command
-                if (strcasecmp(cmd_buf, "format") == 0) {
+                if (strcasecmp(cmd_buf, "input") == 0) {
+                    const InputControlsSnapshot snapshot = input_controls_get_snapshot();
+                    dual_printf("INPUT_STATUS,encoder=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,enc_level=%d,clk=%d,dt=%d\n",
+                                (long)snapshot.encoder_position,
+                                (unsigned long)snapshot.encoder_button_presses,
+                                (unsigned long)snapshot.button2_presses,
+                                snapshot.button2_level,
+                                snapshot.encoder_button_level,
+                                snapshot.encoder_clk_level,
+                                snapshot.encoder_dt_level);
+                }
+                else if (strcasecmp(cmd_buf, "format") == 0) {
                     // 1. Pause the camera stream FIRST to prevent Base64 text collisions!
                     bool was_streaming = streaming_mode;
                     if (was_streaming) {
@@ -771,9 +790,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                     case 'K': {
                         usb_msc_mount_to_app();
                         vTaskDelay(pdMS_TO_TICKS(50));
-                        unlink("/usb/latest.raw");
-                        unlink("/usb/latest.meta");
-                        unlink("/usb/latest.bmp");
+                        unlink("/usb/LATEST.RAW");
+                        unlink("/usb/LATEST.MET");
+                        unlink("/usb/LATEST.BMP");
                         dual_printf("[System] Cleared files in storage partition.\n");
                         usb_msc_mount_to_pc();
                         break;
@@ -863,7 +882,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                             h = atoi(h_ptr + 2);
                         } else {
                             // Default fallback sizes for latest raw and bmp files
-                            if (strstr(target_path, "latest.raw") != nullptr || strstr(target_path, "latest.bmp") != nullptr) {
+                            if (strstr(target_path, "LATEST.RAW") != nullptr || strstr(target_path, "LATEST.BMP") != nullptr) {
                                 w = 160;
                                 h = 160;
                             }
@@ -1102,24 +1121,35 @@ static esp_partition_mmap_handle_t g_model_mmap_handle = 0;
 static void input_controls_monitor_task(void *pvParameters) {
     (void)pvParameters;
     InputControlsSnapshot previous = input_controls_get_snapshot();
+    ESP_LOGI(TAG,
+             "INPUT_STATUS,encoder=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,enc_level=%d,clk=%d,dt=%d",
+             (long)previous.encoder_position,
+             (unsigned long)previous.encoder_button_presses,
+             (unsigned long)previous.button2_presses,
+             previous.button2_level,
+             previous.encoder_button_level,
+             previous.encoder_clk_level,
+             previous.encoder_dt_level);
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
         if (current.encoder_position != previous.encoder_position ||
             current.encoder_button_presses != previous.encoder_button_presses ||
-            current.button2_presses != previous.button2_presses) {
+            current.button2_presses != previous.button2_presses ||
+            current.button2_level != previous.button2_level) {
             const bool shutter_pressed = current.button2_presses != previous.button2_presses;
             ESP_LOGI(TAG,
-                     "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,clk=%d,dt=%d",
+                     "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d",
                      (long)current.encoder_position,
                      (long)(current.encoder_position - previous.encoder_position),
                      (unsigned long)current.encoder_button_presses,
                      (unsigned long)current.button2_presses,
+                     current.button2_level,
                      current.encoder_clk_level,
                      current.encoder_dt_level);
             if (shutter_pressed) {
                 usb_cdc_msg_t msg = {};
                 char cmd[32];
-                snprintf(cmd, sizeof(cmd), "cbtn%lu", (unsigned long)current.button2_presses);
+                snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
                 msg.buf_len = strlen(cmd);
                 memcpy(msg.buf, cmd, msg.buf_len);
                 msg.buf[msg.buf_len] = '\0';

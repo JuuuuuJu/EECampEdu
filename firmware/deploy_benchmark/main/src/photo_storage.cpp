@@ -12,9 +12,9 @@
 
 static const char *TAG = "PHOTO_STORAGE";
 
-static constexpr const char *FILE_PATH_RAW = "/usb/latest.raw";
-static constexpr const char *FILE_PATH_META = "/usb/latest.meta";
-static constexpr const char *FILE_PATH_BMP = "/usb/latest.bmp";
+static constexpr const char *FILE_PATH_RAW = "/usb/LATEST.RAW";
+static constexpr const char *FILE_PATH_META = "/usb/LATEST.MET";
+static constexpr const char *FILE_PATH_BMP = "/usb/LATEST.BMP";
 
 esp_err_t photo_storage_init() {
     // Initialization is handled by usb_composite_init() in app_main.cpp

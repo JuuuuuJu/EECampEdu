@@ -141,10 +141,11 @@ esp_err_t camera_capture_reinit(int format_val, int framesize_val) {
     pixformat_t format = (pixformat_t)format_val;
     framesize_t size = (framesize_t)framesize_val;
 
-    // if (size >= FRAMESIZE_VGA && format != PIXFORMAT_JPEG) {
-    //     ESP_LOGE(TAG, "ERROR: Raw formats at VGA and higher resolutions are disabled to prevent DRAM overflow crashes.");
-    //     return ESP_ERR_INVALID_ARG;
-    // }
+    if (size >= FRAMESIZE_VGA && format != PIXFORMAT_JPEG) {
+        ESP_LOGE(TAG, "Safety lock: raw formats at VGA and higher resolutions are disabled to prevent memory pressure (format=%s size=%d).",
+                 format_name(format), (int)size);
+        return ESP_ERR_INVALID_ARG;
+    }
 
     if (g_camera_initialized && g_current_format == format && g_current_size == size) {
         return ESP_OK; // Re-configuration already active; bypass.

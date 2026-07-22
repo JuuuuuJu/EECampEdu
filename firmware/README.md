@@ -222,7 +222,7 @@ When `camera_controller.py` receives `RESULT,...` from main board, it forwards `
 constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraFlash;
 ```
 
-This mode owns the camera task, captures grayscale QVGA frames, writes `latest.raw/latest.meta` to `/usb`, resizes to model input, then runs inference.
+This mode owns the camera task, captures grayscale QVGA frames, writes `LATEST.RAW/LATEST.MET` to `/usb`, resizes to model input, then runs inference.
 
 ### Camera USB/MSC Mode
 
@@ -246,8 +246,8 @@ MSC exposes the FAT storage partition to the PC as a USB drive. This is frame-by
 Current flash-storage output:
 
 ```text
-/usb/latest.raw
-/usb/latest.meta
+/usb/LATEST.RAW
+/usb/LATEST.MET
 ```
 
-`latest.bmp` is intentionally not generated in the firmware hot path. Raw payload and metadata are enough for firmware tests, and avoiding BMP conversion keeps storage writes deterministic.
+`LATEST.BMP` is intentionally not generated in the firmware hot path. Raw payload and metadata are enough for firmware tests, and avoiding BMP conversion keeps storage writes deterministic.

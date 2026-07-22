@@ -195,16 +195,22 @@ QueueHandle_t usb_cdc_get_queue() {
     return usb_cdc_queue;
 }
 
-void usb_msc_mount_to_app() {
-    if (storage_hdl) {
-        tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_APP);
+esp_err_t usb_msc_mount_to_app() {
+    if (!storage_hdl) {
+        ESP_LOGE(TAG, "MSC storage handle is not initialized.");
+        return ESP_ERR_INVALID_STATE;
     }
+    tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_APP);
+    return ESP_OK;
 }
 
-void usb_msc_mount_to_pc() {
-    if (storage_hdl) {
-        tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_USB);
+esp_err_t usb_msc_mount_to_pc() {
+    if (!storage_hdl) {
+        ESP_LOGE(TAG, "MSC storage handle is not initialized.");
+        return ESP_ERR_INVALID_STATE;
     }
+    tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_USB);
+    return ESP_OK;
 }
 
 bool usb_cdc_is_connected() {

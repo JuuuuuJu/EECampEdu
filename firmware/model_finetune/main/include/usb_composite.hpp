@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "sdkconfig.h"
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,10 +34,10 @@ void usb_cdc_write_base64(const uint8_t *data, size_t length);
 QueueHandle_t usb_cdc_get_queue();
 
 // Reclaim storage back to APP side (mounts FATFS locally)
-void usb_msc_mount_to_app();
+esp_err_t usb_msc_mount_to_app();
 
 // Expose storage to host PC side (Windows USB mount)
-void usb_msc_mount_to_pc();
+esp_err_t usb_msc_mount_to_pc();
 
 // Check if CDC client is connected (monitoring DTR/RTS)
 bool usb_cdc_is_connected();

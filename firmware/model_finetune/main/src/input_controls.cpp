@@ -18,7 +18,10 @@ static volatile int32_t g_encoder_position = 0;
 static volatile uint32_t g_encoder_button_presses = 0;
 static volatile uint32_t g_button2_presses = 0;
 static volatile TickType_t g_last_encoder_button_tick = 0;
-static volatile TickType_t g_last_button2_tick = 0;
+static int g_button2_idle_level = 1;
+static int g_button2_last_level = 1;
+static TickType_t g_button2_last_change_tick = 0;
+static bool g_button2_pressed_latched = false;
 static volatile TickType_t g_last_detent_tick = 0;
 static bool g_initialized = false;
 
@@ -93,15 +96,6 @@ static void IRAM_ATTR encoder_button_isr(void *arg) {
     portEXIT_CRITICAL_ISR(&g_input_mux);
 }
 
-static void IRAM_ATTR button2_isr(void *arg) {
-    (void)arg;
-    portENTER_CRITICAL_ISR(&g_input_mux);
-    if (debounce_from_isr(&g_last_button2_tick)) {
-        g_button2_presses = g_button2_presses + 1;
-    }
-    portEXIT_CRITICAL_ISR(&g_input_mux);
-}
-
 static esp_err_t configure_input_gpio(int gpio, gpio_int_type_t interrupt_type) {
     if (!is_valid_gpio(gpio)) {
         return ESP_OK;
@@ -133,7 +127,7 @@ esp_err_t input_controls_init() {
     if (err != ESP_OK) {
         return err;
     }
-    err = configure_input_gpio(INPUT_BUTTON2_GPIO, GPIO_INTR_NEGEDGE);
+    err = configure_input_gpio(INPUT_BUTTON2_GPIO, GPIO_INTR_DISABLE);
     if (err != ESP_OK) {
         return err;
     }
@@ -144,6 +138,12 @@ esp_err_t input_controls_init() {
     }
 
     g_prev_ab = read_ab_state();
+    if (is_valid_gpio(INPUT_BUTTON2_GPIO)) {
+        g_button2_last_level = gpio_get_level(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO));
+    }
+    g_button2_last_change_tick = xTaskGetTickCount();
+    g_button2_idle_level = g_button2_last_level;
+    g_button2_pressed_latched = false;
 
     err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_ENCODER_CLK_GPIO), encoder_rotate_isr, nullptr);
     if (err != ESP_OK) {
@@ -156,12 +156,6 @@ esp_err_t input_controls_init() {
     err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_ENCODER_BUTTON_GPIO), encoder_button_isr, nullptr);
     if (err != ESP_OK) {
         return err;
-    }
-    if (is_valid_gpio(INPUT_BUTTON2_GPIO)) {
-        err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO), button2_isr, nullptr);
-        if (err != ESP_OK) {
-            return err;
-        }
     }
 
     g_initialized = true;
@@ -190,5 +184,24 @@ InputControlsSnapshot input_controls_get_snapshot() {
     snapshot.button2_level = is_valid_gpio(INPUT_BUTTON2_GPIO)
                                  ? gpio_get_level(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO))
                                  : -1;
+
+    if (is_valid_gpio(INPUT_BUTTON2_GPIO)) {
+        const TickType_t now = xTaskGetTickCount();
+        if (snapshot.button2_level != g_button2_last_level) {
+            g_button2_last_level = snapshot.button2_level;
+            g_button2_last_change_tick = now;
+        } else if ((now - g_button2_last_change_tick) > pdMS_TO_TICKS(INPUT_DEBOUNCE_MS)) {
+            const bool active = snapshot.button2_level != g_button2_idle_level;
+            if (active && !g_button2_pressed_latched) {
+                portENTER_CRITICAL(&g_input_mux);
+                g_button2_presses = g_button2_presses + 1;
+                snapshot.button2_presses = g_button2_presses;
+                portEXIT_CRITICAL(&g_input_mux);
+                g_button2_pressed_latched = true;
+            } else if (!active) {
+                g_button2_pressed_latched = false;
+            }
+        }
+    }
     return snapshot;
 }

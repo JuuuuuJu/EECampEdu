@@ -709,9 +709,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                     case 'K': {
                         usb_msc_mount_to_app();
                         vTaskDelay(pdMS_TO_TICKS(50));
-                        unlink("/usb/latest.raw");
-                        unlink("/usb/latest.meta");
-                        unlink("/usb/latest.bmp");
+                        unlink("/usb/LATEST.RAW");
+                        unlink("/usb/LATEST.MET");
+                        unlink("/usb/LATEST.BMP");
                         dual_printf("[System] Cleared files in storage partition.\n");
                         usb_msc_mount_to_pc();
                         break;
@@ -801,7 +801,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                             h = atoi(h_ptr + 2); 
                         } else {
                             // Default fallback sizes for latest raw and bmp files
-                            if (strstr(target_path, "latest.raw") != nullptr || strstr(target_path, "latest.bmp") != nullptr) {
+                            if (strstr(target_path, "LATEST.RAW") != nullptr || strstr(target_path, "LATEST.BMP") != nullptr) {
                                 w = 160;
                                 h = 160;
                             }
