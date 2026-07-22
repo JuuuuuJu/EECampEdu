@@ -1806,19 +1806,24 @@ function handleShutterButton(line){
   if(camUi === MODEL_CAMERA_UI){
     handleModelPhysicalShutter();
   } else if(camUi === FULL_CAMERA_UI){
-    setMsg("fullCameraMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
+    setMsg("fullCameraMsg", "Physical shutter pressed: ESP saved the photo to flash. Mount MSC once when you want to view it on the PC.", "ok");
   } else if(camUi === USBCAM_UI){
-    setMsg("usbCamCmdMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
+    setMsg("usbCamCmdMsg", "Physical shutter pressed: ESP saved the photo to flash. Mount MSC once when you want to view it on the PC.", "ok");
   }
 }
 async function handleModelPhysicalShutter(){
   const className = selectedCaptureClass();
   if(!className){
-    setMsg("captureMsg", "Physical shutter pressed: ESP saved the photo to flash. No class selected, so dataset was not updated.", "ok");
+    try {
+      await serialSend(`wbtn${shutterLink.button2}\n`);
+      setMsg("captureMsg", "Physical shutter pressed: no class selected, so the frame was saved to ESP flash only. Send 'usb' / mount MSC once to view it on the PC.", "ok");
+    } catch(e){
+      setMsg("captureMsg", "Physical shutter pressed, but ESP flash save command failed: "+e.message, "bad");
+    }
     return;
   }
   if(!latestCameraFrame){
-    setMsg("captureMsg", "Physical shutter pressed: ESP saved the photo to flash. Waiting for a preview frame before dataset save.", "warn");
+    setMsg("captureMsg", "Physical shutter pressed. Waiting for a preview frame before dataset save.", "warn");
     return;
   }
   await saveCurrentFrameToDataset({source:"physical_shutter"});

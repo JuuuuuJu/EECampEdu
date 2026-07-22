@@ -386,7 +386,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         }
                         
                         vTaskDelay(pdMS_TO_TICKS(100));
-                        usb_msc_mount_to_pc();
+                        dual_printf("[System] Photo stored on ESP flash. Send 'usb' once when you want to view files on the PC.\n");
                         if (was_streaming) streaming_mode = true;
                         break;
                     }

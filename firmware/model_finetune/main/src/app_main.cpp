@@ -199,7 +199,7 @@ static esp_err_t capture_once(bool send_to_pc, bool save_to_storage) {
                     cdc_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(err), photo_storage_last_error());
                 }
             }
-            (void)usb_msc_mount_to_pc();
+            cdc_printf("[ModelFinetune] Capture stored on ESP flash. Send 'usb' once when you want to view files on the PC.\n");
         }
         camera_capture_release(&frame);
     } else {
@@ -380,17 +380,7 @@ static void input_controls_monitor_task(void *pv) {
                        current.encoder_clk_level,
                        current.encoder_dt_level);
             if (shutter_pressed) {
-                usb_cdc_msg_t msg = {};
-                msg.buf[0] = 'w';
-                msg.buf[1] = '\n';
-                msg.buf_len = 2;
-                msg.itf = 0;
-                QueueHandle_t q = usb_cdc_get_queue();
-                if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
-                    cdc_printf("ERROR,physical_shutter_queue_full\n");
-                } else {
-                    cdc_printf("[ModelFinetune] Physical shutter queued: save photo to ESP flash.\n");
-                }
+                cdc_printf("[ModelFinetune] Physical shutter pressed.\n");
             }
             previous = current;
         }

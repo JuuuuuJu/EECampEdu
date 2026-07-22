@@ -191,7 +191,8 @@ static bool save_photo96_bmp(const uint8_t *full_gray, int w, int h, const char 
     bmp_put_u16le(hdr + 28, 8);               // bits per pixel
     bmp_put_u32le(hdr + 34, pixels);          // image size
     bmp_put_u32le(hdr + 46, 256);             // colours used
-    bmp_put_u32le(hdr + 50, 256);             // important colours    (void)ts;
+    bmp_put_u32le(hdr + 50, 256);             // important colours
+    (void)ts;
     const char *photo_dir = "/usb/main_inference";
     if (mkdir(photo_dir, 0775) != 0 && errno != EEXIST) {
         dual_printf("ERROR: could not create %s for 96x96 photos: errno=%d (%s)\n", photo_dir, errno, strerror(errno));
@@ -205,7 +206,8 @@ static bool save_photo96_bmp(const uint8_t *full_gray, int w, int h, const char 
             found_path = true;
             break;
         }
-    }    if (!found_path) {
+    }
+    if (!found_path) {
         dual_printf("ERROR: no available 96x96 photo filename\n");
         return false;
     }
