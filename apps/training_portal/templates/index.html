@@ -19,24 +19,32 @@
     --shadow:0 12px 30px rgba(15,23,42,.08);
   }
   :root[data-theme="contrast"] {
-    --bg:#000000; --panel:#000000; --panel2:#0c0c0c; --text:#ffffff; --muted:#d7d7d7;
-    --accent:#ffff00; --accent-text:#000000; --ok:#00ff66; --bad:#ff7a7a; --warn:#ffd000;
-    --border:#6fc3df; --logbg:#000000; --logtext:#ffffff; --editor:#000000; --editor-line:#1a1a1a;
+    --bg:#000000; --panel:#000000; --panel2:#050505; --text:#ffffff; --muted:#a8a8a8;
+    --accent:#007acc; --accent-text:#ffffff; --ok:#6a9955; --bad:#f48771; --warn:#dcdcaa;
+    --border:#00ffff; --logbg:#000000; --logtext:#ffffff; --editor:#000000; --editor-line:#003b49;
     --shadow:none;
   }
   :root[data-theme="solarized"] {
-    --bg:#002b36; --panel:#073642; --panel2:#0d4450; --text:#eee8d5; --muted:#93a1a1;
-    --accent:#2aa198; --accent-text:#002b36; --ok:#859900; --bad:#dc322f; --warn:#b58900;
-    --border:#586e75; --logbg:#001f27; --logtext:#eee8d5; --editor:#002b36; --editor-line:#073642;
-    --shadow:0 14px 40px rgba(0,0,0,.2);
+    --bg:#fdf6e3; --panel:#fff9e8; --panel2:#eee8d5; --text:#586e75; --muted:#839496;
+    --accent:#268bd2; --accent-text:#fdf6e3; --ok:#859900; --bad:#dc322f; --warn:#b58900;
+    --border:#d8cfb5; --logbg:#eee8d5; --logtext:#586e75; --editor:#fdf6e3; --editor-line:#eee8d5;
+    --shadow:0 10px 24px rgba(101, 86, 38, .12);
   }
   :root[data-theme="contrast"] .card, :root[data-theme="contrast"] input,
   :root[data-theme="contrast"] select, :root[data-theme="contrast"] textarea,
-  :root[data-theme="contrast"] .topbar nav button { border-width:2px; }
+  :root[data-theme="contrast"] .topbar nav button, :root[data-theme="contrast"] .toplink { border-width:2px; }
+  :root[data-theme="contrast"] body { background:#000000; }
+  :root[data-theme="contrast"] .topbar { border-bottom-color:#00ffff; }
+  :root[data-theme="contrast"] .topbar nav button.active { background:#000000; color:#ffffff; border-color:#ffcc00; box-shadow:0 0 0 1px #ffcc00 inset; }
+  :root[data-theme="solarized"] body { background:#fdf6e3; }
+  :root[data-theme="solarized"] .topbar { background:#eee8d5; }
+  :root[data-theme="solarized"] .topbar nav button.active { background:#e6dcc3; color:#586e75; border-color:#b58900; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
          background:radial-gradient(circle at top left, rgba(49,215,255,.08), transparent 28%), var(--bg);
          color:var(--text); line-height:1.55; font-size:16px; letter-spacing:.005em; }
+  html[data-theme="contrast"] body { background:#000000; }
+  html[data-theme="solarized"] body { background:#fdf6e3; }
   .topbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:13px 22px;
     background:rgba(17,24,39,.92); background:color-mix(in srgb, var(--panel) 92%, transparent);
     border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; backdrop-filter:blur(12px); }
@@ -54,11 +62,10 @@
   .topbar select { width:auto; padding:6px 9px; }
   .topbar form { margin:0; }
   .topbar .right button { margin:0; padding:7px 12px; }
-  .account-menu { position:relative; }
-  .account-menu summary { list-style:none; cursor:pointer; color:var(--muted); font-size:14px; }
-  .account-menu summary::-webkit-details-marker { display:none; }
-  .account-panel { position:absolute; right:0; top:34px; width:min(320px, 92vw); padding:14px; background:var(--panel);
-    border:1px solid var(--border); border-radius:9px; box-shadow:var(--shadow); z-index:40; }
+  .toplink { display:inline-flex; align-items:center; min-height:36px; color:var(--text); text-decoration:none;
+    font-size:14px; font-weight:800; padding:7px 13px; border-radius:7px; border:1px solid var(--border);
+    background:var(--panel2); box-shadow:0 1px 0 color-mix(in srgb, var(--text) 8%, transparent) inset; }
+  .toplink:hover { color:var(--accent-text); border-color:var(--accent); background:var(--accent); font-family:Consolas, 'Courier New', monospace; }
   main { width:100%; max-width:1360px; margin:0 auto; padding:22px 22px 56px; }
   .pane { display:none; } .pane.active { display:block; }
   .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:18px; align-items:start; }
@@ -123,23 +130,14 @@
   <div class="right">
     <label style="margin:0;color:var(--muted);font-size:12px">Theme
       <select id="themeSelect" title="Display theme" style="margin-left:4px">
-        <option value="dark">Dark modern</option><option value="light">Light</option><option value="contrast">High contrast</option><option value="solarized">Solarized</option>
+        <option value="dark">Dark modern</option><option value="light">Light</option><option value="contrast">Dark high contrast</option><option value="solarized">Solarized light</option>
       </select>
     </label>
     <label style="margin:0;color:var(--muted);font-size:12px" title="Baud rate for all Web Serial flashing (model + firmware). ROM sync stays 115200; lower this if flashing is unreliable.">Flash baud
-      <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800" selected>460800</option><option value="921600">921600</option></select>
+      <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800">460800</option><option value="921600" selected>921600</option></select>
     </label>
         <span class="team">Team <b>{{ team }}</b></span>
-    <details class="account-menu">
-      <summary>Account</summary>
-      <div class="account-panel">
-        <label>Current password</label><input type="password" id="currentPassword" autocomplete="current-password" />
-        <label>New password</label><input type="password" id="newPassword" autocomplete="new-password" />
-        <label>Confirm new password</label><input type="password" id="confirmPassword" autocomplete="new-password" />
-        <button class="secondary" id="changePasswordBtn" type="button">Change password</button>
-        <div class="msg" id="passwordMsg"></div>
-      </div>
-    </details>
+    <a class="toplink" href="/account">Account settings</a>
     <form method="post" action="/logout"><button class="secondary">Logout</button></form>
   </div>
 </header>
@@ -572,6 +570,21 @@
     </div>
   </section>
 
+  <!-- ==================== ACCOUNT ==================== -->
+  <section class="pane" id="pane-account">
+    <div class="card" style="max-width:560px">
+      <h2>Account settings</h2>
+      <p class="note">Change the password for <b>{{ team }}</b>. The new password is stored on this AI PC runtime folder and is not committed to git.</p>
+      <label>Current password</label>
+      <input type="password" id="currentPassword" autocomplete="current-password" />
+      <label>New password</label>
+      <input type="password" id="newPassword" autocomplete="new-password" />
+      <label>Confirm new password</label>
+      <input type="password" id="confirmPassword" autocomplete="new-password" />
+      <button id="changePasswordBtn" type="button">Change password</button>
+      <div class="msg" id="passwordMsg"></div>
+    </div>
+  </section>
   <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div id="sharedJobPanels">
     <div class="card">
@@ -625,9 +638,28 @@ async function api(path, opts){
   return body!=null?body:{};
 }
 
+function initPasswordForm(){
+  const btn = $("changePasswordBtn");
+  if(!btn) return;
+  btn.onclick = async () => {
+    const current = $("currentPassword")?.value || "";
+    const next = $("newPassword")?.value || "";
+    const confirm = $("confirmPassword")?.value || "";
+    if(!current || !next || !confirm){ setMsg("passwordMsg", "Fill in all password fields.", "bad"); return; }
+    if(next !== confirm){ setMsg("passwordMsg", "New passwords do not match.", "bad"); return; }
+    btn.disabled = true;
+    setMsg("passwordMsg", "Updating password...", "warn");
+    try {
+      await api("/api/change-password", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({current_password:current, new_password:next, confirm_password:confirm})});
+      ["currentPassword","newPassword","confirmPassword"].forEach(id=>{ if($(id)) $(id).value=""; });
+      setMsg("passwordMsg", "Password updated.", "ok");
+    } catch(e){ setMsg("passwordMsg", "Change failed: "+e.message, "bad"); }
+    finally { btn.disabled = false; }
+  };
+}
 // ---------- topic routes ----------
-const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/":"model"};
-const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive"};
+const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/account":"account", "/":"model"};
+const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive", account:"/account"};
 function activateTopic(topic, push){
   topic = topic || "model";
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
@@ -642,7 +674,7 @@ function activateTopic(topic, push){
   if(topic==="drive") loadDrive();
 
   const panels = $("sharedJobPanels");
-  if(panels) panels.style.display = (topic === "camerausb" || topic === "drive") ? "none" : "block";
+  if(panels) panels.style.display = (topic === "camerausb" || topic === "drive" || topic === "account") ? "none" : "block";
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -652,6 +684,7 @@ function initTabs(){
 
 async function init(){
   initTheme();
+  initPasswordForm();
   initTabs();
   try { const h = await api("/api/health"); } catch(e){}
   const r = await api("/api/recipes");
@@ -664,14 +697,14 @@ async function init(){
 }
 // ---------- theme selector (dark / light / high-contrast; persisted) ----------
 function applyTheme(name){
-  const t = ["dark","light","contrast","solarized"].includes(name) ? name : "dark";
+  const t = ["dark","light","contrast","solarized"].includes(name) ? name : "light";
   document.documentElement.setAttribute("data-theme", t);
   try { localStorage.setItem("eecampTheme", t); } catch(e){}
   if($("themeSelect")) $("themeSelect").value = t;
 }
 function initTheme(){
-  let saved = "dark";
-  try { saved = localStorage.getItem("eecampTheme") || "dark"; } catch(e){}
+  let saved = "light";
+  try { saved = localStorage.getItem("eecampTheme") || "light"; } catch(e){}
   applyTheme(saved);
   if($("themeSelect")) $("themeSelect").onchange = (e)=>applyTheme(e.target.value);
 }
@@ -1107,11 +1140,11 @@ function withTimeout(p, ms, m){ let t; return Promise.race([p, new Promise((_,re
 function serialTroubleshoot(){ return "Board not responding. Checklist: (1) Chrome/Edge over HTTPS or localhost; (2) close other serial monitors (Arduino/idf.py monitor/PuTTY); (3) hold BOOT, click connect, tap RESET/EN, release BOOT after ~1s; (4) use a data USB cable."; }
 function webSerialSupport(){ if(navigator.serial) return {ok:true}; if(!window.isSecureContext) return {ok:false,reason:"insecure-http"}; return {ok:false,reason:"unsupported-browser"}; }
 // Flashing write baud from the header selector, applied to every flash flow
-// (model partition + firmware). ROM sync always stays at 115200. Safe default 460800.
+// (model partition + firmware). ROM sync always stays at 115200. Default 921600.
 const FLASH_BAUDS = [115200, 230400, 460800, 921600];
 function flashBaudValue(){
-  const v = parseInt(($("flashBaud") && $("flashBaud").value) || "460800", 10);
-  return FLASH_BAUDS.includes(v) ? v : 460800;
+  const v = parseInt(($("flashBaud") && $("flashBaud").value) || "921600", 10);
+  return FLASH_BAUDS.includes(v) ? v : 921600;
 }
 function makeTerminal(logId,onLine){ return { clean(){ const el=$(logId); if(el) el.textContent=""; },
   writeLine(d){ appendLog(logId,d+"\n"); if(onLine) onLine(d); }, write(d){ appendLog(logId,d); if(onLine) onLine(d); } }; }
@@ -1173,6 +1206,7 @@ let camAsm = { receiving:false, lines:[], meta:{} };   // OV2640 frame assembler
 // reports "INPUT_CONTROL,encoder=N,..."; each detent nudges manual exposure by 10
 // (0..1200) and switches AEC to manual. Reset on every camera connect.
 let encLink = { synced:false, pos:0, aecEnabled:true, aecValue:300 };
+let shutterLink = { synced:false, button2:0 };
 // Board photo storage (flash): CDC download assembler + list capture, separate
 // from the live CDC preview stream above.
 let fileAsm = { receiving:false, lines:[], size:0, path:"" };
@@ -1342,7 +1376,7 @@ async function espConnect({ terminal, statusEl, logId }){
     setMsg($(statusEl), "Opening serial chooser…", "warn");
     const port = await navigator.serial.requestPort();         // user gesture
     Serial.port = port; Serial.mode = "flash"; Serial.logId = logId;
-    const flashBaud = flashBaudValue();                        // header selector; default 460800
+    const flashBaud = flashBaudValue();                        // header selector; default 921600
     appendLog(logId, `\n[portal] flash baud ${flashBaud} (ROM sync 115200)\n`);
     Serial.transport = new Transport(port, true);
     Serial.loader = new ESPLoader({ transport: Serial.transport, baudrate: flashBaud, romBaudrate: 115200, terminal });
@@ -1539,7 +1573,7 @@ function cameraOnLine(rawLine){
     updateGestureResult(line);
   } else if(line.indexOf("INPUT_CONTROL,") >= 0){
     appendLog(camUi.logId, line + "\n");
-    handleEncoderExposure(line);
+    handleInputControl(line);
   } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP|System|Streaming|SETTING|OK|FILE|Total|^-|^\s*-|---/i.test(line)){
     appendLog(camUi.logId, line + "\n");
   }
@@ -1581,6 +1615,35 @@ function downloadPhoto(name){
   if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }
   setMsg($("usbCamCmdMsg"), "Downloading "+name+" over CDC…", "warn");
   cameraWrite("r "+name);
+}
+function parseInputControl(line){
+  const out = {};
+  line.split(",").slice(1).forEach(part=>{
+    const i = part.indexOf("=");
+    if(i > 0) out[part.slice(0,i)] = part.slice(i+1);
+  });
+  return out;
+}
+function handleInputControl(line){
+  handleEncoderExposure(line);
+  handleShutterButton(line);
+}
+function handleShutterButton(line){
+  const fields = parseInputControl(line);
+  const count = Number(fields.button2);
+  if(!Number.isFinite(count)) return;
+  if(!shutterLink.synced){ shutterLink.button2 = count; shutterLink.synced = true; return; }
+  if(count <= shutterLink.button2) return;
+  shutterLink.button2 = count;
+  // The physical shutter is handled by firmware: model demo and main board save
+  // the captured photo to ESP flash. The portal only reports the event.
+  if(camUi === MODEL_CAMERA_UI){
+    setMsg("captureMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
+  } else if(camUi === FULL_CAMERA_UI){
+    setMsg("fullCameraMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
+  } else if(camUi === USBCAM_UI){
+    setMsg("usbCamCmdMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
+  }
 }
 // Map encoder detents from an INPUT_CONTROL line to OV2640 manual exposure.
 // Only active on the camera+USB page, where exposure controls exist.
@@ -1624,6 +1687,7 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     fileAsm = { receiving:false, lines:[], size:0, path:"" };
     photoListCapture = false; photoListBuf = [];
     encLink = { synced:false, pos:0, aecEnabled:true, aecValue:300 };
+    shutterLink = { synced:false, button2:0 };
     await serialOpenRaw({ logId:camUi.logId, baudRate:115200, bufferSize:1048576, onLine:cameraOnLine });
     if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
     if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;

@@ -28,7 +28,7 @@ constexpr bool ENABLE_INPUT_CONTROLS = true;
 constexpr int INPUT_ENCODER_CLK_GPIO = 21;
 constexpr int INPUT_ENCODER_DT_GPIO = 47;
 constexpr int INPUT_ENCODER_BUTTON_GPIO = 48;
-constexpr int INPUT_BUTTON2_GPIO = -1;
+constexpr int INPUT_BUTTON2_GPIO = 39;
 constexpr int INPUT_DEBOUNCE_MS = 60;
 // Mechanical detents usually take 4 quadrature steps; ignore extras shortly after a detent.
 constexpr int INPUT_ENCODER_STEPS_PER_DETENT = 2;

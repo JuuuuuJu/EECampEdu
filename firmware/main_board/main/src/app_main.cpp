@@ -98,10 +98,10 @@ static void dual_printf(const char *format, ...) {
     va_start(args, format);
     vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
-    
+
     printf("%s", buffer);
     fflush(stdout);
-    
+
     usb_cdc_printf("%s", buffer);
 }
 
@@ -112,7 +112,7 @@ static void send_frame_to_pc(const CameraFrame &frame) {
     if (frame.format == CameraFrameFormat::kGrayscale) py_fmt = 3;
     else if (frame.format == CameraFrameFormat::kRgb565) py_fmt = 0;
     else if (frame.format == CameraFrameFormat::kYuv422) py_fmt = 1;
-    
+
     usb_cdc_printf("---START_IMAGE:%d:%d:%d:%d---\n", py_fmt, frame.width, frame.height, (int)frame.size);
     usb_cdc_write_base64(frame.data, frame.size);
     usb_cdc_printf("---END_IMAGE---\n");
@@ -122,17 +122,17 @@ static void usb_list_files() {
     usb_cdc_printf("\n--- LOCAL FLASH FILE LIST ---\n");
     usb_msc_mount_to_app();
     vTaskDelay(pdMS_TO_TICKS(50)); // Wait for VFS mount
-    
+
     DIR *dir = opendir("/usb");
     if (!dir) {
         usb_cdc_printf("ERROR: Failed to open root directory.\n");
         return;
     }
-    
+
     struct dirent *entry;
     int count = 0;
     size_t total_size = 0;
-    
+
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_type != DT_DIR) {
             char filepath[512];
@@ -208,7 +208,7 @@ static bool save_photo96_bmp(const uint8_t *full_gray, int w, int h, const char 
 static void camera_stream_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "Camera stream task started.");
-    
+
     while (true) {
         if (streaming_mode) {
             if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -315,22 +315,22 @@ static void usb_cdc_command_task(void *pvParameters) {
     usb_cdc_msg_t msg;
     QueueHandle_t q = usb_cdc_get_queue();
     char cmd_buf[CONFIG_TINYUSB_CDC_RX_BUFSIZE + 1];
-    
+
     while (true) {
         if (xQueueReceive(q, &msg, portMAX_DELAY)) {
             if (msg.buf_len > 0) {
                 // Null-terminate the command
                 memcpy(cmd_buf, msg.buf, msg.buf_len);
                 cmd_buf[msg.buf_len] = '\0';
-                
+
                 // Strip trailing newlines or carriage returns
                 while (msg.buf_len > 0 && (cmd_buf[msg.buf_len - 1] == '\n' || cmd_buf[msg.buf_len - 1] == '\r')) {
                     cmd_buf[msg.buf_len - 1] = '\0';
                     msg.buf_len--;
                 }
-                
+
                 if (strlen(cmd_buf) == 0) continue;
-                
+
                 // Parse command
                 if (strcasecmp(cmd_buf, "format") == 0) {
                     // 1. Pause the camera stream FIRST to prevent Base64 text collisions!
@@ -350,11 +350,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                     if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                         esp_camera_deinit();
                     }
-                    
+
                     // 3. Take back the USB drive and WAIT for the transition!
                     usb_msc_mount_to_app();
                     vTaskDelay(pdMS_TO_TICKS(500));
-                    
+
                     // 4. Forcefully erase the raw flash partition
                     const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, NULL);
                     if (part != nullptr) {
@@ -369,17 +369,17 @@ static void usb_cdc_command_task(void *pvParameters) {
                     } else {
                         dual_printf("ERROR: Could not find FAT partition in partition table!\n");
                     }
-                    
+
                     // 5. Recover state if format failed
                     camera_capture_init();
                     xSemaphoreGive(camera_mutex); // Give mutex back
-                    
+
                     if (was_streaming) {
                         streaming_mode = true;
                     }
                     continue;
                 }
-                
+
                if (strcasecmp(cmd_buf, "usb") == 0) {
                     // 1. Pause the stream safely FIRST to avoid text collision in the JPEG!
                     bool was_streaming = streaming_mode;
@@ -397,19 +397,19 @@ static void usb_cdc_command_task(void *pvParameters) {
                     usb_msc_mount_to_pc();
                     continue;
                 }
-                
+
                 char action = cmd_buf[0];
                 const char *argStr = cmd_buf + 1;
                 while (*argStr == ' ' || *argStr == '\t') {
                     argStr++;
                 }
                 int val = atoi(argStr);
-                
+
                 bool lock_acquired = false;
                 char act_upper = (action >= 'a' && action <= 'z') ? (action - 'a' + 'A') : action;
-                if (act_upper == 'E' || act_upper == 'G' || act_upper == 'V' || 
-                    act_upper == 'A' || act_upper == 'B' || act_upper == 'T' || 
-                    act_upper == 'X' || act_upper == 'M' || act_upper == 'P' || 
+                if (act_upper == 'E' || act_upper == 'G' || act_upper == 'V' ||
+                    act_upper == 'A' || act_upper == 'B' || act_upper == 'T' ||
+                    act_upper == 'X' || act_upper == 'M' || act_upper == 'P' ||
                     act_upper == 'Y') {
                     if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                         lock_acquired = true;
@@ -429,7 +429,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                                 streaming_mode = false;
                                 xSemaphoreGive(camera_mutex);
                             }
-                            vTaskDelay(pdMS_TO_TICKS(100)); 
+                            vTaskDelay(pdMS_TO_TICKS(100));
                         }
 
                         // 2. Prepare USB drive
@@ -437,11 +437,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                         vTaskDelay(pdMS_TO_TICKS(500));
 
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                            
+
                             // Flush one stale buffer
                             camera_fb_t *dummy = esp_camera_fb_get();
                             if (dummy) esp_camera_fb_return(dummy);
-                            
+
                             // Capture the real, clean frame
                             camera_fb_t *fb = esp_camera_fb_get();
                             if (!fb) {
@@ -450,7 +450,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                             } else {
                                 size_t data_len = fb->len;
                                 uint8_t *temp_buf = (uint8_t*)malloc(data_len);
-                                
+
                                 if (!temp_buf) {
                                     dual_printf("ERROR: Failed to allocate %d bytes for capture.\n", (int)data_len);
                                     esp_camera_fb_return(fb);
@@ -458,24 +458,24 @@ static void usb_cdc_command_task(void *pvParameters) {
                                 } else {
                                     // Copy data safely out of camera DMA space
                                     memcpy(temp_buf, fb->buf, data_len);
-                                    
+
                                     int fmt = fb->format;
                                     int w = fb->width;
                                     int h = fb->height;
-                                    
+
                                     // CRITICAL FIX: Release hardware lock BEFORE doing heavy file I/O or Inference!
                                     esp_camera_fb_return(fb);
-                                    xSemaphoreGive(camera_mutex); 
+                                    xSemaphoreGive(camera_mutex);
 
                                     // --- PART A: Save Original Image (Like 'w' command) ---
                                     const char *ext = "bin";
                                     if (fmt == PIXFORMAT_JPEG) ext = "jpg";
                                     else if (fmt == PIXFORMAT_GRAYSCALE) ext = "gray";
                                     else if (fmt == PIXFORMAT_RGB565) ext = "rgb565";
-                                    
+
                                     // argStr contains the timestamp from Python
                                     const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
-                                    
+
                                     char filepath[1024];
                                     snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
                                                 ts, (int)fb->format, fb->width, fb->height, ext);
@@ -491,7 +491,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     if (allocate_frame_buffers()) {
                                         bool success = false;
                                         uint8_t *full_gray_buf = (uint8_t*)malloc(w * h);
-                                        
+
                                         if (full_gray_buf) {
                                             if (fmt == PIXFORMAT_JPEG) {
                                                 // Convert JPEG directly to Full Grayscale
@@ -573,11 +573,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                         vTaskDelay(pdMS_TO_TICKS(500)); // CRITICAL: Wait for VFS to transition!
 
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                            
+
                             // Flush one stale buffer left behind by the DMA stream
                             camera_fb_t *dummy = esp_camera_fb_get();
                             if (dummy) esp_camera_fb_return(dummy);
-                            
+
                             // Capture the real, clean frame
                             camera_fb_t *fb = esp_camera_fb_get();
                             if (!fb) {
@@ -586,7 +586,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                             } else {
                                 size_t data_len = fb->len;
                                 uint8_t *temp_buf = (uint8_t*)malloc(data_len);
-                                
+
                                 if (!temp_buf) {
                                     dual_printf("ERROR: Failed to allocate %d bytes for flash write.\n", (int)data_len);
                                     esp_camera_fb_return(fb);
@@ -594,23 +594,23 @@ static void usb_cdc_command_task(void *pvParameters) {
                                 } else {
                                     // Copy data safely out of camera DMA space
                                     memcpy(temp_buf, fb->buf, data_len);
-                                    
+
                                     // Determine correct file extension
                                     const char *ext = "bin";
                                     if (fb->format == PIXFORMAT_JPEG) ext = "jpg";
                                     else if (fb->format == PIXFORMAT_GRAYSCALE) ext = "gray";
                                     else if (fb->format == PIXFORMAT_RGB565) ext = "rgb565";
-                                    
+
                                     // argStr contains the timestamp from Python
                                     const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
-                                    
+
                                     char filepath[1024];
                                     snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
                                                 ts, (int)fb->format, fb->width, fb->height, ext);
 
                                     // CRITICAL FIX: Release camera hardware lock BEFORE writing to slow flash!
                                     esp_camera_fb_return(fb);
-                                    xSemaphoreGive(camera_mutex); 
+                                    xSemaphoreGive(camera_mutex);
 
                                     // 3. Write to Flash
                                     FILE *f = fopen(filepath, "wb");
@@ -658,7 +658,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         // 2. NOW it is safe to interact with the file system and print to the serial port
                         usb_msc_mount_to_app();
                         vTaskDelay(pdMS_TO_TICKS(500)); // Give VFS time to transition locks
-                        
+
                         usb_list_files();
 
                         // CRITICAL FIX: Give the serial TX queue time to fully transmit the list to the PC
@@ -689,11 +689,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                         char input_buf[256];
                         strncpy(input_buf, argStr, sizeof(input_buf));
                         input_buf[sizeof(input_buf)-1] = '\0';
-                        
+
                         // Strip trailing spaces/newlines
                         int len = strlen(input_buf);
                         while (len > 0 && (input_buf[len-1] <= ' ')) { input_buf[--len] = '\0'; }
-                        
+
                         if (len == 0) {
                             dual_printf("ERROR: Usage: r <filename> OR r <index>\n");
                             usb_msc_mount_to_pc();
@@ -713,7 +713,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                                 struct dirent *entry;
                                 int count = 0;
                                 while ((entry = readdir(dir)) != NULL) {
-                                    if (entry->d_name[0] != '.') { 
+                                    if (entry->d_name[0] != '.') {
                                         if (count == target_idx) {
                                             snprintf(target_path, sizeof(target_path), "/usb/%s", entry->d_name);
                                             break;
@@ -795,11 +795,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                         char input_buf[256];
                         strncpy(input_buf, argStr, sizeof(input_buf));
                         input_buf[sizeof(input_buf)-1] = '\0';
-                        
+
                         // Strip trailing spaces/newlines
                         int len = strlen(input_buf);
                         while (len > 0 && (input_buf[len-1] <= ' ')) { input_buf[--len] = '\0'; }
-                        
+
                         if (len == 0) {
                             dual_printf("ERROR: Usage: i <filename> OR i <index>\n");
                             break;
@@ -818,13 +818,13 @@ static void usb_cdc_command_task(void *pvParameters) {
                             }
                             usb_msc_mount_to_app();
                             vTaskDelay(pdMS_TO_TICKS(500));
-                            
+
                             DIR *dir = opendir("/usb");
                             if (dir) {
                                 struct dirent *entry;
                                 int count = 0;
                                 while ((entry = readdir(dir)) != NULL) {
-                                    if (entry->d_name[0] != '.') { 
+                                    if (entry->d_name[0] != '.') {
                                         if (count == target_idx) {
                                             snprintf(target_path, sizeof(target_path), "/usb/%s", entry->d_name);
                                             break;
@@ -858,9 +858,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                         int w = 640, h = 480;
                         char *w_ptr = strstr(target_path, "_w");
                         char *h_ptr = strstr(target_path, "_h");
-                        if (w_ptr && h_ptr) { 
-                            w = atoi(w_ptr + 2); 
-                            h = atoi(h_ptr + 2); 
+                        if (w_ptr && h_ptr) {
+                            w = atoi(w_ptr + 2);
+                            h = atoi(h_ptr + 2);
                         } else {
                             // Default fallback sizes for latest raw and bmp files
                             if (strstr(target_path, "latest.raw") != nullptr || strstr(target_path, "latest.bmp") != nullptr) {
@@ -871,10 +871,10 @@ static void usb_cdc_command_task(void *pvParameters) {
 
                         if (allocate_frame_buffers()) {
                             bool success = false;
-                            
+
                             // Only allocate the final full-size grayscale buffer
                             uint8_t *full_gray_buf = (uint8_t*)malloc(w * h);
-                            
+
                             if (full_gray_buf) {
                                 char lower_path[512];
                                 strncpy(lower_path, target_path, sizeof(lower_path));
@@ -899,14 +899,14 @@ static void usb_cdc_command_task(void *pvParameters) {
                                         success = true;
                                     }
                                 }
-                                
+
                                 if (success) {
                                     // Use the official resize function to downscale to 96x96
                                     resize_grayscale_to_runtime_frame(full_gray_buf, w, h, g_raw_frame);
                                 }
                                 free(full_gray_buf); // Free it immediately when done
                             }
-                            
+
                             if (success) {
                                 dual_printf("[System] Image decoded and resized to %dx%d Grayscale.\n", FRAME_WIDTH, FRAME_HEIGHT);
 
@@ -940,7 +940,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         if (val == 1) format_val = PIXFORMAT_RGB565;
                         else if (val == 2) format_val = PIXFORMAT_YUV422;
                         else if (val == 3) format_val = PIXFORMAT_JPEG;
-                        
+
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                             vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera hardware breathe before re-init
                             esp_err_t err = camera_capture_reinit(format_val, (int)g_current_size);
@@ -962,7 +962,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                         else if (val == 3) size_val = FRAMESIZE_VGA;
                         else if (val == 4) size_val = FRAMESIZE_SVGA;
                         else if (val == 5) size_val = FRAMESIZE_UXGA;
-                        
+
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
                             vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera hardware breathe before re-init
                             esp_err_t err = camera_capture_reinit((int)g_current_format, size_val);
@@ -1107,6 +1107,7 @@ static void input_controls_monitor_task(void *pvParameters) {
         if (current.encoder_position != previous.encoder_position ||
             current.encoder_button_presses != previous.encoder_button_presses ||
             current.button2_presses != previous.button2_presses) {
+            const bool shutter_pressed = current.button2_presses != previous.button2_presses;
             ESP_LOGI(TAG,
                      "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,clk=%d,dt=%d",
                      (long)current.encoder_position,
@@ -1115,6 +1116,21 @@ static void input_controls_monitor_task(void *pvParameters) {
                      (unsigned long)current.button2_presses,
                      current.encoder_clk_level,
                      current.encoder_dt_level);
+            if (shutter_pressed) {
+                usb_cdc_msg_t msg = {};
+                char cmd[32];
+                snprintf(cmd, sizeof(cmd), "cbtn%lu", (unsigned long)current.button2_presses);
+                msg.buf_len = strlen(cmd);
+                memcpy(msg.buf, cmd, msg.buf_len);
+                msg.buf[msg.buf_len] = '\0';
+                msg.itf = 0;
+                QueueHandle_t q = usb_cdc_get_queue();
+                if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
+                    ESP_LOGW(TAG, "Physical shutter command queue unavailable/full.");
+                } else {
+                    ESP_LOGI(TAG, "Physical shutter queued: capture photo to ESP flash.");
+                }
+            }
             previous = current;
         }
         vTaskDelay(pdMS_TO_TICKS(50));
@@ -1133,13 +1149,6 @@ static void maybe_start_input_controls() {
         return;
     }
 
-    xTaskCreatePinnedToCore(input_controls_monitor_task,
-                            "input_controls_monitor",
-                            4 * 1024,
-                            NULL,
-                            3,
-                            NULL,
-                            0);
     const BaseType_t created = xTaskCreatePinnedToCore(input_controls_monitor_task,
                                                        "input_controls_monitor",
                                                        4 * 1024,
@@ -1842,7 +1851,7 @@ extern "C" void app_main() {
     ESP_LOGI(TAG, "Runtime mode: %s", runtime_mode_name());
     log_memory_status();
     maybe_start_input_controls();
-    
+
     if (!init_tflite_micro()) {
         ESP_LOGE(TAG, "Halt: TFLite Micro initialization failed.");
         return;

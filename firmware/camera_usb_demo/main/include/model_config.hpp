@@ -38,7 +38,7 @@ constexpr bool ENABLE_INPUT_CONTROLS = true;
 constexpr int INPUT_ENCODER_CLK_GPIO = 21;
 constexpr int INPUT_ENCODER_DT_GPIO = 47;
 constexpr int INPUT_ENCODER_BUTTON_GPIO = 48;
-constexpr int INPUT_BUTTON2_GPIO = -1;
+constexpr int INPUT_BUTTON2_GPIO = 39;
 constexpr int INPUT_DEBOUNCE_MS = 60;
 
 // Input/output unit-test mode. This mode does not require a flashed TFLite model.

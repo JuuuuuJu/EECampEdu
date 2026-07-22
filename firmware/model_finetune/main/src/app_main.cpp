@@ -127,9 +127,9 @@ static esp_err_t capture_once(bool send_to_pc, bool save_to_storage) {
         if (save_to_storage) {
             usb_msc_mount_to_app();
             vTaskDelay(pdMS_TO_TICKS(100));
-            err = photo_storage_write_latest(frame);
+            err = photo_storage_write_capture(frame, "capture");
             if (err == ESP_OK) {
-                cdc_printf("[ModelFinetune] Saved latest frame to storage.\n");
+                cdc_printf("[ModelFinetune] Saved capture frame to ESP storage.\n");
             } else {
                 cdc_printf("ERROR,photo_storage_write,%s\n", esp_err_to_name(err));
             }
@@ -178,7 +178,7 @@ static void handle_command(char *cmd) {
     if (!*cmd) return;
 
     if (strcasecmp(cmd, "h") == 0 || strcasecmp(cmd, "help") == 0) {
-        cdc_printf("Commands: d1/d0 stream, c capture-to-PC, w save latest, usb expose MSC, f0..f3 format, s0..s5 size, reboot\n");
+        cdc_printf("Commands: d1/d0 stream, c capture-to-PC, w save numbered photo, usb expose MSC, f0..f3 format, s0..s5 size, reboot\n");
         return;
     }
     if (strcasecmp(cmd, "reboot") == 0) {
@@ -256,6 +256,7 @@ static void input_controls_monitor_task(void *pv) {
         if (current.encoder_position != previous.encoder_position ||
             current.encoder_button_presses != previous.encoder_button_presses ||
             current.button2_presses != previous.button2_presses) {
+            const bool shutter_pressed = current.button2_presses != previous.button2_presses;
             cdc_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,clk=%d,dt=%d\n",
                        (long)current.encoder_position,
                        (long)(current.encoder_position - previous.encoder_position),
@@ -263,6 +264,18 @@ static void input_controls_monitor_task(void *pv) {
                        (unsigned long)current.button2_presses,
                        current.encoder_clk_level,
                        current.encoder_dt_level);
+            if (shutter_pressed) {
+                usb_cdc_msg_t msg = {};
+                msg.buf[0] = 'w';
+                msg.buf_len = 1;
+                msg.itf = 0;
+                QueueHandle_t q = usb_cdc_get_queue();
+                if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
+                    cdc_printf("ERROR,physical_shutter_queue_full\n");
+                } else {
+                    cdc_printf("[ModelFinetune] Physical shutter queued: save photo to ESP flash.\n");
+                }
+            }
             previous = current;
         }
         vTaskDelay(pdMS_TO_TICKS(50));

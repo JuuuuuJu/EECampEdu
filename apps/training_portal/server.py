@@ -273,6 +273,7 @@ TOPIC_ROUTES = {
     "/firmware": "mainfw",
     "/camera_usb": "camerausb",
     "/drive": "drive",
+    "/account": "account",
 }
 
 
@@ -1381,6 +1382,7 @@ def create_app():
     @app.get("/firmware")
     @app.get("/camera_usb")
     @app.get("/drive")
+    @app.get("/account")
     def index():
         return render_template("index.html", team=_logged_in_team(), topic=TOPIC_ROUTES.get(request.path, "dashboard"))
 
