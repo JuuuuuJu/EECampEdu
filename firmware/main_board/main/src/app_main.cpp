@@ -150,6 +150,61 @@ static void usb_list_files() {
     usb_cdc_printf("-----------------------------\n\n");
 }
 
+static inline void bmp_put_u32le(uint8_t *p, uint32_t v) {
+    p[0] = v & 0xff; p[1] = (v >> 8) & 0xff; p[2] = (v >> 16) & 0xff; p[3] = (v >> 24) & 0xff;
+}
+static inline void bmp_put_u16le(uint8_t *p, uint16_t v) {
+    p[0] = v & 0xff; p[1] = (v >> 8) & 0xff;
+}
+
+// Persist the model-input photo: nearest-neighbour downscale a w x h grayscale
+// image to 96x96 (the model input size) and save it as an 8-bit grayscale BMP on
+// the board's flash (/usb). Listable via 'l', downloadable via 'r', viewable over
+// MSC. Assumes the FAT volume is already mounted to the app.
+static bool save_photo96_bmp(const uint8_t *full_gray, int w, int h, const char *ts) {
+    if (!full_gray || w <= 0 || h <= 0) return false;
+    const int S = 96;                         // 96 is 4-byte aligned -> no row padding
+    static uint8_t small_img[96 * 96];
+    for (int y = 0; y < S; ++y) {
+        int sy = (int)((int64_t)y * h / S);
+        if (sy >= h) sy = h - 1;
+        for (int x = 0; x < S; ++x) {
+            int sx = (int)((int64_t)x * w / S);
+            if (sx >= w) sx = w - 1;
+            small_img[y * S + x] = full_gray[sy * w + sx];
+        }
+    }
+    const uint32_t pixels = (uint32_t)S * S;
+    const uint32_t offbits = 14 + 40 + 256 * 4;
+    const uint32_t filesize = offbits + pixels;
+
+    uint8_t hdr[14 + 40];
+    memset(hdr, 0, sizeof(hdr));
+    hdr[0] = 'B'; hdr[1] = 'M';
+    bmp_put_u32le(hdr + 2, filesize);
+    bmp_put_u32le(hdr + 10, offbits);
+    bmp_put_u32le(hdr + 14, 40);              // info header size
+    bmp_put_u32le(hdr + 18, S);               // width
+    bmp_put_u32le(hdr + 22, S);               // height (bottom-up)
+    bmp_put_u16le(hdr + 26, 1);               // planes
+    bmp_put_u16le(hdr + 28, 8);               // bits per pixel
+    bmp_put_u32le(hdr + 34, pixels);          // image size
+    bmp_put_u32le(hdr + 46, 256);             // colours used
+    bmp_put_u32le(hdr + 50, 256);             // important colours
+
+    char path[256];
+    snprintf(path, sizeof(path), "/usb/photo96_%s.bmp", (ts && ts[0]) ? ts : "manual");
+    FILE *f = fopen(path, "wb");
+    if (!f) { dual_printf("ERROR: could not open %s for 96x96 photo\n", path); return false; }
+    fwrite(hdr, 1, sizeof(hdr), f);
+    uint8_t pal[4];
+    for (int i = 0; i < 256; ++i) { pal[0] = pal[1] = pal[2] = (uint8_t)i; pal[3] = 0; fwrite(pal, 1, 4, f); }
+    for (int y = S - 1; y >= 0; --y) fwrite(&small_img[y * S], 1, S, f);
+    fclose(f);
+    dual_printf("[System] 96x96 photo saved to flash! File: %s\n", path);
+    return true;
+}
+
 static void camera_stream_task(void *pvParameters) {
     (void)pvParameters;
     ESP_LOGI(TAG, "Camera stream task started.");
@@ -460,6 +515,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                                                 inf_frame.handle = nullptr;
 
                                                 photo_storage_write_latest(inf_frame);
+
+                                                // Also persist a 96x96 model-input photo (viewable/downloadable).
+                                                save_photo96_bmp(full_gray_buf, w, h, ts);
 
                                                 dual_printf("[System] Inference started on live capture.\n");
                                                 run_inference_on_grayscale_frame(g_raw_frame);
@@ -1050,11 +1108,13 @@ static void input_controls_monitor_task(void *pvParameters) {
             current.encoder_button_presses != previous.encoder_button_presses ||
             current.button2_presses != previous.button2_presses) {
             ESP_LOGI(TAG,
-                     "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu",
+                     "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,clk=%d,dt=%d",
                      (long)current.encoder_position,
                      (long)(current.encoder_position - previous.encoder_position),
                      (unsigned long)current.encoder_button_presses,
-                     (unsigned long)current.button2_presses);
+                     (unsigned long)current.button2_presses,
+                     current.encoder_clk_level,
+                     current.encoder_dt_level);
             previous = current;
         }
         vTaskDelay(pdMS_TO_TICKS(50));

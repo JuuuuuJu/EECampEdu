@@ -40,6 +40,9 @@ constexpr int INPUT_ENCODER_DT_GPIO = 47;
 constexpr int INPUT_ENCODER_BUTTON_GPIO = 48;
 constexpr int INPUT_BUTTON2_GPIO = -1;
 constexpr int INPUT_DEBOUNCE_MS = 60;
+// Mechanical detents usually take 4 quadrature steps; ignore extras shortly after a detent.
+constexpr int INPUT_ENCODER_STEPS_PER_DETENT = 2;
+constexpr int INPUT_ENCODER_DETENT_DEBOUNCE_MS = 40;
 
 // Input/output unit-test mode. This mode does not require a flashed TFLite model.
 constexpr int IO_SELF_TEST_INTERVAL_MS = 1000;

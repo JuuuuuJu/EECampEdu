@@ -15,6 +15,7 @@
 #include "freertos/task.h"
 
 #include "camera_capture.hpp"
+#include "input_controls.hpp"
 #include "model_config.hpp"
 #include "photo_storage.hpp"
 #include "usb_composite.hpp"
@@ -244,6 +245,30 @@ static void usb_command_task(void *pv) {
     }
 }
 
+// Report rotary-encoder / button activity over CDC as INPUT_CONTROL lines, the
+// same protocol main_board uses. The browser can map encoder steps to camera
+// controls; this firmware itself only reports.
+static void input_controls_monitor_task(void *pv) {
+    (void)pv;
+    InputControlsSnapshot previous = input_controls_get_snapshot();
+    while (true) {
+        const InputControlsSnapshot current = input_controls_get_snapshot();
+        if (current.encoder_position != previous.encoder_position ||
+            current.encoder_button_presses != previous.encoder_button_presses ||
+            current.button2_presses != previous.button2_presses) {
+            cdc_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,clk=%d,dt=%d\n",
+                       (long)current.encoder_position,
+                       (long)(current.encoder_position - previous.encoder_position),
+                       (unsigned long)current.encoder_button_presses,
+                       (unsigned long)current.button2_presses,
+                       current.encoder_clk_level,
+                       current.encoder_dt_level);
+            previous = current;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 extern "C" void app_main(void) {
     ESP_LOGI(TAG, "Runtime: model finetune camera-only firmware.");
     g_camera_mutex = xSemaphoreCreateMutex();
@@ -256,6 +281,14 @@ extern "C" void app_main(void) {
     esp_err_t err = camera_capture_reinit((int)format_from_code(g_format_code), (int)size_from_code(g_size_code));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "OV2640 init failed: %s", esp_err_to_name(err));
+    }
+    if (ENABLE_INPUT_CONTROLS) {
+        esp_err_t in_err = input_controls_init();
+        if (in_err != ESP_OK) {
+            ESP_LOGW(TAG, "Input controls init failed: %s", esp_err_to_name(in_err));
+        } else {
+            xTaskCreatePinnedToCore(input_controls_monitor_task, "input_monitor", 4096, NULL, 3, NULL, 0);
+        }
     }
     cdc_printf("READY,MODEL_FINETUNE_CAMERA,f%d,s%d\n", g_format_code, g_size_code);
     xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 4, NULL, 1);

@@ -66,9 +66,17 @@ Use this for a new board or when the instructor updates camera/USB/continuous-in
 
 ## Camera + USB Demo Page
 
-Purpose: explore the OV2640 camera and on-board USB storage with the full control set.
+Purpose: explore the OV2640 camera and the on-board photo storage with the full control set.
 
-Requires the **main board firmware** (flash it on the Firmware page). Plug the ESP32-S3 into **your PC**, click **Connect camera**, then use the settings: pixel format, resolution, brightness/contrast/saturation, auto exposure/gain/white balance, mirror/flip. You can capture frames to the board's flash, list them, and expose the storage to your PC as a **USB drive**. No Python or terminal needed.
+Requires the **main board firmware** (flash it on the Firmware page). Plug the ESP32-S3 into **your PC**, click **Connect camera**, then use the settings: pixel format, resolution, brightness/contrast/saturation, auto exposure/gain/white balance, mirror/flip. No Python or terminal needed.
+
+**Rotary encoder → exposure.** If a rotary encoder is wired (CLK/DT/SW), turning it while connected switches exposure to manual and nudges the manual-exposure value up/down — the page moves the Manual exposure slider for you.
+
+**Board photo storage (two separate paths, one flash).** These are kept clearly apart:
+- **Live preview** streams frames over **USB CDC** (Web Serial) and does **not** save anything.
+- **Captured photos are stored on the ESP32-S3 flash.** Click **Capture photo to flash (96×96)** — it saves a 96×96 model-input image (and the full-resolution frame). Then either:
+  - **Download over CDC** — **List saved photos**, then **download (CDC)** pulls a photo over Web Serial and previews it (96×96 shown enlarged), or
+  - **Mount flash as USB drive (MSC)** — pauses preview and shows the photos to your PC as a removable drive.
 
 ## Flashing / Serial Checklist
 

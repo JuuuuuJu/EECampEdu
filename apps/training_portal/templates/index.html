@@ -461,15 +461,24 @@
     </div>
 
     <div class="card">
-      <h2>Capture &amp; USB storage</h2>
-      <p class="note">Save frames to the board's flash, then expose them to your PC as a USB drive (USB MSC).</p>
+      <h2>Board photo storage (flash)</h2>
+      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a USB drive (MSC)</b> on your PC. Capture saves a <b>96×96</b> model-input image (plus the full-resolution frame).</p>
       <div class="row compact">
-        <div><button class="secondary" id="usbCamCaptureBtn">Capture to flash</button></div>
-        <div><button class="secondary" id="usbCamListBtn">List files</button></div>
-        <div style="flex:2; min-width:240px"><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · format · l" /></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
+        <div><button class="secondary" id="usbCamCaptureBtn">Capture photo to flash (96×96)</button></div>
+        <div><button class="secondary" id="usbCamListBtn">List saved photos</button></div>
+        <div><button class="secondary" id="usbCamMountBtn">Mount flash as USB drive (MSC)</button></div>
       </div>
       <div class="msg" id="usbCamCmdMsg"></div>
+      <label style="margin-top:12px">Saved photos on the board</label>
+      <div id="usbPhotoList"><div class="note">Click “List saved photos”. <b>Download (CDC)</b> pulls a photo over Web Serial; <b>Mount as USB drive</b> pauses preview and shows the files to your PC as a removable drive.</div></div>
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:120px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <img id="usbPhotoPreview" alt="downloaded photo" style="max-width:100%;max-height:280px;image-rendering:pixelated;display:none" />
+        <div class="note" id="usbPhotoPlaceholder">Downloaded photo preview (96×96 shown enlarged).</div>
+      </div>
+      <div class="row compact" style="margin-top:12px">
+        <div style="flex:2; min-width:240px"><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · format · l · r 0" /></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
+      </div>
       <label style="margin-top:12px">Camera / USB messages</label>
       <pre class="log tall" id="usbCamLog">Connect the camera to begin.</pre>
     </div>
@@ -1017,8 +1026,9 @@ $("usbCamGain").onchange     = (e) => usbCamCmd("a"+e.target.value, "gain value"
 $("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "AWB");
 $("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "mirror");
 $("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "flip");
-$("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("w"+ts, "capture to flash"); };
-$("usbCamListBtn").onclick = () => usbCamCmd("l", "list files");
+$("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "capture 96×96 photo to flash"); };
+$("usbCamListBtn").onclick = () => { photoListBuf = []; photoListCapture = true; usbCamCmd("l", "list saved photos"); };
+$("usbCamMountBtn").onclick = () => { usbCamCmd("usb", "mount flash as USB drive"); setMsg($("usbCamCmdMsg"), "Flash mounted as a USB drive on your PC — live preview is paused. Open your file explorer to see the ESP32-S3 photos.", "ok"); };
 $("usbCamRawBtn").onclick  = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, c); };
 $("mazeFlagInput").oninput = (e) => {
   const flag = e.target.value.trim();
@@ -1117,6 +1127,15 @@ const Serial = {
 let flashMeta = null;            // model-partition offset metadata, kept across flows
 let camObjectUrl = null;
 let camAsm = { receiving:false, lines:[], meta:{} };   // OV2640 frame assembler state
+// Encoder -> manual-exposure linkage (mirrors the reference PC app): the board
+// reports "INPUT_CONTROL,encoder=N,..."; each detent nudges manual exposure by 10
+// (0..1200) and switches AEC to manual. Reset on every camera connect.
+let encLink = { synced:false, pos:0, aecEnabled:true, aecValue:300 };
+// Board photo storage (flash): CDC download assembler + list capture, separate
+// from the live CDC preview stream above.
+let fileAsm = { receiving:false, lines:[], size:0, path:"" };
+let photoListCapture = false, photoListBuf = [];
+let usbPhotoUrl = null;
 const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:"cameraStopBtn" };
 const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
 const USBCAM_UI       = { msgId:"usbCamMsg", logId:"usbCamLog", imgId:"usbCamPreview", placeholderId:"usbCamPlaceholder", resultId:"usbCamResult", connectBtn:"usbCamConnectBtn", stopBtn:"usbCamStopBtn" };
@@ -1436,12 +1455,94 @@ function cameraOnLine(rawLine){
     camAsm.receiving=false; camAsm.lines=[];
   } else if(camAsm.receiving){
     camAsm.lines.push(line);
+  } else if(line.startsWith("---START_FILE:")){
+    const fm=/^---START_FILE:\d+:\d+:\d+:(\d+):(.+)---$/.exec(line);
+    fileAsm={receiving:true, lines:[], size:fm?Number(fm[1]):0, path:fm?fm[2]:"file"};
+  } else if(line.startsWith("---END_FILE---")){
+    if(fileAsm.receiving) finishPhotoDownload(fileAsm.lines.join(""), fileAsm.path);
+    fileAsm={receiving:false, lines:[], size:0, path:""};
+  } else if(fileAsm.receiving){
+    fileAsm.lines.push(line);
+  } else if(photoListCapture && /\/usb\//.test(line) && /\(\d+\s*bytes\)/.test(line)){
+    const lm=/\/usb\/(\S+)\s+\((\d+)/.exec(line);
+    if(lm) photoListBuf.push({name:lm[1], size:Number(lm[2])});
+    appendLog(camUi.logId, line + "\n");
+  } else if(photoListCapture && /^Total:/.test(line)){
+    photoListCapture=false; renderPhotoList(photoListBuf);
+    appendLog(camUi.logId, line + "\n");
   } else if(line.startsWith("RESULT,")){
     appendLog(camUi.logId, line + "\n");
     updateGestureResult(line);
+  } else if(line.indexOf("INPUT_CONTROL,") >= 0){
+    appendLog(camUi.logId, line + "\n");
+    handleEncoderExposure(line);
   } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP|System|Streaming|SETTING|OK|FILE|Total|^-|^\s*-|---/i.test(line)){
     appendLog(camUi.logId, line + "\n");
   }
+}
+// Decode a base64 file streamed over CDC (r command), download it, and preview
+// images (96x96 photos shown enlarged with crisp pixels).
+function finishPhotoDownload(b64, path){
+  try{
+    const bin=atob((b64||"").replace(/\s+/g,""));
+    const bytes=new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
+    const name=(path||"photo").split("/").pop();
+    const ext=(name.split(".").pop()||"").toLowerCase();
+    const mime = ext==="bmp"?"image/bmp" : (ext==="jpg"||ext==="jpeg")?"image/jpeg" : ext==="png"?"image/png":"application/octet-stream";
+    const blob=new Blob([bytes], {type:mime});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+    const img=$("usbPhotoPreview"), ph=$("usbPhotoPlaceholder");
+    if(img && ["bmp","jpg","jpeg","png"].includes(ext)){
+      if(usbPhotoUrl) URL.revokeObjectURL(usbPhotoUrl);
+      usbPhotoUrl=url; img.src=url; img.style.display="block"; if(ph) ph.style.display="none";
+    } else { URL.revokeObjectURL(url); }
+    setMsg($("usbCamCmdMsg"), "Downloaded "+name+" ("+bytes.length+" bytes) over CDC.", "ok");
+  }catch(e){ setMsg($("usbCamCmdMsg"), "Download decode failed: "+(e.message||e), "bad"); }
+}
+function renderPhotoList(list){
+  const host=$("usbPhotoList"); if(!host) return;
+  if(!list.length){ host.innerHTML='<div class="note">No photos on the board yet. Click “Capture photo to flash”.</div>'; return; }
+  host.innerHTML="";
+  list.forEach(f=>{
+    const row=document.createElement("div"); row.style.display="flex"; row.style.justifyContent="space-between"; row.style.gap="10px"; row.style.padding="4px 0"; row.style.borderBottom="1px solid var(--border)";
+    const nm=document.createElement("span"); nm.textContent=f.name+" ("+fmtSize(f.size)+")";
+    const dl=document.createElement("button"); dl.className="secondary"; dl.textContent="download (CDC)"; dl.style.padding="2px 10px";
+    dl.onclick=()=>downloadPhoto(f.name);
+    row.appendChild(nm); row.appendChild(dl); host.appendChild(row);
+  });
+}
+function downloadPhoto(name){
+  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }
+  setMsg($("usbCamCmdMsg"), "Downloading "+name+" over CDC…", "warn");
+  cameraWrite("r "+name);
+}
+// Map encoder detents from an INPUT_CONTROL line to OV2640 manual exposure.
+// Only active on the camera+USB page, where exposure controls exist.
+function handleEncoderExposure(line){
+  if(camUi !== USBCAM_UI || !$("usbCamExposure")) return;
+  const m = /encoder=(-?\d+)/.exec(line);
+  if(!m) return;
+  const encoder = parseInt(m[1], 10);
+  if(!Number.isFinite(encoder)) return;
+  if(!encLink.synced){ encLink.pos = encoder; encLink.synced = true; return; }
+  const steps = encoder - encLink.pos;
+  encLink.pos = encoder;
+  if(steps === 0) return;
+  if(encLink.aecEnabled){                 // encoder implies manual exposure
+    encLink.aecEnabled = false;
+    $("usbCamAec").value = "0";
+    $("usbCamExposure").disabled = false;
+    cameraWrite("e0");
+  }
+  let next = encLink.aecValue + steps * 10;   // one detent = 10 (0..1200)
+  next = Math.max(0, Math.min(1200, next));
+  if(next === encLink.aecValue) return;
+  encLink.aecValue = next;
+  $("usbCamExposure").value = String(next);
+  setText("usbAecVal", String(next));
+  cameraWrite("v" + next);
 }
 async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   camUi = ui;
@@ -1456,6 +1557,9 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     frameCount = 0;
     currentFps = 0;
     camAsm = { receiving:false, lines:[], meta:{} };
+    fileAsm = { receiving:false, lines:[], size:0, path:"" };
+    photoListCapture = false; photoListBuf = [];
+    encLink = { synced:false, pos:0, aecEnabled:true, aecValue:300 };
     await serialOpenRaw({ logId:camUi.logId, baudRate:115200, bufferSize:1048576, onLine:cameraOnLine });
     if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
     if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
