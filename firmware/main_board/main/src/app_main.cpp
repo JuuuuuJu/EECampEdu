@@ -28,6 +28,7 @@
 #include "freertos/semphr.h"
 #include "esp_vfs_fat.h"
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -192,11 +193,32 @@ static bool save_photo96_bmp(const uint8_t *full_gray, int w, int h, const char 
     bmp_put_u32le(hdr + 46, 256);             // colours used
     bmp_put_u32le(hdr + 50, 256);             // important colours
 
-    char path[256];
-    snprintf(path, sizeof(path), "/usb/photo96_%s.bmp", (ts && ts[0]) ? ts : "manual");
+    (void)ts;
+    char path[32];
+    bool found_path = false;
+    for (unsigned i = 1; i <= 99999; ++i) {
+        snprintf(path, sizeof(path), "/usb/P96%05u.BMP", i);
+        if (access(path, F_OK) != 0) {
+            found_path = true;
+            break;
+        }
+    }
+    if (!found_path) {
+        dual_printf("ERROR: no available 96x96 photo filename\n");
+        return false;
+    }
+
     FILE *f = fopen(path, "wb");
-    if (!f) { dual_printf("ERROR: could not open %s for 96x96 photo\n", path); return false; }
-    fwrite(hdr, 1, sizeof(hdr), f);
+    if (!f) {
+        dual_printf("ERROR: could not open %s for 96x96 photo: errno=%d (%s)\n", path, errno, strerror(errno));
+        return false;
+    }
+    if (fwrite(hdr, 1, sizeof(hdr), f) != sizeof(hdr)) {
+        dual_printf("ERROR: failed writing BMP header to %s\n", path);
+        fclose(f);
+        unlink(path);
+        return false;
+    }
     uint8_t pal[4];
     for (int i = 0; i < 256; ++i) { pal[0] = pal[1] = pal[2] = (uint8_t)i; pal[3] = 0; fwrite(pal, 1, 4, f); }
     for (int y = S - 1; y >= 0; --y) fwrite(&small_img[y * S], 1, S, f);
@@ -487,25 +509,28 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     xSemaphoreGive(camera_mutex);
 
                                     // --- PART A: Save Original Image (Like 'w' command) ---
-                                    const char *ext = "bin";
-                                    if (fmt == PIXFORMAT_JPEG) ext = "jpg";
-                                    else if (fmt == PIXFORMAT_GRAYSCALE) ext = "gray";
-                                    else if (fmt == PIXFORMAT_RGB565) ext = "rgb565";
-
-                                    // argStr contains the timestamp from Python
+                                    // Use strict FAT 8.3 names and no overwrite so captures accumulate safely.
                                     const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
+                                    (void)ts;
 
-                                    char filepath[1024];
-                                    snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
-                                                ts, (int)fb->format, fb->width, fb->height, ext);
+                                    CameraFrame original_frame = {};
+                                    original_frame.data = temp_buf;
+                                    original_frame.size = data_len;
+                                    original_frame.width = w;
+                                    original_frame.height = h;
+                                    if (fmt == PIXFORMAT_JPEG) original_frame.format = CameraFrameFormat::kJpeg;
+                                    else if (fmt == PIXFORMAT_GRAYSCALE) original_frame.format = CameraFrameFormat::kGrayscale;
+                                    else if (fmt == PIXFORMAT_RGB565) original_frame.format = CameraFrameFormat::kRgb565;
+                                    else if (fmt == PIXFORMAT_YUV422) original_frame.format = CameraFrameFormat::kYuv422;
+                                    else original_frame.format = CameraFrameFormat::kJpeg;
+                                    original_frame.handle = nullptr;
 
-                                    FILE *f = fopen(filepath, "wb");
-                                    if (f) {
-                                        fwrite(temp_buf, 1, data_len, f);
-                                        fclose(f);
-                                        dual_printf("[System] Image saved to flash! File: %s\n", filepath);
+                                    esp_err_t store_err = photo_storage_write_capture(original_frame, "main");
+                                    if (store_err == ESP_OK) {
+                                        dual_printf("[System] Image saved to ESP flash storage.\n");
+                                    } else {
+                                        dual_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(store_err), photo_storage_last_error());
                                     }
-
                                     // --- PART B: Prepare & Run Inference (Like 'i' command) ---
                                     if (allocate_frame_buffers()) {
                                         bool success = false;

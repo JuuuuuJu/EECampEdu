@@ -15,4 +15,6 @@ struct StoredPhotoMetadata {
 
 esp_err_t photo_storage_init();
 esp_err_t photo_storage_write_latest(const CameraFrame &frame);
+esp_err_t photo_storage_write_capture(const CameraFrame &frame, const char *prefix);
 esp_err_t photo_storage_read_latest(uint8_t *buffer, size_t buffer_size, StoredPhotoMetadata *metadata);
+const char *photo_storage_last_error();

@@ -6,15 +6,96 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_heap_caps.h"
+#include "ff.h"
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
+#include <stdarg.h>
 
 static const char *TAG = "PHOTO_STORAGE";
+
+static char g_last_error[192] = "OK";
+
+static void clear_last_error() {
+    snprintf(g_last_error, sizeof(g_last_error), "OK");
+}
+
+static void set_last_error(const char *format, ...) {
+    va_list args;
+    va_start(args, format);
+    vsnprintf(g_last_error, sizeof(g_last_error), format, args);
+    va_end(args);
+    ESP_LOGE(TAG, "%s", g_last_error);
+}
+
+const char *photo_storage_last_error() {
+    return g_last_error;
+}
+
 
 static constexpr const char *FILE_PATH_RAW = "/usb/LATEST.RAW";
 static constexpr const char *FILE_PATH_META = "/usb/LATEST.MET";
 static constexpr const char *FILE_PATH_BMP = "/usb/LATEST.BMP";
+static const char *extension_for_format(CameraFrameFormat format) {
+    switch (format) {
+        case CameraFrameFormat::kJpeg: return "jpg";
+        case CameraFrameFormat::kGrayscale: return "gry";
+        case CameraFrameFormat::kRgb565: return "rgb";
+        case CameraFrameFormat::kYuv422: return "yuv";
+    }
+    return "bin";
+}
+
+static pixformat_t pixformat_for_frame(CameraFrameFormat format) {
+    switch (format) {
+        case CameraFrameFormat::kGrayscale: return PIXFORMAT_GRAYSCALE;
+        case CameraFrameFormat::kRgb565: return PIXFORMAT_RGB565;
+        case CameraFrameFormat::kYuv422: return PIXFORMAT_YUV422;
+        case CameraFrameFormat::kJpeg: return PIXFORMAT_JPEG;
+    }
+    return PIXFORMAT_GRAYSCALE;
+}
+
+static uint64_t storage_free_bytes() {
+    FATFS *fs = nullptr;
+    DWORD free_clusters = 0;
+    if (f_getfree("/usb", &free_clusters, &fs) != FR_OK || fs == nullptr) {
+        return 0;
+    }
+    return (uint64_t)free_clusters * (uint64_t)fs->csize * (uint64_t)FF_MIN_SS;
+}
+
+static bool storage_has_room(size_t needed_bytes) {
+    const uint64_t free_bytes = storage_free_bytes();
+    const uint64_t safety_margin = 64 * 1024;
+    return free_bytes > ((uint64_t)needed_bytes + safety_margin);
+}
+
+static bool wait_storage_ready(uint32_t timeout_ms) {
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+    while ((xTaskGetTickCount() - start) <= timeout_ticks) {
+        if (storage_free_bytes() > 0) {
+            return true;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    return false;
+}
+
+static esp_err_t next_capture_paths(const char *prefix, const char *ext, char *raw_path, size_t raw_len, char *bmp_path, size_t bmp_len) {
+    (void)prefix;
+    // Use strict FAT 8.3 names for maximum TinyUSB MSC / FatFs compatibility.
+    for (unsigned i = 1; i <= 99999; ++i) {
+        snprintf(raw_path, raw_len, "/usb/CAP%05u.%s", i, ext);
+        if (access(raw_path, F_OK) == 0) continue;
+        snprintf(bmp_path, bmp_len, "/usb/BMP%05u.BMP", i);
+        if (access(bmp_path, F_OK) == 0) continue;
+        return ESP_OK;
+    }
+    return ESP_ERR_NO_MEM;
+}
 
 esp_err_t photo_storage_init() {
     // Initialization is handled by usb_composite_init() in app_main.cpp
@@ -117,5 +198,86 @@ esp_err_t photo_storage_read_latest(uint8_t *out_buffer, size_t max_bytes, Store
              (unsigned)out_metadata->width,
              (unsigned)out_metadata->height,
              (unsigned)out_metadata->format);
+    return ESP_OK;
+}
+
+esp_err_t photo_storage_write_capture(const CameraFrame &frame, const char *prefix) {
+    clear_last_error();
+    if (frame.data == nullptr || frame.size == 0) {
+        set_last_error("invalid frame: data=%p size=%u", frame.data, (unsigned)frame.size);
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!wait_storage_ready(1500)) {
+        set_last_error("storage not ready at /usb after MSC switch: free=%llu bytes", (unsigned long long)storage_free_bytes());
+        return ESP_FAIL;
+    }
+
+    const char *ext = extension_for_format(frame.format);
+    char raw_path[128];
+    char bmp_path[128];
+    esp_err_t err = next_capture_paths(prefix, ext, raw_path, sizeof(raw_path), bmp_path, sizeof(bmp_path));
+    if (err != ESP_OK) {
+        set_last_error("no available capture file name");
+        return err;
+    }
+
+    size_t estimated_bytes = frame.size + 4096;
+    if (frame.format != CameraFrameFormat::kJpeg) {
+        estimated_bytes += 1078 + (size_t)frame.width * (size_t)frame.height;
+    }
+    if (!storage_has_room(estimated_bytes)) {
+        set_last_error("storage full: need about %u bytes, free %llu bytes", (unsigned)estimated_bytes, (unsigned long long)storage_free_bytes());
+        return ESP_ERR_NO_MEM;
+    }
+
+    ESP_LOGI(TAG, "Writing capture file: %s (%u bytes, %dx%d, format=%s)",
+             raw_path, (unsigned)frame.size, frame.width, frame.height, ext);
+    FILE *f_raw = fopen(raw_path, "wb");
+    if (!f_raw) {
+        set_last_error("open %s failed: errno=%d (%s)", raw_path, errno, strerror(errno));
+        return ESP_FAIL;
+    }
+    const size_t written = fwrite(frame.data, 1, frame.size, f_raw);
+    const int close_result = fclose(f_raw);
+    if (written != frame.size || close_result != 0) {
+        set_last_error("write %s failed: written=%u expected=%u fclose=%d errno=%d (%s)", raw_path, (unsigned)written, (unsigned)frame.size, close_result, errno, strerror(errno));
+        unlink(raw_path);
+        return ESP_FAIL;
+    }
+
+    if (frame.format != CameraFrameFormat::kJpeg) {
+        uint8_t *bmp_buf = nullptr;
+        size_t bmp_len = 0;
+        if (fmt2bmp((uint8_t *)frame.data, frame.size, frame.width, frame.height,
+                    pixformat_for_frame(frame.format), &bmp_buf, &bmp_len)) {
+            if (!storage_has_room(bmp_len + 4096)) {
+                set_last_error("storage full before BMP write: need about %u bytes, free %llu bytes", (unsigned)(bmp_len + 4096), (unsigned long long)storage_free_bytes());
+                free(bmp_buf);
+                unlink(raw_path);
+                return ESP_ERR_NO_MEM;
+            }
+            FILE *f_bmp = fopen(bmp_path, "wb");
+            if (!f_bmp) {
+                set_last_error("open %s failed: errno=%d (%s)", bmp_path, errno, strerror(errno));
+                free(bmp_buf);
+                unlink(raw_path);
+                return ESP_FAIL;
+            }
+            const size_t bmp_written = fwrite(bmp_buf, 1, bmp_len, f_bmp);
+            const int bmp_close_result = fclose(f_bmp);
+            free(bmp_buf);
+            if (bmp_written != bmp_len || bmp_close_result != 0) {
+                set_last_error("write %s failed: written=%u expected=%u fclose=%d errno=%d (%s)", bmp_path, (unsigned)bmp_written, (unsigned)bmp_len, bmp_close_result, errno, strerror(errno));
+                unlink(raw_path);
+                unlink(bmp_path);
+                return ESP_FAIL;
+            }
+            ESP_LOGI(TAG, "Stored capture files: %s and %s", raw_path, bmp_path);
+        } else {
+            ESP_LOGW(TAG, "Stored raw capture only; BMP conversion failed for %s", raw_path);
+        }
+    } else {
+        ESP_LOGI(TAG, "Stored capture file: %s", raw_path);
+    }
     return ESP_OK;
 }
