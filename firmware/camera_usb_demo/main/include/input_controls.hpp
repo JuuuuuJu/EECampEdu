@@ -10,6 +10,8 @@ struct InputControlsSnapshot {
     uint32_t button2_presses;
     int encoder_button_level;
     int button2_level;
+    int encoder_clk_level;
+    int encoder_dt_level;
 };
 
 esp_err_t input_controls_init();

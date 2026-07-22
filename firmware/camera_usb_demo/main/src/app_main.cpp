@@ -347,9 +347,14 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     memcpy(temp_buf, fb->buf, data_len);
                                     
                                     const char *ext = "bin";
-                                    if (fb->format == PIXFORMAT_JPEG) ext = "jpg";
-                                    else if (fb->format == PIXFORMAT_GRAYSCALE) ext = "gray";
-                                    else if (fb->format == PIXFORMAT_RGB565) ext = "rgb565";                                    const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
+                                    if (fb->format == PIXFORMAT_JPEG) {
+                                        ext = "jpg";
+                                    } else if (fb->format == PIXFORMAT_GRAYSCALE) {
+                                        ext = "gray";
+                                    } else if (fb->format == PIXFORMAT_RGB565) {
+                                        ext = "rgb565";
+                                    }
+                                    const char *ts = (strlen(argStr) > 0) ? argStr : "manual";
                                     const char *capture_dir = "/usb/camera_usb";
                                     if (mkdir(capture_dir, 0775) != 0 && errno != EEXIST) {
                                         dual_printf("ERROR: Failed to create %s: errno=%d (%s)\n", capture_dir, errno, strerror(errno));

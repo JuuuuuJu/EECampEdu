@@ -148,5 +148,11 @@ InputControlsSnapshot input_controls_get_snapshot() {
     snapshot.button2_level = is_valid_gpio(INPUT_BUTTON2_GPIO)
                                  ? gpio_get_level(static_cast<gpio_num_t>(INPUT_BUTTON2_GPIO))
                                  : -1;
+    snapshot.encoder_clk_level = is_valid_gpio(INPUT_ENCODER_CLK_GPIO)
+                                     ? gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_CLK_GPIO))
+                                     : -1;
+    snapshot.encoder_dt_level = is_valid_gpio(INPUT_ENCODER_DT_GPIO)
+                                    ? gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_DT_GPIO))
+                                    : -1;
     return snapshot;
 }
