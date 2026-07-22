@@ -535,9 +535,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     else original_frame.format = CameraFrameFormat::kJpeg;
                                     original_frame.handle = nullptr;
 
+                                    bool capture_saved = false;
                                     if (save_capture) {
                                         esp_err_t store_err = photo_storage_write_capture(original_frame, "main");
                                         if (store_err == ESP_OK) {
+                                            capture_saved = true;
                                             dual_printf("[System] Image saved to ESP flash storage.\n");
                                         } else {
                                             dual_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(store_err), photo_storage_last_error());
@@ -570,7 +572,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                                                 inf_frame.format = CameraFrameFormat::kGrayscale;
                                                 inf_frame.handle = nullptr;
 
-                                                if (save_capture) {
+                                                if (save_capture && capture_saved) {
                                                     // Also persist a 96x96 model-input photo (viewable/downloadable).
                                                     save_photo96_bmp(full_gray_buf, w, h, ts);
                                                 }
@@ -652,35 +654,32 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     // Copy data safely out of camera DMA space
                                     memcpy(temp_buf, fb->buf, data_len);
 
-                                    // Determine correct file extension
-                                    const char *ext = "bin";
-                                    if (fb->format == PIXFORMAT_JPEG) ext = "jpg";
-                                    else if (fb->format == PIXFORMAT_GRAYSCALE) ext = "gray";
-                                    else if (fb->format == PIXFORMAT_RGB565) ext = "rgb565";
-
-                                    // argStr contains the timestamp from Python
-                                    const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
-
-                                    char filepath[1024];
-                                    snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
-                                                ts, (int)fb->format, fb->width, fb->height, ext);
+                                    const int fmt = fb->format;
+                                    const int w = fb->width;
+                                    const int h = fb->height;
 
                                     // CRITICAL FIX: Release camera hardware lock BEFORE writing to slow flash!
                                     esp_camera_fb_return(fb);
                                     xSemaphoreGive(camera_mutex);
 
-                                    // 3. Write to Flash
-                                    FILE *f = fopen(filepath, "wb");
-                                    if (!f) {
-                                        dual_printf("ERROR: Failed to open %s for writing.\n", filepath);
+                                    CameraFrame stored_frame = {};
+                                    stored_frame.data = temp_buf;
+                                    stored_frame.size = data_len;
+                                    stored_frame.width = w;
+                                    stored_frame.height = h;
+                                    if (fmt == PIXFORMAT_JPEG) stored_frame.format = CameraFrameFormat::kJpeg;
+                                    else if (fmt == PIXFORMAT_GRAYSCALE) stored_frame.format = CameraFrameFormat::kGrayscale;
+                                    else if (fmt == PIXFORMAT_RGB565) stored_frame.format = CameraFrameFormat::kRgb565;
+                                    else if (fmt == PIXFORMAT_YUV422) stored_frame.format = CameraFrameFormat::kYuv422;
+                                    else stored_frame.format = CameraFrameFormat::kJpeg;
+                                    stored_frame.handle = nullptr;
+
+                                    // 3. Write to ESP flash under /usb/main_inference/.
+                                    esp_err_t store_err = photo_storage_write_capture(stored_frame, "main");
+                                    if (store_err == ESP_OK) {
+                                        dual_printf("[System] Image saved to ESP flash storage under /usb/main_inference.\n");
                                     } else {
-                                        size_t written = fwrite(temp_buf, 1, data_len, f);
-                                        fclose(f);
-                                        if (written == data_len) {
-                                            dual_printf("[System] Image saved to flash! File: %s (%d bytes)\n", filepath, (int)written);
-                                        } else {
-                                            dual_printf("ERROR: Incomplete file write. Only wrote %d of %d bytes.\n", (int)written, (int)data_len);
-                                        }
+                                        dual_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(store_err), photo_storage_last_error());
                                     }
                                     free(temp_buf);
                                 }
@@ -1192,7 +1191,7 @@ static void input_controls_monitor_task(void *pvParameters) {
                     last_shutter_tick = now;
                     usb_cdc_msg_t msg = {};
                     char cmd[32];
-                    snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
+                    snprintf(cmd, sizeof(cmd), "wbtn%lu\n", (unsigned long)current.button2_presses);
                     msg.buf_len = strlen(cmd);
                     memcpy(msg.buf, cmd, msg.buf_len);
                     msg.buf[msg.buf_len] = '\0';
@@ -1201,7 +1200,7 @@ static void input_controls_monitor_task(void *pvParameters) {
                     if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
                         dual_printf("WARN,physical_shutter_queue_full\n");
                     } else {
-                        dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
+                        dual_printf("[System] Physical shutter queued: save photo to ESP flash.\n");
                     }
                 }
             }

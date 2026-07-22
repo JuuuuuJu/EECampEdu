@@ -197,7 +197,7 @@ QueueHandle_t usb_cdc_get_queue() {
 }
 
 void usb_msc_mount_to_app() {
-    if (storage_hdl && s_msc_mount_point != TINYUSB_MSC_STORAGE_MOUNT_APP) {
+    if (storage_hdl) {
         tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_APP);
         s_msc_mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP;
     }
