@@ -48,6 +48,7 @@ from flask import (
     url_for,
 )
 from werkzeug.exceptions import HTTPException
+from werkzeug.security import check_password_hash, generate_password_hash
 
 # --------------------------------------------------------------------------- #
 # Paths
@@ -232,6 +233,37 @@ def _load_team_passwords():
     return {f"team{i:02d}": f"{prefix}{i:02d}" for i in range(1, 11)}
 
 TEAM_PASSWORDS = _load_team_passwords()
+TEAM_PASSWORD_STORE = RUNS_DIR / "team_passwords.json"
+
+def _load_runtime_password_hashes():
+    try:
+        data = json.loads(TEAM_PASSWORD_STORE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {str(k): str(v) for k, v in data.items() if str(k) in TEAM_PASSWORDS and isinstance(v, str)}
+
+
+def _save_runtime_password_hash(team, password):
+    if team not in TEAM_PASSWORDS:
+        raise ValueError("Unknown team account.")
+    TEAM_PASSWORD_STORE.parent.mkdir(parents=True, exist_ok=True)
+    data = _load_runtime_password_hashes()
+    data[team] = generate_password_hash(password)
+    tmp = TEAM_PASSWORD_STORE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(TEAM_PASSWORD_STORE)
+
+
+def _team_password_matches(team, password):
+    runtime_hash = _load_runtime_password_hashes().get(team)
+    if runtime_hash:
+        try:
+            return check_password_hash(runtime_hash, password)
+        except ValueError:
+            return False
+    return TEAM_PASSWORDS.get(team) == password
+
+
 PUBLIC_PATH_PREFIXES = ("/login", "/api/health", "/static/", "/favicon.ico")
 TOPIC_ROUTES = {
     "/": "model",
@@ -1314,10 +1346,28 @@ def create_app():
         team = request.form.get("team", "")
         password = request.form.get("password", "")
         nxt = request.form.get("next", "/") or "/"
-        if team in TEAM_PASSWORDS and TEAM_PASSWORDS[team] == password:
+        if team in TEAM_PASSWORDS and _team_password_matches(team, password):
             session["team"] = team
             return redirect(nxt if nxt.startswith("/") else "/")
         return render_template("login.html", teams=sorted(TEAM_PASSWORDS), next=nxt, error="Invalid team account or password."), 401
+
+    @app.post("/api/change-password")
+    def change_password():
+        team = _logged_in_team()
+        if team is None:
+            return jsonify({"error": "login required", "status": 401}), 401
+        data = request.get_json(silent=True) or request.form.to_dict()
+        current = str(data.get("current_password") or "")
+        new_password = str(data.get("new_password") or "")
+        confirm = str(data.get("confirm_password") or "")
+        if not _team_password_matches(team, current):
+            abort(400, "Current password is incorrect.")
+        if new_password != confirm:
+            abort(400, "New passwords do not match.")
+        if len(new_password) < 6 or len(new_password) > 64:
+            abort(400, "Password must be 6 to 64 characters.")
+        _save_runtime_password_hash(team, new_password)
+        return jsonify({"ok": True, "team": team})
 
     @app.post("/logout")
     def logout():
@@ -1805,7 +1855,25 @@ def create_app():
             pred = int(np.argmax(scores)) if scores else -1
             order = _current_class_order() or CLASS_NAMES
             class_name = order[pred] if 0 <= pred < len(order) else f"class_{pred}"
-            confidence = float(scores[pred]) if 0 <= pred < len(scores) else None
+            raw_pred = pred
+            raw_class_name = class_name
+            # Most training models output probabilities; if they output logits,
+            # normalize them so the portal has one consistent confidence gate.
+            confidence = None
+            if scores and 0 <= raw_pred < len(scores):
+                arr = np.asarray(scores, dtype="float64")
+                if np.all(np.isfinite(arr)):
+                    total = float(arr.sum())
+                    if arr.min() >= 0.0 and 0.99 <= total <= 1.01:
+                        probs = arr
+                    else:
+                        shifted = arr - float(arr.max())
+                        exp = np.exp(shifted)
+                        probs = exp / float(exp.sum()) if float(exp.sum()) else exp
+                    confidence = float(probs[raw_pred])
+            if confidence is not None and confidence < 0.70:
+                pred = -1
+                class_name = "NULL"
         except (ValueError, RuntimeError) as exc:
             abort(400, str(exc))
         return jsonify({
@@ -1814,6 +1882,8 @@ def create_app():
             "prediction": pred,
             "class_name": class_name,
             "confidence": confidence,
+            "raw_prediction": raw_pred,
+            "raw_class_name": raw_class_name,
             "scores": scores,
             "class_order": order,
         })

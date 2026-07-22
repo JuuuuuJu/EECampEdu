@@ -4,93 +4,109 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>EECampEdu AI PC Portal</title>
-<!-- CDN font with a system fallback (portal is served over HTTPS; if the CDN is
-     unreachable the font-family stack below falls back to system-ui). -->
-<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
 <style>
   /* ---------- theme tokens ---------- */
   :root, :root[data-theme="dark"] {
-    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0; --muted:#94a3b8;
-    --accent:#38bdf8; --accent-text:#06283d; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b;
-    --border:#334155; --logbg:#020617; --logtext:#cbd5e1;
+    --bg:#070b12; --panel:#111827; --panel2:#182235; --text:#e5edf7; --muted:#9aa8ba;
+    --accent:#31d7ff; --accent-text:#03131d; --ok:#2ee59d; --bad:#ff5c7a; --warn:#ffb454;
+    --border:#2b3b55; --logbg:#030712; --logtext:#d9e6f2; --editor:#0b1020; --editor-line:#1f2a44;
+    --shadow:0 14px 40px rgba(0,0,0,.22);
   }
   :root[data-theme="light"] {
-    --bg:#f1f5f9; --panel:#ffffff; --panel2:#f8fafc; --text:#0f172a; --muted:#64748b;
-    --accent:#0284c7; --accent-text:#ffffff; --ok:#15803d; --bad:#b91c1c; --warn:#b45309;
-    --border:#cbd5e1; --logbg:#0b1220; --logtext:#e2e8f0;
+    --bg:#eef3f8; --panel:#ffffff; --panel2:#f4f7fb; --text:#0f172a; --muted:#64748b;
+    --accent:#007acc; --accent-text:#ffffff; --ok:#15803d; --bad:#b91c1c; --warn:#b45309;
+    --border:#ccd6e3; --logbg:#0b1220; --logtext:#e2e8f0; --editor:#fbfdff; --editor-line:#e7edf5;
+    --shadow:0 12px 30px rgba(15,23,42,.08);
   }
   :root[data-theme="contrast"] {
-    --bg:#000000; --panel:#000000; --panel2:#111111; --text:#ffffff; --muted:#e6e6e6;
-    --accent:#ffff00; --accent-text:#000000; --ok:#00ff6a; --bad:#ff6b6b; --warn:#ffd000;
-    --border:#ffffff; --logbg:#000000; --logtext:#ffffff;
+    --bg:#000000; --panel:#000000; --panel2:#0c0c0c; --text:#ffffff; --muted:#d7d7d7;
+    --accent:#ffff00; --accent-text:#000000; --ok:#00ff66; --bad:#ff7a7a; --warn:#ffd000;
+    --border:#6fc3df; --logbg:#000000; --logtext:#ffffff; --editor:#000000; --editor-line:#1a1a1a;
+    --shadow:none;
+  }
+  :root[data-theme="solarized"] {
+    --bg:#002b36; --panel:#073642; --panel2:#0d4450; --text:#eee8d5; --muted:#93a1a1;
+    --accent:#2aa198; --accent-text:#002b36; --ok:#859900; --bad:#dc322f; --warn:#b58900;
+    --border:#586e75; --logbg:#001f27; --logtext:#eee8d5; --editor:#002b36; --editor-line:#073642;
+    --shadow:0 14px 40px rgba(0,0,0,.2);
   }
   :root[data-theme="contrast"] .card, :root[data-theme="contrast"] input,
-  :root[data-theme="contrast"] select, :root[data-theme="contrast"] .tabs button { border-width:2px; }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family:'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-         background:var(--bg); color:var(--text); line-height:1.45; }
-  /* ---------- top navigation bar ---------- */
-  .topbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap;
-    padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--border);
-    position:sticky; top:0; z-index:20; }
-  .topbar .brand { font-weight:700; font-size:16px; white-space:nowrap; }
-  .topbar .brand small { color:var(--muted); font-weight:500; font-size:12px; margin-left:8px; }
-  .topbar nav { display:flex; gap:4px; flex-wrap:wrap; flex:1 1 auto; }
+  :root[data-theme="contrast"] select, :root[data-theme="contrast"] textarea,
+  :root[data-theme="contrast"] .topbar nav button { border-width:2px; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+         background:radial-gradient(circle at top left, rgba(49,215,255,.08), transparent 28%), var(--bg);
+         color:var(--text); line-height:1.55; font-size:16px; letter-spacing:.005em; }
+  .topbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:13px 22px;
+    background:rgba(17,24,39,.92); background:color-mix(in srgb, var(--panel) 92%, transparent);
+    border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; backdrop-filter:blur(12px); }
+  .topbar .brand { font-weight:800; font-size:18px; white-space:nowrap; letter-spacing:.03em; }
+  .topbar .brand small { color:var(--muted); font-weight:600; font-size:13px; margin-left:8px; }
+  .topbar nav { display:flex; gap:6px; flex-wrap:wrap; flex:1 1 auto; }
   .topbar nav button { margin:0; cursor:pointer; background:transparent; color:var(--text);
-    border:1px solid transparent; border-radius:8px; padding:8px 14px; font-weight:600; font-size:13px; }
-  .topbar nav button:hover { background:var(--panel2); }
+    border:1px solid transparent; border-radius:7px; padding:9px 14px; font-weight:700; font-size:14px; }
+  .topbar nav button:hover, button:hover { font-family:Consolas, 'Courier New', monospace; }
+  .topbar nav button:hover { background:var(--panel2); border-color:var(--border); }
   .topbar nav button.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
   .topbar .right { display:flex; align-items:center; gap:10px; margin-left:auto; white-space:nowrap; }
-  .topbar .right .team { font-size:13px; color:var(--muted); }
+  .topbar .right .team { font-size:14px; color:var(--muted); }
   .topbar .right .team b { color:var(--text); }
-  .topbar select { width:auto; padding:5px 8px; }
+  .topbar select { width:auto; padding:6px 9px; }
   .topbar form { margin:0; }
-  .topbar .right button { margin:0; padding:6px 12px; }
-  main { width:100%; max-width:1280px; margin:0 auto; padding:18px 20px 48px; }
+  .topbar .right button { margin:0; padding:7px 12px; }
+  .account-menu { position:relative; }
+  .account-menu summary { list-style:none; cursor:pointer; color:var(--muted); font-size:14px; }
+  .account-menu summary::-webkit-details-marker { display:none; }
+  .account-panel { position:absolute; right:0; top:34px; width:min(320px, 92vw); padding:14px; background:var(--panel);
+    border:1px solid var(--border); border-radius:9px; box-shadow:var(--shadow); z-index:40; }
+  main { width:100%; max-width:1360px; margin:0 auto; padding:22px 22px 56px; }
   .pane { display:none; } .pane.active { display:block; }
-  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; align-items:start; }
-  .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
-  .card h2 { margin:0 0 10px; font-size:15px; letter-spacing:.02em; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:18px; align-items:start; }
+  .card { background:linear-gradient(180deg, color-mix(in srgb, var(--panel) 94%, white 3%), var(--panel));
+    border:1px solid var(--border); border-radius:9px; padding:18px; margin-bottom:18px; box-shadow:var(--shadow); }
+  .card h2 { margin:0 0 12px; font-size:18px; line-height:1.25; letter-spacing:.015em; }
   .card h2 .step { color:var(--accent); margin-right:6px; }
-  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
-  input, select, button { font:inherit; }
-  input[type=text], input[type=number], select, input[type=file] {
-    width:100%; padding:8px; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:6px; }
+  label { display:block; font-size:14px; color:var(--muted); margin:12px 0 5px; font-weight:600; }
+  input, select, button, textarea { font:inherit; }
+  input[type=text], input[type=password], input[type=number], select, input[type=file], textarea {
+    width:100%; padding:10px 11px; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:7px; }
+  input:focus, select:focus, textarea:focus { outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset:1px; }
   input[type=range] { width:100%; }
-  .row { display:flex; gap:10px; flex-wrap:wrap; } .row > div { flex:1; min-width:120px; } .row.compact > div { min-width:170px; }
-  button { cursor:pointer; padding:9px 14px; border-radius:6px; border:1px solid var(--border);
-           background:var(--accent); color:var(--accent-text); font-weight:600; margin-top:12px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; } .row > div { flex:1; min-width:130px; } .row.compact > div { min-width:180px; }
+  button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
+    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px; }
   button.secondary { background:var(--panel2); color:var(--text); }
-  button:disabled { opacity:.5; cursor:not-allowed; }
-  pre.log { background:var(--logbg); color:var(--logtext); padding:12px; border-radius:6px; height:200px;
-            overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; margin:0; }
-  pre.log.tall { height:280px; }
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--border); }
-  th { color:var(--muted); font-weight:600; }
-  .status { display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:600; }
+  button:disabled { opacity:.48; cursor:not-allowed; }
+  pre.log { background:var(--logbg); color:var(--logtext); padding:13px; border-radius:7px; height:220px;
+            overflow:auto; font:13px/1.55 Consolas, 'Courier New', monospace; white-space:pre-wrap; word-break:break-word; margin:0; }
+  pre.log.tall { height:300px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px 9px; border-bottom:1px solid var(--border); }
+  th { color:var(--muted); font-weight:700; }
+  .status { display:inline-block; padding:3px 9px; border-radius:99px; font-size:12px; font-weight:700; }
   .s-running { background:#0c4a6e; color:#7dd3fc; } .s-succeeded { background:#14532d; color:#86efac; }
   .s-failed { background:#7f1d1d; color:#fca5a5; } .s-starting { background:#3f3f46; color:#e4e4e7; }
-  .msg { font-size:12px; margin-top:8px; min-height:16px; }
+  .msg { font-size:14px; margin-top:9px; min-height:18px; }
   .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); } .msg.warn { color:var(--warn); }
-  .note { font-size:11px; color:var(--muted); margin-top:6px; }
-  .pill { font-size:11px; color:var(--muted); }
-  code { background:var(--panel2); padding:1px 5px; border-radius:4px; font-size:12px; }
+  .note { font-size:13px; color:var(--muted); margin-top:7px; }
+  .pill { font-size:12px; color:var(--muted); }
+  code { background:var(--panel2); padding:2px 6px; border-radius:4px; font:13px Consolas, 'Courier New', monospace; }
   a { color:var(--accent); }
-  .tag { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:1px 5px; }
-  .imglist { font-size:12px; margin:6px 0; }
-  .imglist div { padding:3px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
-  .big { font-size:30px; font-weight:700; }
-  /* ---------- drive ---------- */
+  .tag { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:2px 6px; }
+  .imglist { font-size:14px; margin:7px 0; }
+  .imglist div { padding:4px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .big { font-size:20px; font-weight:700; line-height:1.35; }
+  textarea.code-editor, #outCode { font:14px/1.55 Consolas, 'Courier New', monospace !important; background:var(--editor) !important;
+    color:var(--text); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px;
+    tab-size:2; box-shadow:inset 0 0 0 1px var(--editor-line); }
+  #outCode:focus { box-shadow:0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 0 0 1px var(--editor-line); }
   .thumbs { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; margin-top:12px; }
   .thumb { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--panel2); }
   .thumb img { width:100%; height:96px; object-fit:cover; display:block; cursor:zoom-in; background:#0b1222; }
-  .thumb .cap { font-size:11px; padding:4px 6px; color:var(--muted); word-break:break-all; }
-  .modal { position:fixed; inset:0; background:rgba(0,0,0,.8); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
+  .thumb .cap { font-size:12px; padding:5px 7px; color:var(--muted); word-break:break-all; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
   .modal.open { display:flex; } .modal img { max-width:95vw; max-height:90vh; object-fit:contain; }
-  @media (max-width:640px){ .topbar { gap:8px; } main { padding:14px 12px 40px; } }
+  @media (max-width:760px){ .topbar { gap:10px; padding:11px 12px; } .topbar .right { width:100%; justify-content:flex-start; flex-wrap:wrap; } main { padding:16px 12px 42px; } .grid2 { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -100,20 +116,30 @@
     <button data-topic="model" data-path="/model_finetune">Model finetune</button>
     <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
     <button data-topic="output" data-path="/output">Output demo</button>
-    <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
     <button data-topic="camerausb" data-path="/camera_usb">Camera + USB demo</button>
+    <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
     <button data-topic="drive" data-path="/drive">AI PC Drive</button>
   </nav>
   <div class="right">
     <label style="margin:0;color:var(--muted);font-size:12px">Theme
       <select id="themeSelect" title="Display theme" style="margin-left:4px">
-        <option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option>
+        <option value="dark">Dark modern</option><option value="light">Light</option><option value="contrast">High contrast</option><option value="solarized">Solarized</option>
       </select>
     </label>
     <label style="margin:0;color:var(--muted);font-size:12px" title="Baud rate for all Web Serial flashing (model + firmware). ROM sync stays 115200; lower this if flashing is unreliable.">Flash baud
       <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800" selected>460800</option><option value="921600">921600</option></select>
     </label>
-    <span class="team">Team <b>{{ team }}</b></span>
+        <span class="team">Team <b>{{ team }}</b></span>
+    <details class="account-menu">
+      <summary>Account</summary>
+      <div class="account-panel">
+        <label>Current password</label><input type="password" id="currentPassword" autocomplete="current-password" />
+        <label>New password</label><input type="password" id="newPassword" autocomplete="new-password" />
+        <label>Confirm new password</label><input type="password" id="confirmPassword" autocomplete="new-password" />
+        <button class="secondary" id="changePasswordBtn" type="button">Change password</button>
+        <div class="msg" id="passwordMsg"></div>
+      </div>
+    </details>
     <form method="post" action="/logout"><button class="secondary">Logout</button></form>
   </div>
 </header>
@@ -134,7 +160,7 @@
          <b>Run pattern</b> after flashing. Available helpers:
          <code>led_set_rgb(r, g, b)</code> (0–255 each) and <code>led_delay_ms(ms)</code>.</p>
       <label>Teaching code block</label>
-      <textarea id="outCode" spellcheck="false" style="width:100%;min-height:220px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre;overflow:auto" wrap="off">Loading…</textarea>
+      <textarea id="outCode" class="code-editor" spellcheck="false" style="width:100%;min-height:240px;white-space:pre;overflow:auto" wrap="off">Loading…</textarea>
       <div class="row" style="margin-top:10px">
         <div><button id="outBuildBtn">Build firmware</button></div>
         <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
@@ -371,6 +397,20 @@
     </div>
 
     <div class="card">
+      <h2>Flash model partition (.tflite)</h2>
+      <p class="note">Same as Deploy: flashes only the model into the ESP32-S3 model partition. Use this after flashing main board firmware when you want to update the model only.</p>
+      <label>TFLite model</label>
+      <select id="mainFlashArtifact"></select>
+      <div class="row">
+        <div><button class="secondary" id="mainConnectBtn">Connect ESP32-S3</button></div>
+        <div><button id="mainFlashBtn" disabled>Flash model</button></div>
+      </div>
+      <div class="msg" id="mainFlashStatus"></div>
+      <label style="margin-top:12px">Model flash log</label>
+      <pre class="log" id="mainModelFlashLog">Click “Connect ESP32-S3” to begin.</pre>
+    </div>
+
+    <div class="card">
       <h2>Full firmware live preview + inference</h2>
       <p class="note">After flashing the full main board firmware, connect the same ESP32-S3 serial port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
       <div class="row compact">
@@ -565,6 +605,7 @@ let DATASET_COUNTS = {};
 let AVAILABLE_CLASSES = [];        // all gesture classes present in the dataset
 let ACTIVE_CLASSES = [];           // the <= MAX_ACTIVE classes used for train/infer
 let MAX_ACTIVE = 6;
+const CONFIDENCE_THRESHOLD = 0.70;
 let latestCameraFrame = null;
 let predictBusy = false;
 let lastPredictMs = 0;
@@ -623,7 +664,7 @@ async function init(){
 }
 // ---------- theme selector (dark / light / high-contrast; persisted) ----------
 function applyTheme(name){
-  const t = ["dark","light","contrast"].includes(name) ? name : "dark";
+  const t = ["dark","light","contrast","solarized"].includes(name) ? name : "dark";
   document.documentElement.setAttribute("data-theme", t);
   try { localStorage.setItem("eecampTheme", t); } catch(e){}
   if($("themeSelect")) $("themeSelect").value = t;
@@ -1126,6 +1167,7 @@ const Serial = {
 };
 let flashMeta = null;            // model-partition offset metadata, kept across flows
 let camObjectUrl = null;
+let fullInferenceTimer = null;
 let camAsm = { receiving:false, lines:[], meta:{} };   // OV2640 frame assembler state
 // Encoder -> manual-exposure linkage (mirrors the reference PC app): the board
 // reports "INPUT_CONTROL,encoder=N,..."; each detent nudges manual exposure by 10
@@ -1160,6 +1202,7 @@ async function releasePortLocks(port){
 // finally(). Fully releases the board's port so the next workflow reuses it
 // with no page refresh. Idempotent; never throws.
 async function releaseSerial(logId){
+  if(fullInferenceTimer){ clearInterval(fullInferenceTimer); fullInferenceTimer=null; }
   logId = logId || Serial.logId;
   const log = (s)=>{ if(logId) appendLog(logId, s); };
   if(!Serial.port && !Serial.transport && !Serial.loader){
@@ -1327,17 +1370,38 @@ async function cameraWrite(cmd){
   appendLog(camUi.logId, "> " + cmd + "\n");
 }
 function classNameForIndex(idx){ return CLASS_LABELS[idx] || `class ${idx}`; }
+function confidenceFromScores(scores, pred){
+  if(!scores.length || pred < 0 || pred >= scores.length) return null;
+  const vals = scores.filter(Number.isFinite);
+  if(vals.length !== scores.length) return null;
+  const min = Math.min(...scores), max = Math.max(...scores), chosen = scores[pred];
+  if(min >= 0 && max <= 1.0001) return chosen;
+  if(min >= -128 && max <= 127) return Math.max(0, Math.min(1, (chosen + 128) / 255));
+  if(min >= -32768 && max <= 32767 && max > 1024) return Math.max(0, Math.min(1, chosen / 32767));
+  const shifted = scores.map(v=>v-max);
+  const exp = shifted.map(Math.exp);
+  const total = exp.reduce((a,b)=>a+b,0);
+  return total ? exp[pred] / total : null;
+}
+function effectivePrediction(pred, scores){
+  const confidence = confidenceFromScores(scores, pred);
+  if(confidence != null && confidence < CONFIDENCE_THRESHOLD) return {pred:-1, name:"NULL", action:"idle", confidence};
+  const name = classNameForIndex(pred);
+  return {pred, name, action:CLASS_ACTION_BY_NAME[name] || "", confidence};
+}
 function updateGestureResult(line){
   const parts = line.split(",");
   if(parts.length < 2) return;
-  const pred = Number(parts[1]);
-  if(!Number.isFinite(pred)) return;
-  const name = classNameForIndex(pred);
-  const action = CLASS_ACTION_BY_NAME[name] || "";
+  const rawPred = Number(parts[1]);
+  if(!Number.isFinite(rawPred)) return;
+  const scores = parts.slice(5).map(Number).filter(Number.isFinite);
+  const eff = effectivePrediction(rawPred, scores);
   const modelMs = parts.length > 2 && !Number.isNaN(Number(parts[2])) ? (Number(parts[2])/1000).toFixed(1) : "--";
-  const text = `Prediction: ${pred} (${name})${action?` → ${action}`:""} · model ${modelMs} ms`;
+  const conf = eff.confidence==null ? "" : ` · confidence ${(eff.confidence*100).toFixed(1)}%`;
+  const raw = eff.pred === -1 ? ` · raw ${rawPred} (${classNameForIndex(rawPred)})` : "";
+  const text = `Prediction: ${eff.pred} (${eff.name}) → ${eff.action || "idle"}${conf}${raw} · model ${modelMs} ms`;
   setText(camUi.resultId, text);
-  setMsg(camUi.msgId, text, "ok");
+  setMsg(camUi.msgId, text, eff.pred === -1 ? "warn" : "ok");
 }
 function renderCameraFrame(base64Data, meta){
   const img=$(camUi.imgId), ph=$(camUi.placeholderId);
@@ -1349,7 +1413,7 @@ function renderCameraFrame(base64Data, meta){
     let dataUrl;
     const fmt = Number(meta.format);
     const mime = fmt === 4 ? "image/jpeg" : "image/bmp";
-    
+
     if (fmt === 4) { // JPEG
       if (camObjectUrl) URL.revokeObjectURL(camObjectUrl);
       camObjectUrl = URL.createObjectURL(new Blob([bytes], {type:"image/jpeg"}));
@@ -1360,7 +1424,7 @@ function renderCameraFrame(base64Data, meta){
       canvas.height = meta.height;
       const ctx = canvas.getContext("2d");
       const imgData = ctx.createImageData(meta.width, meta.height);
-      
+
       if (fmt === 3) { // Grayscale
         const len = Math.min(bytes.length, meta.width * meta.height);
         for (let i = 0; i < len; i++) {
@@ -1416,14 +1480,14 @@ function renderCameraFrame(base64Data, meta){
       ctx.putImageData(imgData, 0, 0);
       dataUrl = canvas.toDataURL("image/jpeg");
     }
-    
+
     latestCameraFrame = { base64: clean, meta, mime, bytes: bytes.length, dataUrl: dataUrl.startsWith("data:") ? dataUrl : `data:image/jpeg;base64,${clean}` };
     img.src = dataUrl;
     img.style.display="block";
     if(ph) ph.style.display="none";
     if($("saveFrameBtn")) $("saveFrameBtn").disabled = false;
     if($("predictFrameBtn")) $("predictFrameBtn").disabled = !($("predictModel") && $("predictModel").value);
-    
+
     // FPS calculation
     const now = Date.now();
     if(!fpsStart) { fpsStart = now; frameCount = 0; }
@@ -1436,7 +1500,7 @@ function renderCameraFrame(base64Data, meta){
     }
     const fpsText = currentFps ? ` (${currentFps} fps)` : "";
     setMsg(camUi.msgId, `OV2640 frame ${meta.width}x${meta.height}, ${bytes.length} bytes${fpsText}`, "ok");
-    
+
     maybeLivePredict();
   } catch(e){ appendLog(camUi.logId, "[camera] frame decode failed: "+(e.message||e)+"\n"); }
 }
@@ -1574,7 +1638,13 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     await cameraWrite("f3"); await sleep(250);
     await cameraWrite("s1"); await sleep(250);
     await cameraWrite("d1");
-    setMsg($(camUi.msgId), "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
+    if(ui === FULL_CAMERA_UI){
+      if(fullInferenceTimer) clearInterval(fullInferenceTimer);
+      await sleep(350);
+      try { await cameraWrite("c"); } catch(_) {}
+      fullInferenceTimer = setInterval(()=>{ if(Serial.mode==="raw" && Serial.writer && camUi===FULL_CAMERA_UI) cameraWrite("c").catch(()=>{}); }, 3000);
+    }
+    setMsg($(camUi.msgId), ui === FULL_CAMERA_UI ? "Full firmware preview connected. Triggering inference every 3 seconds..." : "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
   } catch(e){
     const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "Port selection cancelled." : "OV2640 connect failed: "+(e.message||e);
     setMsg($(camUi.msgId), msg, "bad");
@@ -1603,9 +1673,10 @@ async function predictCurrentFrame(){
   try {
     const r = await api("/api/model/keras/predict", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({model_name:model, image_data:latestCameraFrame.dataUrl})});
     const conf = r.confidence==null ? "" : ` confidence ${(Number(r.confidence)*100).toFixed(1)}%`;
-    const action = CLASS_ACTION_BY_NAME[r.class_name] ? ` -> ${CLASS_ACTION_BY_NAME[r.class_name]}` : "";
-    setText("modelGestureResult", `Prediction: ${r.prediction} (${r.class_name})${action}${conf}`);
-    setMsg($("captureMsg"), `Predicted ${r.class_name}${conf}`, "ok");
+    const action = r.class_name === "NULL" ? " -> idle" : (CLASS_ACTION_BY_NAME[r.class_name] ? ` -> ${CLASS_ACTION_BY_NAME[r.class_name]}` : "");
+    const raw = r.class_name === "NULL" && r.raw_class_name ? ` · raw ${r.raw_class_name}` : "";
+    setText("modelGestureResult", `Prediction: ${r.prediction} (${r.class_name})${action}${conf}${raw}`);
+    setMsg($("captureMsg"), r.class_name === "NULL" ? `Low confidence -> NULL${conf}` : `Predicted ${r.class_name}${conf}`, r.class_name === "NULL" ? "warn" : "ok");
   } catch(e){ setMsg($("captureMsg"), "Predict failed: "+e.message, "bad"); }
   finally { predictBusy = false; }
 }
@@ -1619,49 +1690,65 @@ function maybeLivePredict(){
 
 // ---------- FLASH MODEL (.tflite) ----------
 const modelTerminal = makeTerminal("modelFlashLog", (line)=>{ const s=String(line);
-  if(/Erasing/i.test(s)) setMsg($("flashStatus"),"Erasing…","warn");
-  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("flashStatus"),"Writing model…","warn");
-  else if(/verified/i.test(s)) setMsg($("flashStatus"),"Verifying…","warn"); });
+  if(/Erasing/i.test(s)) setMsg($("flashStatus"),"Erasing...","warn");
+  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("flashStatus"),"Writing model...","warn");
+  else if(/verified/i.test(s)) setMsg($("flashStatus"),"Verifying...","warn"); });
+const mainModelTerminal = makeTerminal("mainModelFlashLog", (line)=>{ const s=String(line);
+  if(/Erasing/i.test(s)) setMsg($("mainFlashStatus"),"Erasing...","warn");
+  else if(/Writing at|Compressed|Wrote/i.test(s)) setMsg($("mainFlashStatus"),"Writing model...","warn");
+  else if(/verified/i.test(s)) setMsg($("mainFlashStatus"),"Verifying...","warn"); });
+const DEPLOY_MODEL_FLASH = { connectBtn:"connectBtn", flashBtn:"flashBtn", artifact:"flashArtifact", status:"flashStatus", log:"modelFlashLog", terminal:modelTerminal };
+const MAIN_MODEL_FLASH = { connectBtn:"mainConnectBtn", flashBtn:"mainFlashBtn", artifact:"mainFlashArtifact", status:"mainFlashStatus", log:"mainModelFlashLog", terminal:mainModelTerminal };
+function initOneModelFlashPanel(ids){
+  if(!$(ids.connectBtn) || !$(ids.flashBtn)) return;
+  const sup=webSerialSupport();
+  if(sup.ok){ setMsg($(ids.status),"Ready. Click Connect ESP32-S3.",""); $(ids.connectBtn).disabled=false; return; }
+  $(ids.connectBtn).disabled=true; $(ids.flashBtn).disabled=true;
+  if(sup.reason==="unsupported-browser") setMsg($(ids.status),"Web Serial not supported. Use Chrome or Edge.","bad");
+  else setMsg($(ids.status),"Flashing needs HTTPS (secure context).","warn");
+}
 function initFlashPanel(){
   const help=$("httpHelp"), oc=$("originCode"); if(oc) oc.textContent=window.location.origin; if(help) help.style.display="none";
+  initOneModelFlashPanel(DEPLOY_MODEL_FLASH);
+  initOneModelFlashPanel(MAIN_MODEL_FLASH);
   const sup=webSerialSupport();
-  if(sup.ok){ setMsg($("flashStatus"),"Ready. Click “Connect ESP32-S3”.",""); return; }
-  $("connectBtn").disabled=true; $("flashBtn").disabled=true;
-  if(sup.reason==="unsupported-browser") setMsg($("flashStatus"),"Web Serial not supported. Use Chrome or Edge.","bad");
-  else { setMsg($("flashStatus"),"Flashing needs HTTPS (secure context). See below.","warn"); if(help) help.style.display=""; }
+  if(!sup.ok && sup.reason!=="unsupported-browser" && help) help.style.display="";
 }
-$("connectBtn").onclick = async () => {
-  const sup=webSerialSupport(); if(!sup.ok){ setMsg($("flashStatus"),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
-  $("connectBtn").disabled=true;
+function makeModelConnect(ids){ return async () => {
+  const sup=webSerialSupport(); if(!sup.ok){ setMsg($(ids.status),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
+  $(ids.connectBtn).disabled=true;
   try {
     if(!flashMeta){ try{ flashMeta=await api("/api/flash-meta"); }catch(e){ flashMeta={offset_int:3211264}; } }
-    const chip=await espConnect({ terminal:modelTerminal, statusEl:"flashStatus", logId:"modelFlashLog" });
-    setMsg($("flashStatus"),`Connected (${chip}). Select a model and Flash.`,"ok"); $("flashBtn").disabled=false;
+    const chip=await espConnect({ terminal:ids.terminal, statusEl:ids.status, logId:ids.log });
+    setMsg($(ids.status),`Connected (${chip}). Select a model and Flash.`,"ok"); $(ids.flashBtn).disabled=false;
   } catch(e){
     const raw=e.message||String(e);
     const m=/No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect failed: "+raw);
-    appendLog("modelFlashLog","\n[portal] "+m+"\n"); setMsg($("flashStatus"),m,"bad");
-    await releaseSerial("modelFlashLog");     // free the port on a failed connect
+    appendLog(ids.log,"\n[portal] "+m+"\n"); setMsg($(ids.status),m,"bad");
+    await releaseSerial(ids.log);
   }
-  $("connectBtn").disabled=false;
-};
-$("flashBtn").onclick = async () => {
-  const path=$("flashArtifact").value;
-  if(!Serial.loader){ setMsg($("flashStatus"),"Connect first.","bad"); return; }
-  if(!path){ setMsg($("flashStatus"),"Select a TFLite model.","bad"); return; }
+  $(ids.connectBtn).disabled=false;
+}; }
+function makeModelFlash(ids){ return async () => {
+  const path=$(ids.artifact).value;
+  if(!Serial.loader){ setMsg($(ids.status),"Connect first.","bad"); return; }
+  if(!path){ setMsg($(ids.status),"Select a TFLite model.","bad"); return; }
   const offset=(flashMeta&&flashMeta.offset_int)||3211264;
-  $("flashBtn").disabled=true; $("connectBtn").disabled=true;
-  try { setMsg($("flashStatus"),"Downloading model…","warn");
+  $(ids.flashBtn).disabled=true; $(ids.connectBtn).disabled=true;
+  try { setMsg($(ids.status),"Downloading model...","warn");
     const resp=await fetch(ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(path)); if(!resp.ok) throw new Error("download failed ("+resp.status+")");
-    const data=binaryString(await resp.arrayBuffer()); appendLog("modelFlashLog",`\n[portal] flashing ${path.split("/").pop()} (${data.length} bytes)\n`);
+    const data=binaryString(await resp.arrayBuffer()); appendLog(ids.log,`\n[portal] flashing ${path.split("/").pop()} (${data.length} bytes)\n`);
     await Serial.loader.writeFlash({ fileArray:[{data,address:offset}], flashSize:"keep",flashMode:"keep",flashFreq:"keep",eraseAll:false,compress:true,
-      reportProgress:(i,w,t)=>{ const p=t?Math.round(w/t*100):0; setMsg($("flashStatus"),`Writing model… ${p}% (${w}/${t})`,"warn"); } });
-    setMsg($("flashStatus"),"Flash succeeded — model updated. You can flash again or flash firmware.","ok");
-  } catch(e){ setMsg($("flashStatus"),"Flash failed: "+(e.message||e)+" (see log)","bad"); }
-  finally { await releaseSerial("modelFlashLog"); }   // always release the port
-};
-if($("copyOriginBtn")) $("copyOriginBtn").onclick = () => copyText(window.location.origin, $("flashStatus"), "Address copied — paste into the flag box, then Relaunch.");
-
+      reportProgress:(i,w,t)=>{ const p=t?Math.round(w/t*100):0; setMsg($(ids.status),`Writing model... ${p}% (${w}/${t})`,"warn"); } });
+    setMsg($(ids.status),"Flash succeeded - model updated. You can flash again or flash firmware.","ok");
+  } catch(e){ setMsg($(ids.status),"Flash failed: "+(e.message||e)+" (see log)","bad"); }
+  finally { await releaseSerial(ids.log); }
+}; }
+if($("connectBtn")) $("connectBtn").onclick = makeModelConnect(DEPLOY_MODEL_FLASH);
+if($("flashBtn")) $("flashBtn").onclick = makeModelFlash(DEPLOY_MODEL_FLASH);
+if($("mainConnectBtn")) $("mainConnectBtn").onclick = makeModelConnect(MAIN_MODEL_FLASH);
+if($("mainFlashBtn")) $("mainFlashBtn").onclick = makeModelFlash(MAIN_MODEL_FLASH);
+if($("copyOriginBtn")) $("copyOriginBtn").onclick = () => copyText(window.location.origin, $("flashStatus"), "Address copied - paste into the flag box, then Relaunch.");
 // ---------- FIRMWARE FLASH (generic: output_demo + main_board) ----------
 async function loadFirmware(target, ids){
   setMsg($(ids.statusEl),"Checking firmware build…","warn");
@@ -1694,9 +1781,9 @@ function makeFwFlash(ids){
       appendLog(ids.logEl,`\n[portal] ${chip} — downloading ${ids.meta.images.length} images…\n`);
       const fileArray=[];
       for(const im of ids.meta.images){ const resp=await fetch(ORIGIN+im.url); if(!resp.ok) throw new Error("download failed for "+im.name+" ("+resp.status+")");
-        fileArray.push({data:binaryString(await resp.arrayBuffer()),address:im.offset_int}); appendLog(ids.logEl,`  ${im.name}: ${im.size} bytes\n`); }
+        fileArray.push({data:binaryString(await resp.arrayBuffer()),address:im.offset_int}); appendLog(ids.logEl,`  ${im.name}: ${im.size} bytes @ ${im.offset}\n`); }
       setMsg($(ids.statusEl),"Writing firmware…","warn");
-      await Serial.loader.writeFlash({ fileArray, flashSize:ids.meta.flash_size||"keep", flashMode:ids.meta.flash_mode||"keep", flashFreq:ids.meta.flash_freq||"keep",
+      await Serial.loader.writeFlash({ fileArray, flashSize:"keep", flashMode:ids.meta.flash_mode||"keep", flashFreq:ids.meta.flash_freq||"keep",
         eraseAll:false, compress:true, reportProgress:(i,w,t)=>{ const im=ids.meta.images[i]; const p=t?Math.round(w/t*100):0;
           setMsg($(ids.statusEl),`Writing ${im?im.name:("image "+(i+1))} (${i+1}/${ids.meta.images.length})… ${p}%`,"warn"); } });
       setMsg($(ids.statusEl),"Firmware flash succeeded — board rebooting.","ok");
