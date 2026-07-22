@@ -58,6 +58,11 @@ TEMPLATES_DIR = APP_DIR / "templates"
 RUNS_DIR = APP_DIR / "runs"                 # git-ignored runtime folder
 UPLOAD_DIR = RUNS_DIR / "uploads"
 JOBS_DIR = RUNS_DIR / "jobs"
+# AI PC Drive: one AI PC serves one team, so this is that team's shared storage
+# (code / models / reports / build logs / general uploads — NOT the primary place
+# for captured photos, which live on the ESP32-S3). Login is still required.
+DRIVE_ROOT = RUNS_DIR / "drive"
+DRIVE_FOLDERS = ["0_shared"] + [str(i) for i in range(1, 13)]  # 0_shared, 1 .. 12
 
 MODEL_FINETUNE_DIR = REPO_ROOT / "model_finetune"
 DATASET_DIR = MODEL_FINETUNE_DIR / "dataset"
@@ -224,6 +229,7 @@ TOPIC_ROUTES = {
     "/output": "output",
     "/firmware": "mainfw",
     "/camera_usb": "camerausb",
+    "/drive": "drive",
 }
 
 
@@ -539,6 +545,47 @@ def _extract_zip_safely(zip_path, dest_dir):
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp"}
 TRAIN_SPLIT_NAMES = {"train", "training"}
 VALIDATION_SPLIT_NAMES = {"validation", "valid", "val"}
+
+
+# ---------------- AI PC Drive (per-team file storage on this AI PC) ----------------
+def _ensure_drive():
+    for folder in DRIVE_FOLDERS:
+        (DRIVE_ROOT / folder).mkdir(parents=True, exist_ok=True)
+
+
+def _drive_folder_dir(folder):
+    if folder not in DRIVE_FOLDERS:
+        raise ValueError(f"Unknown drive folder '{folder}'.")
+    target = DRIVE_ROOT / folder
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _drive_safe_file(folder, name):
+    """Resolve <folder>/<name> to a real file directly inside the folder (no traversal)."""
+    folder_dir = _drive_folder_dir(folder)
+    base = os.path.basename(str(name or "").strip())
+    if not base or base in {".", ".."}:
+        raise ValueError("Invalid file name.")
+    candidate = (folder_dir / base).resolve()
+    if candidate.parent != folder_dir.resolve():
+        raise ValueError("Invalid file path.")
+    return candidate
+
+
+def _drive_list(folder):
+    folder_dir = _drive_folder_dir(folder)
+    files = []
+    for path in sorted(folder_dir.iterdir(), key=lambda p: p.name.lower()):
+        if path.is_file():
+            stat = path.stat()
+            files.append({
+                "name": path.name,
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                "is_image": path.suffix.lower() in IMAGE_EXTENSIONS,
+            })
+    return files
 
 
 def _class_image_count(class_root, class_name):
@@ -1186,8 +1233,72 @@ def create_app():
     @app.get("/output")
     @app.get("/firmware")
     @app.get("/camera_usb")
+    @app.get("/drive")
     def index():
         return render_template("index.html", team=_logged_in_team(), topic=TOPIC_ROUTES.get(request.path, "dashboard"))
+
+    # ---------------- AI PC Drive API (login-gated by _require_login) ----------------
+    @app.get("/api/drive/folders")
+    def drive_folders():
+        _ensure_drive()
+        return jsonify({"team": _logged_in_team(), "folders": DRIVE_FOLDERS})
+
+    @app.get("/api/drive/list")
+    def drive_list():
+        folder = request.args.get("folder", "0_shared")
+        try:
+            files = _drive_list(folder)
+        except ValueError as exc:
+            abort(400, str(exc))
+        return jsonify({"folder": folder, "files": files})
+
+    @app.post("/api/drive/upload")
+    def drive_upload():
+        folder = request.form.get("folder", "0_shared")
+        if "file" not in request.files:
+            abort(400, "No file part named 'file'.")
+        upload = request.files["file"]
+        if not upload.filename:
+            abort(400, "No file selected.")
+        try:
+            folder_dir = _drive_folder_dir(folder)
+        except ValueError as exc:
+            abort(400, str(exc))
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", os.path.basename(upload.filename))[:128] or "upload.bin"
+        dest = folder_dir / safe
+        upload.save(str(dest))
+        return jsonify({"ok": True, "folder": folder, "name": dest.name, "size": dest.stat().st_size})
+
+    @app.get("/api/drive/download")
+    def drive_download():
+        try:
+            path = _drive_safe_file(request.args.get("folder", ""), request.args.get("name", ""))
+        except ValueError as exc:
+            abort(400, str(exc))
+        if not path.is_file():
+            abort(404, "File not found.")
+        return send_file(str(path), as_attachment=True, download_name=path.name)
+
+    @app.get("/api/drive/image")
+    def drive_image():
+        try:
+            path = _drive_safe_file(request.args.get("folder", ""), request.args.get("name", ""))
+        except ValueError as exc:
+            abort(400, str(exc))
+        if not path.is_file() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            abort(404, "Image not found.")
+        return send_file(str(path))   # inline preview
+
+    @app.post("/api/drive/delete")
+    def drive_delete():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        try:
+            path = _drive_safe_file(data.get("folder", ""), data.get("name", ""))
+        except ValueError as exc:
+            abort(400, str(exc))
+        if path.is_file():
+            path.unlink()
+        return jsonify({"ok": True, "folder": data.get("folder", ""), "name": path.name})
 
     @app.get("/api/health")
     def health():
@@ -1771,6 +1882,7 @@ def main():
 
     for directory in (RUNS_DIR, UPLOAD_DIR, JOBS_DIR):
         directory.mkdir(parents=True, exist_ok=True)
+    _ensure_drive()   # create 0_shared/ and 1/..12/ for the AI PC Drive
 
     ssl_context = None
     scheme = "http"

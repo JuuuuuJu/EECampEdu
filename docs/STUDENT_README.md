@@ -8,7 +8,14 @@ Example:
 https://140.112.194.42:8081
 ```
 
-If the browser shows a certificate warning, choose **Advanced -> Proceed** once. After login, use the top menu to open each page.
+If the browser shows a certificate warning, choose **Advanced -> Proceed** once. After login, use the **top navigation bar** to open each page. Your team name and **Logout** are at the top-right, along with a **Theme** selector (Dark / Light / High contrast) that is remembered on your browser.
+
+## AI PC Drive Page
+
+Your team's shared file storage **on the AI PC** (login required). Keep code, trained models, reports, build logs, and general uploads here. Pick a folder — `0_shared` for team-wide files, or `1`–`12` per member/station — then **Upload**, **download**, **delete**, and **preview images**.
+
+- **Zip many files before uploading** — one `.zip` uploads much faster than many small files.
+- **Captured photos are not stored here** — they live on the ESP32-S3 and are viewed/downloaded from the camera pages.
 
 ## Model Finetune Page
 

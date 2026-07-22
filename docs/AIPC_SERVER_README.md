@@ -74,10 +74,33 @@ CSS, JS, env vars, or certificates. Job logs remain under `apps/training_portal/
 - `/output`: output teaching firmware flash + LED/PWM controls.
 - `/firmware`: full main board firmware flash + live OV2640 preview/inference.
 - `/camera_usb`: full OV2640 camera + USB-storage control demo (pixel format, resolution, exposure/gain/AWB/brightness, capture to flash, expose as USB drive), modeled on `firmware/pc/tools/camera_controller.py`. Runs on the main board firmware over browser Web Serial.
+- `/drive`: **AI PC Drive** — this team's shared file storage on the AI PC (see below).
 
 All Web Serial flows (flash, model flash, benchmark, camera preview, camera+USB demo, output control) share one lifecycle: one port open at a time, release-before-acquire, and a full close after each workflow.
 
-The UI is a top menu with routes, not a terminal tutorial.
+The UI is a responsive **top navigation bar** with the team name, Logout, a display-theme
+selector (**Dark / Light / High contrast**, remembered per browser), and the flash-baud
+selector at the top-right. Low-level flash offsets, developer mode, and the flash-sync
+(BOOT) selector are not exposed in the student UI.
+
+## AI PC Drive
+
+One AI PC serves one team, so the Drive is that team's shared storage on this machine
+(login still required). Files live under `apps/training_portal/runs/drive/` (git-ignored),
+in folders `0_shared/` (team-wide) and `1/` … `12/` (per member/station), auto-created on
+startup. Use it for code, models, reports, build logs, and general uploads.
+
+- **Upload / list / download / delete** and inline **image preview** from the `/drive` page.
+- **Zip many files before uploading** — one `.zip` is far faster than many small files
+  (the server accepts uploads up to 2 GB).
+- **Captured photos are not stored here** — they live on the ESP32-S3 and are viewed /
+  downloaded from the camera pages.
+
+API (all login-gated): `GET /api/drive/folders`, `GET /api/drive/list?folder=`,
+`POST /api/drive/upload` (`folder`,`file`), `GET /api/drive/download?folder=&name=`,
+`GET /api/drive/image?folder=&name=` (inline), `POST /api/drive/delete` (`folder`,`name`).
+File names are sanitized to a single path segment inside the chosen folder (no traversal);
+unknown folders are rejected.
 
 ## Build Firmware Artifacts For Browser Flashing
 

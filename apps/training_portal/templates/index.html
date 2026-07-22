@@ -4,22 +4,53 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>EECampEdu AI PC Portal</title>
+<!-- CDN font with a system fallback (portal is served over HTTPS; if the CDN is
+     unreachable the font-family stack below falls back to system-ui). -->
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
 <style>
-  :root { --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0;
-          --muted:#94a3b8; --accent:#38bdf8; --ok:#22c55e; --bad:#ef4444;
-          --warn:#f59e0b; --border:#334155; }
+  /* ---------- theme tokens ---------- */
+  :root, :root[data-theme="dark"] {
+    --bg:#0f172a; --panel:#1e293b; --panel2:#273449; --text:#e2e8f0; --muted:#94a3b8;
+    --accent:#38bdf8; --accent-text:#06283d; --ok:#22c55e; --bad:#ef4444; --warn:#f59e0b;
+    --border:#334155; --logbg:#020617; --logtext:#cbd5e1;
+  }
+  :root[data-theme="light"] {
+    --bg:#f1f5f9; --panel:#ffffff; --panel2:#f8fafc; --text:#0f172a; --muted:#64748b;
+    --accent:#0284c7; --accent-text:#ffffff; --ok:#15803d; --bad:#b91c1c; --warn:#b45309;
+    --border:#cbd5e1; --logbg:#0b1220; --logtext:#e2e8f0;
+  }
+  :root[data-theme="contrast"] {
+    --bg:#000000; --panel:#000000; --panel2:#111111; --text:#ffffff; --muted:#e6e6e6;
+    --accent:#ffff00; --accent-text:#000000; --ok:#00ff6a; --bad:#ff6b6b; --warn:#ffd000;
+    --border:#ffffff; --logbg:#000000; --logtext:#ffffff;
+  }
+  :root[data-theme="contrast"] .card, :root[data-theme="contrast"] input,
+  :root[data-theme="contrast"] select, :root[data-theme="contrast"] .tabs button { border-width:2px; }
   * { box-sizing: border-box; }
-  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  body { margin:0; font-family:'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
          background:var(--bg); color:var(--text); line-height:1.45; }
-  header { padding:18px 24px; background:var(--panel); border-bottom:1px solid var(--border); }
-  header h1 { margin:0; font-size:20px; }
-  header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
-  .tabs { max-width:1000px; margin:16px auto 0; padding:0 20px; display:flex; gap:6px; flex-wrap:wrap; }
-  .tabs button { margin:0; cursor:pointer; background:var(--panel2); color:var(--text);
-    border:1px solid var(--border); border-radius:8px 8px 0 0; padding:9px 16px; font-weight:600; font-size:13px; }
-  .tabs button.active { background:var(--accent); color:#06283d; border-color:var(--accent); }
-  main { max-width:1000px; margin:0 auto; padding:16px 20px 40px; }
+  /* ---------- top navigation bar ---------- */
+  .topbar { display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+    padding:10px 20px; background:var(--panel); border-bottom:1px solid var(--border);
+    position:sticky; top:0; z-index:20; }
+  .topbar .brand { font-weight:700; font-size:16px; white-space:nowrap; }
+  .topbar .brand small { color:var(--muted); font-weight:500; font-size:12px; margin-left:8px; }
+  .topbar nav { display:flex; gap:4px; flex-wrap:wrap; flex:1 1 auto; }
+  .topbar nav button { margin:0; cursor:pointer; background:transparent; color:var(--text);
+    border:1px solid transparent; border-radius:8px; padding:8px 14px; font-weight:600; font-size:13px; }
+  .topbar nav button:hover { background:var(--panel2); }
+  .topbar nav button.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
+  .topbar .right { display:flex; align-items:center; gap:10px; margin-left:auto; white-space:nowrap; }
+  .topbar .right .team { font-size:13px; color:var(--muted); }
+  .topbar .right .team b { color:var(--text); }
+  .topbar select { width:auto; padding:5px 8px; }
+  .topbar form { margin:0; }
+  .topbar .right button { margin:0; padding:6px 12px; }
+  main { width:100%; max-width:1280px; margin:0 auto; padding:18px 20px 48px; }
   .pane { display:none; } .pane.active { display:block; }
+  .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; align-items:start; }
   .card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
   .card h2 { margin:0 0 10px; font-size:15px; letter-spacing:.02em; }
   .card h2 .step { color:var(--accent); margin-right:6px; }
@@ -30,10 +61,10 @@
   input[type=range] { width:100%; }
   .row { display:flex; gap:10px; flex-wrap:wrap; } .row > div { flex:1; min-width:120px; } .row.compact > div { min-width:170px; }
   button { cursor:pointer; padding:9px 14px; border-radius:6px; border:1px solid var(--border);
-           background:var(--accent); color:#06283d; font-weight:600; margin-top:12px; }
+           background:var(--accent); color:var(--accent-text); font-weight:600; margin-top:12px; }
   button.secondary { background:var(--panel2); color:var(--text); }
   button:disabled { opacity:.5; cursor:not-allowed; }
-  pre.log { background:#020617; color:#cbd5e1; padding:12px; border-radius:6px; height:200px;
+  pre.log { background:var(--logbg); color:var(--logtext); padding:12px; border-radius:6px; height:200px;
             overflow:auto; font-size:12px; white-space:pre-wrap; word-break:break-word; margin:0; }
   pre.log.tall { height:280px; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
@@ -50,32 +81,42 @@
   a { color:var(--accent); }
   .tag { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); border:1px solid var(--border); border-radius:4px; padding:1px 5px; }
   .imglist { font-size:12px; margin:6px 0; }
-  .imglist div { padding:3px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; }
+  .imglist div { padding:3px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .big { font-size:30px; font-weight:700; }
+  /* ---------- drive ---------- */
+  .thumbs { display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; margin-top:12px; }
+  .thumb { border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--panel2); }
+  .thumb img { width:100%; height:96px; object-fit:cover; display:block; cursor:zoom-in; background:#0b1222; }
+  .thumb .cap { font-size:11px; padding:4px 6px; color:var(--muted); word-break:break-all; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.8); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
+  .modal.open { display:flex; } .modal img { max-width:95vw; max-height:90vh; object-fit:contain; }
+  @media (max-width:640px){ .topbar { gap:8px; } main { padding:14px 12px 40px; } }
 </style>
 </head>
 <body>
-<header>
-  <h1>EECampEdu — AI PC Portal</h1>
-  <p>Topic routes: <code>/model_finetune</code> · <code>/deploy</code> · <code>/output</code> · <code>/firmware</code>.
-     <span style="margin-left:14px;color:var(--muted)">Team: <b>{{ team }}</b></span>
-     <form method="post" action="/logout" style="display:inline;margin-left:10px"><button class="secondary" style="margin:0;padding:3px 8px">Logout</button></form>
-     <label style="display:inline;margin-left:14px;color:var(--muted)"><input type="checkbox" id="devMode" style="width:auto"> developer mode (show flash offsets)</label>
-     <label style="display:inline;margin-left:14px;color:var(--muted)">Flash sync:
-       <select id="bootMode" style="width:auto;padding:2px 6px;margin-left:4px"><option value="auto">auto + manual retry</option><option value="manual">manual BOOT only</option></select>
-     </label>
-     <label style="display:inline;margin-left:14px;color:var(--muted)" title="Baud rate used for all Web Serial flashing (model partition + firmware). ROM sync stays at 115200; this is the write speed. Lower it if flashing is unreliable.">Flash baud:
-       <select id="flashBaud" style="width:auto;padding:2px 6px;margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800" selected>460800 (default)</option><option value="921600">921600</option></select>
-     </label></p>
+<header class="topbar">
+  <div class="brand">EECampEdu<small>AI PC Portal</small></div>
+  <nav id="tabs">
+    <button data-topic="model" data-path="/model_finetune">Model finetune</button>
+    <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
+    <button data-topic="output" data-path="/output">Output demo</button>
+    <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
+    <button data-topic="camerausb" data-path="/camera_usb">Camera + USB demo</button>
+    <button data-topic="drive" data-path="/drive">AI PC Drive</button>
+  </nav>
+  <div class="right">
+    <label style="margin:0;color:var(--muted);font-size:12px">Theme
+      <select id="themeSelect" title="Display theme" style="margin-left:4px">
+        <option value="dark">Dark</option><option value="light">Light</option><option value="contrast">High contrast</option>
+      </select>
+    </label>
+    <label style="margin:0;color:var(--muted);font-size:12px" title="Baud rate for all Web Serial flashing (model + firmware). ROM sync stays 115200; lower this if flashing is unreliable.">Flash baud
+      <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800" selected>460800</option><option value="921600">921600</option></select>
+    </label>
+    <span class="team">Team <b>{{ team }}</b></span>
+    <form method="post" action="/logout"><button class="secondary">Logout</button></form>
+  </div>
 </header>
-
-<nav class="tabs" id="tabs">
-  <button data-topic="model" data-path="/model_finetune">Model finetune</button>
-  <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
-  <button data-topic="output" data-path="/output">Output demo</button>
-  <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
-  <button data-topic="camerausb" data-path="/camera_usb">Camera + USB demo</button>
-</nav>
 
 <main>
   <!-- ==================== OUTPUT DEMO ==================== -->
@@ -439,6 +480,32 @@
     </div>
   </section>
 
+  <!-- ==================== AI PC DRIVE ==================== -->
+  <section class="pane" id="pane-drive">
+    <div class="card">
+      <h2>AI PC Drive — Team <b>{{ team }}</b></h2>
+      <p class="note">Shared storage on <b>this AI PC</b> for your team only (login required). Keep your
+         code, models, reports, build logs, and general uploads here. Use <code>0_shared/</code> for
+         team-wide files and folders <code>1</code>–<code>12</code> per member/station.</p>
+      <p class="note">📦 <b>Zip many files before uploading</b> (one <code>.zip</code> uploads far faster than many
+         small files). 📷 <b>Captured photos are not stored here</b> — they live on the ESP32-S3 and are viewed/downloaded
+         from the camera pages.</p>
+      <div class="row compact">
+        <div><label>Folder</label><select id="driveFolder"></select></div>
+        <div><label>Upload a file (zip recommended)</label><input type="file" id="driveFile" /></div>
+        <div style="display:flex;align-items:flex-end"><button id="driveUploadBtn">Upload</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="driveRefreshBtn">Refresh</button></div>
+      </div>
+      <div class="msg" id="driveMsg"></div>
+    </div>
+    <div class="card">
+      <h2>Files in <span id="driveFolderLabel">0_shared</span></h2>
+      <table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
+        <tbody id="driveList"><tr><td colspan="4" class="note">Loading…</td></tr></tbody></table>
+      <div id="driveThumbs" class="thumbs"></div>
+    </div>
+  </section>
+
   <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div id="sharedJobPanels">
     <div class="card">
@@ -457,6 +524,8 @@
     </div>
   </div>
 </main>
+
+<div class="modal" id="imgModal"><img id="imgModalImg" alt="preview" /></div>
 
 <script>
 const ORIGIN = window.location.origin;
@@ -490,8 +559,8 @@ async function api(path, opts){
 }
 
 // ---------- topic routes ----------
-const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/":"model"};
-const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb"};
+const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/":"model"};
+const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive"};
 function activateTopic(topic, push){
   topic = topic || "model";
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
@@ -503,9 +572,10 @@ function activateTopic(topic, push){
   if(topic==="output") loadFirmware("output_demo", OUTFW);
   if(topic==="model"){ loadFirmware("model_finetune", MODELFW); refreshModelDemo(); }
   if(topic==="deploy"){ loadFirmware("deploy_benchmark", BENCHFW); refreshReports(); loadBenchOptions(); }
-  
+  if(topic==="drive") loadDrive();
+
   const panels = $("sharedJobPanels");
-  if(panels) panels.style.display = (topic === "camerausb") ? "none" : "block";
+  if(panels) panels.style.display = (topic === "camerausb" || topic === "drive") ? "none" : "block";
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -514,6 +584,7 @@ function initTabs(){
 }
 
 async function init(){
+  initTheme();
   initTabs();
   try { const h = await api("/api/health"); } catch(e){}
   const r = await api("/api/recipes");
@@ -524,7 +595,19 @@ async function init(){
   initFlashPanel();
   loadFirmware("output_demo", OUTFW);   // default tab
   loadBenchOptions();
-  $("devMode").onchange = () => { renderFwImages(OUTFW); renderFwImages(MODELFW); renderFwImages(BENCHFW); renderFwImages(MAINFW); renderFwImages(USBFW); };
+}
+// ---------- theme selector (dark / light / high-contrast; persisted) ----------
+function applyTheme(name){
+  const t = ["dark","light","contrast"].includes(name) ? name : "dark";
+  document.documentElement.setAttribute("data-theme", t);
+  try { localStorage.setItem("eecampTheme", t); } catch(e){}
+  if($("themeSelect")) $("themeSelect").value = t;
+}
+function initTheme(){
+  let saved = "dark";
+  try { saved = localStorage.getItem("eecampTheme") || "dark"; } catch(e){}
+  applyTheme(saved);
+  if($("themeSelect")) $("themeSelect").onchange = (e)=>applyTheme(e.target.value);
 }
 
 // ---------- class map ----------
@@ -1170,8 +1253,8 @@ function syncFlashButtons(){
 // re-syncs on the SAME open transport (main("no_reset")) rather than closing
 // and reopening the port. On the ESP32-S3 USB-Serial-JTAG bridge, closing and
 // recreating the Transport between attempts makes the reopen fail almost every
-// time, so we keep a single transport for the whole connect. The bootMode
-// select lets the student force manual-BOOT-only (skip the auto reset attempt).
+// time, so we keep a single transport for the whole connect. Auto reset is tried
+// first, then a manual-BOOT retry on the same transport if that fails.
 async function espConnect({ terminal, statusEl, logId }){
   const { ESPLoader, Transport } = await import(ESPTOOL_JS);
   await releaseSerial(logId);                                   // free any prior flow
@@ -1186,13 +1269,6 @@ async function espConnect({ terminal, statusEl, logId }){
     Serial.transport = new Transport(port, true);
     Serial.loader = new ESPLoader({ transport: Serial.transport, baudrate: flashBaud, romBaudrate: 115200, terminal });
 
-    const manualOnly = $("bootMode") && $("bootMode").value === "manual";
-    if(manualOnly){
-      appendLog(logId, "\n[portal] Manual mode: hold BOOT, tap RESET/EN once, release BOOT after ~1s, then wait.\n");
-      setMsg($(statusEl), "Manual BOOT — hold BOOT, tap RESET/EN, release after ~1s…", "warn");
-      Serial.chip = await withTimeout(Serial.loader.main("no_reset"), 20000, serialTroubleshoot());
-      return Serial.chip;
-    }
     setMsg($(statusEl), "Connecting — entering bootloader…", "warn");
     try {
       Serial.chip = await withTimeout(Serial.loader.main("default_reset"), 20000, "auto bootloader entry timed out");
@@ -1480,9 +1556,9 @@ async function loadFirmware(target, ids){
 function renderFwImages(ids){
   const host=$(ids.imagesEl); if(!host) return;
   if(!ids.meta||!ids.meta.available){ host.innerHTML='<div class="note">'+((ids.meta&&ids.meta.message)||"No firmware build.")+'</div>'; return; }
-  const dev=$("devMode").checked;
+  // Low-level flash offsets are intentionally hidden from the student UI.
   host.innerHTML=`<div class="note">Firmware images (${ids.meta.chip||"esp32s3"}):</div>`+
-    (ids.meta.images||[]).map(im=>`<div><span>${im.name}${dev?` <code>@ ${im.offset}</code>`:""}</span><span>${fmtSize(im.size)}</span></div>`).join("");
+    (ids.meta.images||[]).map(im=>`<div><span>${im.name}</span><span>${fmtSize(im.size)}</span></div>`).join("");
 }
 function makeFwFlash(ids){
   return async () => {
@@ -1548,6 +1624,66 @@ $("pwmSlider").oninput  = (e) => { setText("pwmVal", e.target.value); };
 $("pwmSlider").onchange = (e) => ctrlSend("PWM,"+e.target.value);
 
 $("refreshArtifacts").onclick = refreshArtifacts;
+
+// ---------- AI PC Drive ----------
+let DRIVE_FOLDERS = [];
+async function loadDrive(){
+  if(!DRIVE_FOLDERS.length){
+    try { DRIVE_FOLDERS = (await api("/api/drive/folders")).folders || []; } catch(e){ DRIVE_FOLDERS = []; }
+    const sel=$("driveFolder"); if(sel){ sel.innerHTML=""; DRIVE_FOLDERS.forEach(f=>{ const o=document.createElement("option"); o.value=f; o.textContent = f==="0_shared" ? "0_shared (team-wide)" : f; sel.appendChild(o); }); }
+  }
+  await refreshDrive();
+}
+function driveFolder(){ return ($("driveFolder") && $("driveFolder").value) || "0_shared"; }
+async function refreshDrive(){
+  const folder = driveFolder();
+  if($("driveFolderLabel")) setText("driveFolderLabel", folder);
+  const tb=$("driveList"), th=$("driveThumbs"); if(!tb) return;
+  tb.innerHTML='<tr><td colspan="4" class="note">Loading…</td></tr>'; if(th) th.innerHTML="";
+  let files=[];
+  try { files=(await api("/api/drive/list?folder="+encodeURIComponent(folder))).files||[]; }
+  catch(e){ tb.innerHTML='<tr><td colspan="4" class="note">Could not list files: '+e.message+'</td></tr>'; return; }
+  if(!files.length){ tb.innerHTML='<tr><td colspan="4" class="note">No files yet. Upload a zip above.</td></tr>'; return; }
+  tb.innerHTML="";
+  files.forEach(f=>{
+    const dl=ORIGIN+"/api/drive/download?folder="+encodeURIComponent(folder)+"&name="+encodeURIComponent(f.name);
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${f.name}${f.is_image?' <span class="tag">img</span>':''}</td><td>${fmtSize(f.size)}</td><td>${f.modified}</td>`;
+    const td=document.createElement("td");
+    const a=document.createElement("a"); a.href=dl; a.textContent="download";
+    const del=document.createElement("button"); del.className="secondary"; del.textContent="delete"; del.style.margin="0 0 0 10px"; del.style.padding="2px 8px";
+    del.onclick=()=>driveDelete(folder, f.name);
+    td.appendChild(a); td.appendChild(del); tr.appendChild(td); tb.appendChild(tr);
+    if(f.is_image && th){
+      const url=ORIGIN+"/api/drive/image?folder="+encodeURIComponent(folder)+"&name="+encodeURIComponent(f.name);
+      const cell=document.createElement("div"); cell.className="thumb";
+      cell.innerHTML=`<img src="${url}" alt="${f.name}" loading="lazy" /><div class="cap">${f.name}</div>`;
+      cell.querySelector("img").onclick=()=>openImgModal(url);
+      th.appendChild(cell);
+    }
+  });
+}
+async function driveDelete(folder, name){
+  if(!confirm(`Delete "${name}" from ${folder}? This cannot be undone.`)) return;
+  setMsg($("driveMsg"),"Deleting…","warn");
+  try { await api("/api/drive/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({folder,name})});
+    setMsg($("driveMsg"),`Deleted ${name}.`,"ok"); await refreshDrive(); }
+  catch(e){ setMsg($("driveMsg"),"Delete failed: "+e.message,"bad"); }
+}
+function openImgModal(url){ const m=$("imgModal"); if(!m) return; $("imgModalImg").src=url; m.classList.add("open"); }
+if($("imgModal")) $("imgModal").onclick=()=>$("imgModal").classList.remove("open");
+$("driveUploadBtn").onclick = async () => {
+  const f=$("driveFile").files[0]; if(!f){ setMsg($("driveMsg"),"Choose a file first (zip recommended).","bad"); return; }
+  const fd=new FormData(); fd.append("folder", driveFolder()); fd.append("file", f);
+  setMsg($("driveMsg"),`Uploading ${f.name}…`,"warn"); $("driveUploadBtn").disabled=true;
+  try { const r=await api("/api/drive/upload",{method:"POST",body:fd});
+    setMsg($("driveMsg"),`Uploaded ${r.name} (${fmtSize(r.size)}) to ${r.folder}.`,"ok"); $("driveFile").value=""; await refreshDrive(); }
+  catch(e){ setMsg($("driveMsg"),"Upload failed: "+e.message,"bad"); }
+  $("driveUploadBtn").disabled=false;
+};
+$("driveFolder").onchange = refreshDrive;
+$("driveRefreshBtn").onclick = refreshDrive;
+
 init();
 </script>
 </body>
