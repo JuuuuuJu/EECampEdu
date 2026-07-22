@@ -553,9 +553,10 @@ static void usb_cdc_command_task(void *pvParameters) {
                             dual_printf("ERROR: Camera busy, could not acquire mutex.\n");
                         }
 
-                        // 3. Give the USB drive back to the PC
+                        // 3. Keep MSC mounted on the ESP app side during live inference.
+                        // Re-exposing it to Windows after every prediction makes the removable drive pop up repeatedly.
+                        // Use the explicit usb command when the user wants to browse stored photos on the PC.
                         vTaskDelay(pdMS_TO_TICKS(100));
-                        usb_msc_mount_to_pc();
 
                         // 4. Resume stream
                         if (was_streaming) {
@@ -1938,6 +1939,3 @@ extern "C" void app_main() {
                             &g_camera_flash_task_handle,
                             1);
 }
-
-
-

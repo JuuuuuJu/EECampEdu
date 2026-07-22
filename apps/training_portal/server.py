@@ -92,6 +92,11 @@ FIRMWARE_TARGETS = {
         "build_dir": REPO_ROOT / "firmware" / "main_board" / "build",
         "build_hint": "firmware/main_board with RuntimeMode::kCameraUsbMsc",
     },
+    "control_board": {
+        "label": "Control board output firmware",
+        "build_dir": REPO_ROOT / "firmware" / "control_board" / "build",
+        "build_hint": "firmware/control_board plain ESP32 servo-output firmware",
+    },
     "camera_usb_demo": {
         "label": "Camera + USB demo firmware",
         "build_dir": REPO_ROOT / "firmware" / "camera_usb_demo" / "build",
@@ -266,7 +271,8 @@ def _team_password_matches(team, password):
 
 PUBLIC_PATH_PREFIXES = ("/login", "/api/health", "/static/", "/favicon.ico")
 TOPIC_ROUTES = {
-    "/": "model",
+    "/": "home",
+    "/home": "home",
     "/model_finetune": "model",
     "/deploy": "deploy",
     "/output": "output",
@@ -1376,6 +1382,7 @@ def create_app():
         return redirect(url_for("login"))
 
     @app.get("/")
+    @app.get("/home")
     @app.get("/model_finetune")
     @app.get("/deploy")
     @app.get("/output")
@@ -1384,7 +1391,7 @@ def create_app():
     @app.get("/drive")
     @app.get("/account")
     def index():
-        return render_template("index.html", team=_logged_in_team(), topic=TOPIC_ROUTES.get(request.path, "dashboard"))
+        return render_template("index.html", team=_logged_in_team(), topic=TOPIC_ROUTES.get(request.path, "home"))
 
     # ---------------- AI PC Drive API (login-gated by _require_login) ----------------
     @app.get("/api/drive/folders")
@@ -1478,7 +1485,7 @@ def create_app():
     def firmware_meta():
         """Firmware flash plan for a target, parsed from ESP-IDF's flasher_args.json.
 
-        ?target=model_finetune | deploy_benchmark | main_board (default) | output_demo. Returns the images (bootloader /
+        ?target=model_finetune | deploy_benchmark | main_board (default) | control_board | camera_usb_demo | output_demo. Returns the images (bootloader /
         partition-table / app) with ESP-IDF-generated offsets + flash settings, so
         the browser flasher never hardcodes offsets. If the target is not built,
         returns available=false with a student-friendly message.

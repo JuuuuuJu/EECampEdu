@@ -32,7 +32,9 @@
   }
   :root[data-theme="contrast"] .card, :root[data-theme="contrast"] input,
   :root[data-theme="contrast"] select, :root[data-theme="contrast"] textarea,
-  :root[data-theme="contrast"] .topbar nav button, :root[data-theme="contrast"] .toplink { border-width:2px; }
+  :root[data-theme="contrast"] .topbar nav button, :root[data-theme="contrast"] .toplink {
+    border-color:#00ffff;
+  }
   :root[data-theme="contrast"] body { background:#000000; }
   :root[data-theme="contrast"] .topbar { border-bottom-color:#00ffff; }
   :root[data-theme="contrast"] .topbar nav button.active { background:#000000; color:#ffffff; border-color:#ffcc00; box-shadow:0 0 0 1px #ffcc00 inset; }
@@ -48,24 +50,27 @@
   .topbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:13px 22px;
     background:rgba(17,24,39,.92); background:color-mix(in srgb, var(--panel) 92%, transparent);
     border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; backdrop-filter:blur(12px); }
-  .topbar .brand { font-weight:800; font-size:18px; white-space:nowrap; letter-spacing:.03em; }
+  .topbar .brand { display:inline-flex; align-items:center; min-height:40px; min-width:156px; color:var(--text); text-decoration:none; font-weight:800; font-size:18px; white-space:nowrap; letter-spacing:.03em; }
   .topbar .brand small { color:var(--muted); font-weight:600; font-size:13px; margin-left:8px; }
-  .topbar nav { display:flex; gap:6px; flex-wrap:wrap; flex:1 1 auto; }
-  .topbar nav button { margin:0; cursor:pointer; background:transparent; color:var(--text);
-    border:1px solid transparent; border-radius:7px; padding:9px 14px; font-weight:700; font-size:14px; }
+  .topbar nav { display:flex; gap:6px; flex-wrap:wrap; flex:1 1 auto; align-items:center; }
+  .topbar nav button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
+    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px;
+    height:46px; width:174px; flex:0 0 174px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; overflow:hidden; }
   .topbar nav button:hover, button:hover { font-family:Consolas, 'Courier New', monospace; }
-  .topbar nav button:hover { background:var(--panel2); border-color:var(--border); }
+  .topbar nav button:hover { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
   .topbar nav button.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
   .topbar .right { display:flex; align-items:center; gap:10px; margin-left:auto; white-space:nowrap; }
   .topbar .right .team { font-size:14px; color:var(--muted); }
   .topbar .right .team b { color:var(--text); }
-  .topbar select { width:auto; padding:6px 9px; }
+  .topbar select { width:auto; min-width:120px; height:38px; padding:6px 9px; }
   .topbar form { margin:0; }
-  .topbar .right button { margin:0; padding:7px 12px; }
-  .toplink { display:inline-flex; align-items:center; min-height:36px; color:var(--text); text-decoration:none;
+  .topbar .right button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
+    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px;
+    height:46px; width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; overflow:hidden; }
+  .toplink { display:inline-flex; align-items:center; justify-content:center; height:38px; width:150px; color:var(--text); text-decoration:none;
     font-size:14px; font-weight:800; padding:7px 13px; border-radius:7px; border:1px solid var(--border);
-    background:var(--panel2); box-shadow:0 1px 0 color-mix(in srgb, var(--text) 8%, transparent) inset; }
-  .toplink:hover { color:var(--accent-text); border-color:var(--accent); background:var(--accent); font-family:Consolas, 'Courier New', monospace; }
+    background:var(--panel2); box-shadow:0 1px 0 color-mix(in srgb, var(--text) 8%, transparent) inset; overflow:hidden; }
+  .toplink:hover { color:var(--text); border-color:var(--border); background:var(--panel2); font-family:Consolas, 'Courier New', monospace; }
   main { width:100%; max-width:1360px; margin:0 auto; padding:22px 22px 56px; }
   .pane { display:none; } .pane.active { display:block; }
   .grid2 { display:grid; grid-template-columns:repeat(auto-fit, minmax(360px, 1fr)); gap:18px; align-items:start; }
@@ -76,12 +81,13 @@
   label { display:block; font-size:14px; color:var(--muted); margin:12px 0 5px; font-weight:600; }
   input, select, button, textarea { font:inherit; }
   input[type=text], input[type=password], input[type=number], select, input[type=file], textarea {
-    width:100%; padding:10px 11px; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:7px; }
+    width:100%; min-height:46px; padding:10px 11px; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:7px; }
   input:focus, select:focus, textarea:focus { outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset:1px; }
   input[type=range] { width:100%; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; } .row > div { flex:1; min-width:130px; } .row.compact > div { min-width:180px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; } .row > div { flex:1 1 0; min-width:160px; } .row.compact > div { min-width:180px; }
   button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
-    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px; }
+    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px;
+    min-height:46px; min-width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; }
   button.secondary { background:var(--panel2); color:var(--text); }
   button:disabled { opacity:.48; cursor:not-allowed; }
   pre.log { background:var(--logbg); color:var(--logtext); padding:13px; border-radius:7px; height:220px;
@@ -103,6 +109,15 @@
   .imglist { font-size:14px; margin:7px 0; }
   .imglist div { padding:4px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }
   .big { font-size:20px; font-weight:700; line-height:1.35; }
+  .home-hero { min-height:calc(100vh - 180px); display:grid; place-items:center; text-align:center; }
+  .home-card { width:min(720px, 100%); display:grid; justify-items:center; gap:16px; padding:38px 24px; }
+  .home-script { margin:0; font-family:"Segoe Script", "Bradley Hand ITC", "Comic Sans MS", cursive; font-size:clamp(34px, 6vw, 64px); line-height:1.12; letter-spacing:.01em; color:var(--text); }
+  .home-joke { margin:0; color:var(--muted); font-size:18px; }
+  .home-icon { width:190px; height:190px; border:1px dashed var(--border); border-radius:50%; display:grid; place-items:center; background:var(--panel2); color:var(--muted); font-weight:800; text-align:center; padding:18px; }
+  .site-footer { display:grid; place-items:center; gap:4px; padding:18px 16px 26px; color:var(--muted); font-size:13px; text-align:center; }
+  .site-footer a { display:inline-flex; align-items:center; gap:6px; color:var(--muted); text-decoration:none; }
+  .site-footer a:hover { color:var(--accent); font-family:Consolas, 'Courier New', monospace; }
+  .site-footer svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
   textarea.code-editor, #outCode { font:14px/1.55 Consolas, 'Courier New', monospace !important; background:var(--editor) !important;
     color:var(--text); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px;
     tab-size:2; box-shadow:inset 0 0 0 1px var(--editor-line); }
@@ -113,13 +128,19 @@
   .thumb .cap { font-size:12px; padding:5px 7px; color:var(--muted); word-break:break-all; }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
   .modal.open { display:flex; } .modal img { max-width:95vw; max-height:90vh; object-fit:contain; }
-  @media (max-width:760px){ .topbar { gap:10px; padding:11px 12px; } .topbar .right { width:100%; justify-content:flex-start; flex-wrap:wrap; } main { padding:16px 12px 42px; } .grid2 { grid-template-columns:1fr; } }
+  @media (max-width:760px){
+    .topbar { gap:10px; padding:11px 12px; }
+    .topbar .right { width:100%; justify-content:flex-start; flex-wrap:wrap; }
+    main { padding:16px 12px 42px; }
+    .grid2, .home-hero { grid-template-columns:1fr; }
+  }
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand">EECampEdu<small>AI PC Portal</small></div>
+  <a class="brand" href="/home">EECampEdu<small>AI PC Portal</small></a>
   <nav id="tabs">
+    <button data-topic="home" data-path="/home">Home</button>
     <button data-topic="model" data-path="/model_finetune">Model finetune</button>
     <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
     <button data-topic="output" data-path="/output">Output demo</button>
@@ -143,7 +164,20 @@
 </header>
 
 <main>
-  <!-- ==================== OUTPUT DEMO ==================== -->
+  <!-- ==================== HOME ==================== -->
+  <section class="pane" id="pane-home">
+    <div class="home-hero">
+      <div class="card home-card">
+        <div class="home-icon">
+          EE Camp icon<br />
+          <span class="note">coming soon</span>
+        </div>
+        <h1 class="home-script">Welcome to NTUEE Camp</h1>
+        <p class="home-joke">Give us a hand — the robot is still learning yours.</p>
+      </div>
+    </div>
+  </section>
+<!-- ==================== OUTPUT DEMO ==================== -->
   <section class="pane" id="pane-output">
     <div class="card">
       <h2>Output class — write code, build, flash</h2>
@@ -395,6 +429,19 @@
     </div>
 
     <div class="card">
+      <h2>Flash control board firmware</h2>
+      <p class="note">Flashes the plain ESP32 control board firmware for servo/output control. This is separate from the ESP32-S3 main board firmware.</p>
+      <div id="controlFwImages" class="imglist"><div class="note">Checking for firmware build...</div></div>
+      <div class="row">
+        <div><button id="controlFwFlashBtn" disabled>Connect &amp; flash control board</button></div>
+        <div><button class="secondary" id="controlFwRefreshBtn">Re-check build</button></div>
+      </div>
+      <div class="msg" id="controlFwStatus"></div>
+      <label style="margin-top:12px">Flash log</label>
+      <pre class="log" id="controlFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+    </div>
+
+    <div class="card">
       <h2>Flash model partition (.tflite)</h2>
       <p class="note">Same as Deploy: flashes only the model into the ESP32-S3 model partition. Use this after flashing main board firmware when you want to update the model only.</p>
       <label>TFLite model</label>
@@ -604,6 +651,20 @@
   </div>
 </main>
 
+<footer class="site-footer">
+  <div>&copy; 2026</div>
+  <a href="https://github.com/JuuuuuJu/EECampEdu" target="_blank" rel="noopener" aria-label="GitHub repository">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="6" cy="6" r="2"></circle>
+      <circle cx="18" cy="6" r="2"></circle>
+      <circle cx="12" cy="18" r="2"></circle>
+      <path d="M8 6h6a4 4 0 0 1 4 4v6"></path>
+      <path d="M6 8v2a8 8 0 0 0 6 8"></path>
+    </svg>
+    <span>2026NTUEECampEdu</span>
+  </a>
+</footer>
+
 <div class="modal" id="imgModal"><img id="imgModalImg" alt="preview" /></div>
 
 <script>
@@ -658,15 +719,15 @@ function initPasswordForm(){
   };
 }
 // ---------- topic routes ----------
-const TOPIC_BY_PATH = {"/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/account":"account", "/":"model"};
-const PATH_BY_TOPIC = {model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive", account:"/account"};
+const TOPIC_BY_PATH = {"/":"home", "/home":"home", "/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/account":"account"};
+const PATH_BY_TOPIC = {home:"/home", model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive", account:"/account"};
 function activateTopic(topic, push){
-  topic = topic || "model";
+  topic = topic || "home";
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   const pane=$("pane-"+topic); if(pane) pane.classList.add('active');
   if(push && PATH_BY_TOPIC[topic] && window.location.pathname !== PATH_BY_TOPIC[topic]) history.pushState({topic}, "", PATH_BY_TOPIC[topic]);
-  if(topic==="mainfw") loadFirmware("main_board", MAINFW);
+  if(topic==="mainfw"){ loadFirmware("main_board", MAINFW); loadFirmware("control_board", CONTROLFW); }
   if(topic==="camerausb") loadFirmware("camera_usb_demo", USBFW);
   if(topic==="output"){ loadTeachingBlock(); lockOutputFlash(); }
   if(topic==="model"){ loadFirmware("model_finetune", MODELFW); refreshModelDemo(); }
@@ -674,12 +735,12 @@ function activateTopic(topic, push){
   if(topic==="drive") loadDrive();
 
   const panels = $("sharedJobPanels");
-  if(panels) panels.style.display = (topic === "camerausb" || topic === "drive" || topic === "account") ? "none" : "block";
+  if(panels) panels.style.display = (topic === "home" || topic === "camerausb" || topic === "drive" || topic === "account") ? "none" : "block";
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
-  window.onpopstate = () => activateTopic(TOPIC_BY_PATH[window.location.pathname] || INITIAL_TOPIC || "model", false);
-  activateTopic(TOPIC_BY_PATH[window.location.pathname] || INITIAL_TOPIC || "model", false);
+  window.onpopstate = () => activateTopic(TOPIC_BY_PATH[window.location.pathname] || INITIAL_TOPIC || "home", false);
+  activateTopic(TOPIC_BY_PATH[window.location.pathname] || INITIAL_TOPIC || "home", false);
 }
 
 async function init(){
@@ -885,10 +946,29 @@ async function refreshArtifacts(){
   } catch(e){}
 }
 function fillFlashArtifacts(list){
-  const sel=$("flashArtifact"), prev=sel.value;
-  const fill=items=>{ const tfl=items.filter(a=>a.name.toLowerCase().endsWith(".tflite")); sel.innerHTML="";
-    if(!tfl.length){ const o=document.createElement("option"); o.value=""; o.textContent="(no .tflite yet — quantize first)"; sel.appendChild(o); return; }
-    tfl.forEach(a=>{ const o=document.createElement("option"); o.value=a.path; o.textContent=a.name; sel.appendChild(o); }); if(prev) sel.value=prev; };
+  const selects = [$("flashArtifact"), $("mainFlashArtifact")].filter(Boolean);
+  const prev = new Map(selects.map(sel => [sel.id, sel.value]));
+  const fill = items => {
+    const tfl = items.filter(a => a.name.toLowerCase().endsWith(".tflite"));
+    selects.forEach(sel => {
+      sel.innerHTML = "";
+      if(!tfl.length){
+        const o = document.createElement("option");
+        o.value = "";
+        o.textContent = "(no .tflite yet - quantize first)";
+        sel.appendChild(o);
+        return;
+      }
+      tfl.forEach(a => {
+        const o = document.createElement("option");
+        o.value = a.path;
+        o.textContent = a.name;
+        sel.appendChild(o);
+      });
+      const oldValue = prev.get(sel.id);
+      if(oldValue && tfl.some(a => a.path === oldValue)) sel.value = oldValue;
+    });
+  };
   if(list) fill(list); else api("/api/artifacts").then(r=>fill(r.artifacts)).catch(()=>{});
 }
 async function refreshJobs(){
@@ -1222,6 +1302,7 @@ const OUTFW   = { target:"output_demo",      meta:null, imagesEl:"outFwImages", 
 const MODELFW = { target:"model_finetune",   meta:null, imagesEl:"modelFwImages",  statusEl:"modelFwStatus",  logEl:"modelFwLog",  flashBtn:"modelFwFlashBtn",  refreshBtn:"modelFwRefreshBtn" };
 const BENCHFW = { target:"deploy_benchmark", meta:null, imagesEl:"benchFwImages",  statusEl:"benchFwStatus",  logEl:"benchFwLog",  flashBtn:"benchFwFlashBtn",  refreshBtn:"benchFwRefreshBtn" };
 const MAINFW  = { target:"main_board",       meta:null, imagesEl:"mainFwImages",   statusEl:"mainFwStatus",   logEl:"mainFwLog",   flashBtn:"mainFwFlashBtn",   refreshBtn:"mainFwRefreshBtn" };
+const CONTROLFW = { target:"control_board", meta:null, imagesEl:"controlFwImages", statusEl:"controlFwStatus", logEl:"controlFwLog", flashBtn:"controlFwFlashBtn", refreshBtn:"controlFwRefreshBtn" };
 const USBFW   = { target:"camera_usb_demo",  meta:null, imagesEl:"usbFwImages",    statusEl:"usbFwStatus",    logEl:"usbFwLog",    flashBtn:"usbFwFlashBtn",    refreshBtn:"usbFwRefreshBtn" };
 
 // Force-release any leftover stream locks on a raw SerialPort, then close it.
@@ -1348,6 +1429,7 @@ function syncFlashButtons(){
   if($("modelFwFlashBtn")) $("modelFwFlashBtn").disabled = !(sup && MODELFW.meta && MODELFW.meta.available);
   if($("benchFwFlashBtn")) $("benchFwFlashBtn").disabled = !(sup && BENCHFW.meta && BENCHFW.meta.available);
   if($("mainFwFlashBtn")) $("mainFwFlashBtn").disabled = !(sup && MAINFW.meta && MAINFW.meta.available);
+  if($("controlFwFlashBtn")) $("controlFwFlashBtn").disabled = !(sup && CONTROLFW.meta && CONTROLFW.meta.available);
   if($("usbFwFlashBtn")) $("usbFwFlashBtn").disabled = !(sup && USBFW.meta && USBFW.meta.available);
   ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
@@ -1437,10 +1519,21 @@ function updateGestureResult(line){
   setText(camUi.resultId, text);
   setMsg(camUi.msgId, text, eff.pred === -1 ? "warn" : "ok");
 }
+function isBase64PayloadLine(line){
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(line || "");
+}
+function normalizeBase64Payload(base64Data){
+  let clean = (base64Data || "").replace(/\s+/g, "");
+  if (!clean || !/^[A-Za-z0-9+/]*={0,2}$/.test(clean)) return null;
+  const rem = clean.length % 4;
+  if (rem) clean += "=".repeat(4 - rem);
+  return clean;
+}
 function renderCameraFrame(base64Data, meta){
   const img=$(camUi.imgId), ph=$(camUi.placeholderId);
   try {
-    const clean = base64Data.replace(/\s+/g,"");
+    const clean = normalizeBase64Payload(base64Data);
+    if (!clean) throw new Error("invalid base64 payload");
     const raw = atob(clean);
     const bytes = new Uint8Array(raw.length);
     for(let i=0;i<raw.length;i++) bytes[i]=raw.charCodeAt(i);
@@ -1552,7 +1645,13 @@ function cameraOnLine(rawLine){
     if(camAsm.receiving) renderCameraFrame(camAsm.lines.join(""), camAsm.meta);
     camAsm.receiving=false; camAsm.lines=[];
   } else if(camAsm.receiving){
-    camAsm.lines.push(line);
+    if(isBase64PayloadLine(line)){
+      camAsm.lines.push(line);
+    } else {
+      appendLog(camUi.logId, "[camera] dropped interrupted frame; got non-image CDC line: " + line + "\n");
+      camAsm.receiving=false; camAsm.lines=[];
+      cameraOnLine(rawLine);
+    }
   } else if(line.startsWith("---START_FILE:")){
     const fm=/^---START_FILE:\d+:\d+:\d+:(\d+):(.+)---$/.exec(line);
     fileAsm={receiving:true, lines:[], size:fm?Number(fm[1]):0, path:fm?fm[2]:"file"};
@@ -1635,15 +1734,25 @@ function handleShutterButton(line){
   if(!shutterLink.synced){ shutterLink.button2 = count; shutterLink.synced = true; return; }
   if(count <= shutterLink.button2) return;
   shutterLink.button2 = count;
-  // The physical shutter is handled by firmware: model demo and main board save
-  // the captured photo to ESP flash. The portal only reports the event.
   if(camUi === MODEL_CAMERA_UI){
-    setMsg("captureMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
+    handleModelPhysicalShutter();
   } else if(camUi === FULL_CAMERA_UI){
     setMsg("fullCameraMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
   } else if(camUi === USBCAM_UI){
     setMsg("usbCamCmdMsg", "Physical shutter pressed: ESP saved the photo to flash.", "ok");
   }
+}
+async function handleModelPhysicalShutter(){
+  const className = selectedCaptureClass();
+  if(!className){
+    setMsg("captureMsg", "Physical shutter pressed: ESP saved the photo to flash. No class selected, so dataset was not updated.", "ok");
+    return;
+  }
+  if(!latestCameraFrame){
+    setMsg("captureMsg", "Physical shutter pressed: ESP saved the photo to flash. Waiting for a preview frame before dataset save.", "warn");
+    return;
+  }
+  await saveCurrentFrameToDataset({source:"physical_shutter"});
 }
 // Map encoder detents from an INPUT_CONTROL line to OV2640 manual exposure.
 // Only active on the camera+USB page, where exposure controls exist.
@@ -1716,14 +1825,16 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   }
 }
 
-async function saveCurrentFrameToDataset(){
+async function saveCurrentFrameToDataset(options={}){
   if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
   const className = selectedCaptureClass();
   if(!className){ setMsg($("captureMsg"), "Choose or type a gesture class first.", "bad"); return; }
-  setMsg($("captureMsg"), "Saving captured frame...", "warn");
+  const fromPhysical = options.source === "physical_shutter";
+  setMsg($("captureMsg"), fromPhysical ? "Physical shutter pressed: saving current frame to dataset..." : "Saving captured frame...", "warn");
   try {
     const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, image_data:latestCameraFrame.dataUrl})});
-    setMsg($("captureMsg"), `Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
+    const prefix = fromPhysical ? "Physical shutter: " : "";
+    setMsg($("captureMsg"), `${prefix}Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
     $("newClassName").value="";
     await refreshClassMap();
   } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
@@ -1861,6 +1972,7 @@ $("outFwFlashBtn").onclick = makeFwFlash(OUTFW);
 $("modelFwFlashBtn").onclick = makeFwFlash(MODELFW);
 $("benchFwFlashBtn").onclick = makeFwFlash(BENCHFW);
 $("mainFwFlashBtn").onclick = makeFwFlash(MAINFW);
+if($("controlFwFlashBtn")) $("controlFwFlashBtn").onclick = makeFwFlash(CONTROLFW);
 $("usbFwFlashBtn").onclick = makeFwFlash(USBFW);
 $("outFwRefreshBtn").onclick = () => loadFirmware("output_demo", OUTFW);
 
@@ -1912,7 +2024,8 @@ $("outResetBtn").onclick = async () => {
 $("modelFwRefreshBtn").onclick = () => loadFirmware("model_finetune", MODELFW);
 $("benchFwRefreshBtn").onclick = () => loadFirmware("deploy_benchmark", BENCHFW);
 $("mainFwRefreshBtn").onclick = () => loadFirmware("main_board", MAINFW);
-$("usbFwRefreshBtn").onclick = () => loadFirmware("main_board", USBFW);
+if($("controlFwRefreshBtn")) $("controlFwRefreshBtn").onclick = () => loadFirmware("control_board", CONTROLFW);
+$("usbFwRefreshBtn").onclick = () => loadFirmware("camera_usb_demo", USBFW);
 
 // ---------- OUTPUT DEMO: raw-serial LED / PWM control (unified lifecycle) ----------
 async function ctrlSend(cmd){
