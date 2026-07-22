@@ -115,9 +115,18 @@
   .home-joke { margin:0; color:var(--muted); font-size:18px; }
   .home-icon { width:190px; height:190px; border:1px dashed var(--border); border-radius:50%; display:grid; place-items:center; background:var(--panel2); color:var(--muted); font-weight:800; text-align:center; padding:18px; }
   .site-footer { display:grid; place-items:center; gap:4px; padding:18px 16px 26px; color:var(--muted); font-size:13px; text-align:center; }
+  .site-footer .egg-trigger { cursor:pointer; border-bottom:1px dotted transparent; }
+  .site-footer .egg-trigger:hover { color:var(--accent); border-bottom-color:var(--accent); font-family:Consolas, 'Courier New', monospace; }
   .site-footer a { display:inline-flex; align-items:center; gap:6px; color:var(--muted); text-decoration:none; }
   .site-footer a:hover { color:var(--accent); font-family:Consolas, 'Courier New', monospace; }
   .site-footer svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .egg-modal { display:none; position:fixed; inset:0; z-index:80; align-items:center; justify-content:center; padding:20px; background:rgba(2,6,23,.72); }
+  .egg-modal.open { display:flex; }
+  .egg-card { width:min(460px, 92vw); padding:14px; border:2px solid var(--warn); border-radius:8px; background:var(--logbg); box-shadow:0 18px 50px rgba(0,0,0,.45); text-align:center; }
+  .egg-card h3 { margin:0 0 10px; color:var(--warn); font-size:21px; line-height:1.35; }
+  .egg-card img { width:100%; max-height:320px; object-fit:contain; border:1px solid var(--border); background:#000; }
+  .egg-card button { width:100%; margin-top:12px; }
+  .home-icon img { max-width:150px; max-height:150px; object-fit:contain; }
   textarea.code-editor, #outCode { font:14px/1.55 Consolas, 'Courier New', monospace !important; background:var(--editor) !important;
     color:var(--text); border:1px solid var(--border); border-left:4px solid var(--accent); border-radius:8px;
     tab-size:2; box-shadow:inset 0 0 0 1px var(--editor-line); }
@@ -140,7 +149,6 @@
 <header class="topbar">
   <a class="brand" href="/home">EECampEdu<small>AI PC Portal</small></a>
   <nav id="tabs">
-    <button data-topic="home" data-path="/home">Home</button>
     <button data-topic="model" data-path="/model_finetune">Model finetune</button>
     <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
     <button data-topic="output" data-path="/output">Output demo</button>
@@ -169,8 +177,7 @@
     <div class="home-hero">
       <div class="card home-card">
         <div class="home-icon">
-          EE Camp icon<br />
-          <span class="note">coming soon</span>
+          <img src="/static/Logo.png" alt="NTUEE Camp logo" />
         </div>
         <h1 class="home-script">Welcome to NTUEE Camp</h1>
         <p class="home-joke">Give us a hand — the robot is still learning yours.</p>
@@ -547,7 +554,7 @@
 
     <div class="card">
       <h2>Board photo storage (flash)</h2>
-      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a USB drive (MSC)</b> on your PC. Capture saves a <b>96×96</b> model-input image (plus the full-resolution frame).</p>
+      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a <span id="aiPcDriveEgg" style="cursor:pointer;text-decoration:underline dotted">USB drive (MSC)</span></b> on your PC. Capture saves a <b>96×96</b> model-input image (plus the full-resolution frame).</p>
       <div class="row compact">
         <div><button class="secondary" id="usbCamCaptureBtn">Capture photo to flash (96×96)</button></div>
         <div><button class="secondary" id="usbCamListBtn">List saved photos</button></div>
@@ -652,7 +659,7 @@
 </main>
 
 <footer class="site-footer">
-  <div>&copy; 2026</div>
+  <div><span class="egg-trigger" id="campFooterEgg">&copy; 2026</span></div>
   <a href="https://github.com/JuuuuuJu/EECampEdu" target="_blank" rel="noopener" aria-label="GitHub repository">
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <circle cx="6" cy="6" r="2"></circle>
@@ -665,6 +672,13 @@
   </a>
 </footer>
 
+<div class="egg-modal" id="eggModal" role="dialog" aria-modal="true" aria-labelledby="eggModalTitle">
+  <div class="egg-card">
+    <h3 id="eggModalTitle"></h3>
+    <img id="eggModalImg" alt="" />
+    <button type="button" class="secondary" id="eggModalClose">Close</button>
+  </div>
+</div>
 <div class="modal" id="imgModal"><img id="imgModalImg" alt="preview" /></div>
 
 <script>
@@ -687,6 +701,59 @@ let fpsStart = 0, frameCount = 0, currentFps = 0;
 let previousFormat = "3";
 
 function $(id){ return document.getElementById(id); }
+const EGGS = {
+  drive: { title: "你在急什麼", img: "/static/eggs/drive-monkey.gif" },
+  footer: { title: "文藝復興到這裡就夠了", img: "/static/eggs/footer-adam.jpg" },
+  accuracy: { title: "太強了，請記得呼吸", img: "/static/eggs/accuracy-9000.jpg" },
+  konami: { title: "這裡沒有死亡對決，請安心", img: "/static/eggs/konami.jpg" },
+};
+const eggFired = Object.create(null);
+function closeEggModal(){ const m=$("eggModal"); if(m) m.classList.remove("open"); }
+function showEggModal(egg){
+  const m=$("eggModal"), t=$("eggModalTitle"), img=$("eggModalImg");
+  if(!m || !t || !img) return;
+  t.textContent = egg.title;
+  img.src = egg.img;
+  img.alt = egg.title;
+  m.classList.add("open");
+}
+function fireEgg(key, once=true){
+  if(once && eggFired[key]) return;
+  const egg = EGGS[key]; if(!egg) return;
+  eggFired[key] = true;
+  showEggModal(egg);
+}
+function bindTripleClick(el, key){
+  if(!el) return;
+  let count = 0, last = 0;
+  el.addEventListener("click", (event) => {
+    const now = Date.now();
+    count = (now - last > 700) ? 1 : count + 1;
+    last = now;
+    if(count >= 3){ count = 0; event.preventDefault(); fireEgg(key, false); }
+  });
+}
+function initEggs(){
+  const footer = $("campFooterEgg");
+  if(footer) footer.addEventListener("click", () => fireEgg("footer", false));
+  bindTripleClick($("aiPcDriveEgg"), "drive");
+  const close = $("eggModalClose"), modal = $("eggModal");
+  if(close) close.addEventListener("click", closeEggModal);
+  if(modal) modal.addEventListener("click", (event) => { if(event.target === modal) closeEggModal(); });
+  document.addEventListener("keydown", (event) => { if(event.key === "Escape") closeEggModal(); });
+  const seq = ["ArrowUp","ArrowUp","ArrowDown","ArrowDown","ArrowLeft","ArrowRight","ArrowLeft","ArrowRight","b","a"];
+  let i = 0;
+  window.addEventListener("keydown", (event) => {
+    const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if(key === seq[i]){
+      i += 1;
+      if(i === seq.length){ i = 0; fireEgg("konami", false); }
+    } else {
+      i = (key === seq[0]) ? 1 : 0;
+    }
+  });
+}
+
 function setText(t,x){ const el=(typeof t==="string")?$(t):t; if(el) el.textContent=x; }
 function setMsg(t,x,cls){ const el=(typeof t==="string")?$(t):t; if(!el) return; el.textContent=x; el.className="msg "+(cls||""); }
 function appendLog(id,s){ const el=$(id); if(!el) return; el.textContent+=s; el.scrollTop=el.scrollHeight; }
@@ -744,6 +811,7 @@ function initTabs(){
 }
 
 async function init(){
+  initEggs();
   initTheme();
   initPasswordForm();
   initTabs();
@@ -1030,6 +1098,7 @@ function renderBenchSummary(agg, total, done){
     ["Throughput (model)", fps],
   ];
   $("benchSummary").innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
+  if(done && agg.labeled > 0 && (agg.correct / agg.labeled) >= 0.9) fireEgg("accuracy");
 }
 // Confirm the board is actually the deploy benchmark firmware on the right port
 // BEFORE streaming images. Two distinct failure modes get distinct guidance:

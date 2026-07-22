@@ -28,10 +28,19 @@
       {% for team in teams %}<option value="{{ team }}">{{ team }}</option>{% endfor %}
     </select>
     <label>Password</label>
-    <input name="password" type="password" autocomplete="current-password" autofocus />
+    <input name="password" id="loginPassword" type="password" autocomplete="current-password" autofocus />
     <button type="submit">Login</button>
     {% if error %}<div class="err">{{ error }}</div>{% endif %}
     <p style="margin-top:14px">Default classroom pattern is configurable by <code>EECAMP_TEAM_PASSWORDS</code>.</p>
   </form>
+<script>
+  document.querySelector("form.card").addEventListener("submit", (event) => {
+    const password = (document.getElementById("loginPassword").value || "").trim().toLowerCase();
+    if(password === "helloworld"){
+      event.preventDefault();
+      window.open("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "_blank");
+    }
+  });
+</script>
 </body>
 </html>
