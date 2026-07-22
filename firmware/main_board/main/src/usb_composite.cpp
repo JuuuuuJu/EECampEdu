@@ -23,6 +23,7 @@ static tinyusb_msc_storage_handle_t storage_hdl = NULL;
 static wl_handle_t global_wl_handle = WL_INVALID_HANDLE;
 static SemaphoreHandle_t usb_cdc_write_mutex = NULL;
 static bool is_cdc_connected = true;
+static int s_msc_mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP;
 
 static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -196,14 +197,16 @@ QueueHandle_t usb_cdc_get_queue() {
 }
 
 void usb_msc_mount_to_app() {
-    if (storage_hdl) {
+    if (storage_hdl && s_msc_mount_point != TINYUSB_MSC_STORAGE_MOUNT_APP) {
         tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_APP);
+        s_msc_mount_point = TINYUSB_MSC_STORAGE_MOUNT_APP;
     }
 }
 
 void usb_msc_mount_to_pc() {
-    if (storage_hdl) {
+    if (storage_hdl && s_msc_mount_point != TINYUSB_MSC_STORAGE_MOUNT_USB) {
         tinyusb_msc_set_storage_mount_point(storage_hdl, TINYUSB_MSC_STORAGE_MOUNT_USB);
+        s_msc_mount_point = TINYUSB_MSC_STORAGE_MOUNT_USB;
     }
 }
 

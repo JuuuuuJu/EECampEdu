@@ -246,7 +246,7 @@ static void camera_stream_task(void *pvParameters) {
                 }
                 xSemaphoreGive(camera_mutex);
             }
-            vTaskDelay(pdMS_TO_TICKS(15)); // Stream task rate limiter
+            vTaskDelay(pdMS_TO_TICKS(100)); // Keep CDC/WebSerial preview stable on Windows (~10 FPS max).
         } else {
             vTaskDelay(pdMS_TO_TICKS(50));
         }
@@ -688,10 +688,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                         } else {
                             dual_printf("ERROR: Camera busy, could not acquire mutex.\n");
                         }
-
-                        // 4. Give the USB drive back to the PC so you can see the file immediately!
+                        // 4. Keep MSC mounted on the ESP app side during camera/stream workflows.
+                        // Re-expose the drive only when the user explicitly sends the usb command.
                         vTaskDelay(pdMS_TO_TICKS(100)); // Let the file system settle
-                        usb_msc_mount_to_pc();
 
                         // 5. Resume stream if it was running
                         if (was_streaming) {
@@ -1168,6 +1167,8 @@ static void input_controls_monitor_task(void *pvParameters) {
              previous.encoder_button_level,
              previous.encoder_clk_level,
              previous.encoder_dt_level);
+    const TickType_t startup_ignore_until = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
+    TickType_t last_shutter_tick = 0;
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
         if (current.encoder_position != previous.encoder_position ||
@@ -1184,18 +1185,24 @@ static void input_controls_monitor_task(void *pvParameters) {
                         current.encoder_clk_level,
                         current.encoder_dt_level);
             if (shutter_pressed) {
-                usb_cdc_msg_t msg = {};
-                char cmd[32];
-                snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
-                msg.buf_len = strlen(cmd);
-                memcpy(msg.buf, cmd, msg.buf_len);
-                msg.buf[msg.buf_len] = '\0';
-                msg.itf = 0;
-                QueueHandle_t q = usb_cdc_get_queue();
-                if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
-                    dual_printf("WARN,physical_shutter_queue_full\n");
+                const TickType_t now = xTaskGetTickCount();
+                if (now < startup_ignore_until || (last_shutter_tick != 0 && (now - last_shutter_tick) < pdMS_TO_TICKS(400))) {
+                    dual_printf("WARN,physical_shutter_ignored,startup_or_bounce\n");
                 } else {
-                    dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
+                    last_shutter_tick = now;
+                    usb_cdc_msg_t msg = {};
+                    char cmd[32];
+                    snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
+                    msg.buf_len = strlen(cmd);
+                    memcpy(msg.buf, cmd, msg.buf_len);
+                    msg.buf[msg.buf_len] = '\0';
+                    msg.itf = 0;
+                    QueueHandle_t q = usb_cdc_get_queue();
+                    if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
+                        dual_printf("WARN,physical_shutter_queue_full\n");
+                    } else {
+                        dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
+                    }
                 }
             }
             previous = current;
