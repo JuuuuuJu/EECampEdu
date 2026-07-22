@@ -192,7 +192,7 @@ static esp_err_t capture_once(bool send_to_pc, bool save_to_storage) {
             } else {
                 cdc_printf("[ModelFinetune] Storage switched to ESP app side. Saving capture...\n");
                 vTaskDelay(pdMS_TO_TICKS(700));
-                err = photo_storage_write_capture(frame, "capture");
+                err = photo_storage_write_capture(frame, "model_finetune");
                 if (err == ESP_OK) {
                     cdc_printf("[ModelFinetune] Saved capture frame to ESP storage.\n");
                 } else {
@@ -289,6 +289,22 @@ static void handle_command(char *cmd) {
         case 'c': capture_once(true, false); break;
         case 'w': capture_once(false, true); break;
         case 'l': list_storage_files(); break;
+        case 'e': {
+            sensor_t *sensor = esp_camera_sensor_get();
+            if (sensor) {
+                sensor->set_exposure_ctrl(sensor, value);
+                cdc_printf("[ModelFinetune] Exposure Control updated to %d.\n", value);
+            }
+            break;
+        }
+        case 'v': {
+            sensor_t *sensor = esp_camera_sensor_get();
+            if (sensor) {
+                sensor->set_aec_value(sensor, value);
+                cdc_printf("[ModelFinetune] Manual Exposure AEC value updated to %d.\n", value);
+            }
+            break;
+        }
         case 'f':
             if (value < 0 || value > 3) { cdc_printf("ERROR,bad_format\n"); break; }
             g_format_code = value;

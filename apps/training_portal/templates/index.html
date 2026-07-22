@@ -1824,30 +1824,32 @@ async function handleModelPhysicalShutter(){
   await saveCurrentFrameToDataset({source:"physical_shutter"});
 }
 // Map encoder detents from an INPUT_CONTROL line to OV2640 manual exposure.
-// Only active on the camera+USB page, where exposure controls exist.
+// Active in model-finetune, main-board, and camera+USB camera pages.
 function handleEncoderExposure(line){
-  if(camUi !== USBCAM_UI || !$("usbCamExposure")) return;
   const m = /encoder=(-?\d+)/.exec(line);
   if(!m) return;
   const encoder = parseInt(m[1], 10);
   if(!Number.isFinite(encoder)) return;
-  if(!encLink.synced){ encLink.pos = encoder; encLink.synced = true; return; }
-  const steps = encoder - encLink.pos;
-  encLink.pos = encoder;
-  if(steps === 0) return;
-  if(encLink.aecEnabled){                 // encoder implies manual exposure
+  if(!encLink.synced){ encLink.position = encoder; encLink.synced = true; return; }
+  const steps = encoder - encLink.position;
+  if(!steps) return;
+  encLink.position = encoder;
+  if(encLink.aecEnabled){
     encLink.aecEnabled = false;
-    $("usbCamAec").value = "0";
-    $("usbCamExposure").disabled = false;
-    cameraWrite("e0");
+    if($("usbCamAec")) $("usbCamAec").value = "0";
+    if($("usbCamExposure")) $("usbCamExposure").disabled = false;
+    cameraWrite("e0").catch(()=>{});
   }
   let next = encLink.aecValue + steps * 10;   // one detent = 10 (0..1200)
   next = Math.max(0, Math.min(1200, next));
   if(next === encLink.aecValue) return;
   encLink.aecValue = next;
-  $("usbCamExposure").value = String(next);
+  if($("usbCamExposure")) $("usbCamExposure").value = String(next);
   setText("usbAecVal", String(next));
-  cameraWrite("v" + next);
+  cameraWrite("v" + next).catch(()=>{});
+  if(camUi === MODEL_CAMERA_UI) setMsg("modelMsg", "Encoder exposure: " + next, "ok");
+  else if(camUi === FULL_CAMERA_UI) setMsg("fullCameraMsg", "Encoder exposure: " + next, "ok");
+  else if(camUi === USBCAM_UI) setMsg("usbCamCmdMsg", "Encoder exposure: " + next, "ok");
 }
 async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   camUi = ui;
@@ -1883,8 +1885,8 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     if(ui === FULL_CAMERA_UI){
       if(fullInferenceTimer) clearInterval(fullInferenceTimer);
       await sleep(350);
-      try { await cameraWrite("c"); } catch(_) {}
-      fullInferenceTimer = setInterval(()=>{ if(Serial.mode==="raw" && Serial.writer && camUi===FULL_CAMERA_UI) cameraWrite("c").catch(()=>{}); }, 3000);
+      try { await cameraWrite("j"); } catch(_) {}
+      fullInferenceTimer = setInterval(()=>{ if(Serial.mode==="raw" && Serial.writer && camUi===FULL_CAMERA_UI) cameraWrite("j").catch(()=>{}); }, 3000);
     }
     setMsg($(camUi.msgId), ui === FULL_CAMERA_UI ? "Full firmware preview connected. Triggering inference every 3 seconds..." : "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
   } catch(e){

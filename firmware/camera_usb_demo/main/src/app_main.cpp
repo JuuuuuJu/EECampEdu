@@ -14,6 +14,7 @@
 #include "sdkconfig.h"
 
 #include "camera_capture.hpp"
+#include "input_controls.hpp"
 #include "model_config.hpp"
 #include "photo_storage.hpp"
 #include "usb_composite.hpp"
@@ -23,6 +24,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <errno.h>
 
 static const char *TAG = "CAMERA_USB_DEMO";
 
@@ -347,12 +349,14 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     const char *ext = "bin";
                                     if (fb->format == PIXFORMAT_JPEG) ext = "jpg";
                                     else if (fb->format == PIXFORMAT_GRAYSCALE) ext = "gray";
-                                    else if (fb->format == PIXFORMAT_RGB565) ext = "rgb565";
-                                    
-                                    const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
+                                    else if (fb->format == PIXFORMAT_RGB565) ext = "rgb565";                                    const char* ts = (strlen(argStr) > 0) ? argStr : "manual";
+                                    const char *capture_dir = "/usb/camera_usb";
+                                    if (mkdir(capture_dir, 0775) != 0 && errno != EEXIST) {
+                                        dual_printf("ERROR: Failed to create %s: errno=%d (%s)\n", capture_dir, errno, strerror(errno));
+                                    }
                                     char filepath[1024];
-                                    snprintf(filepath, sizeof(filepath), "/usb/img_%s_fmt%d_w%d_h%d.%s",
-                                                ts, (int)fb->format, fb->width, fb->height, ext);
+                                    snprintf(filepath, sizeof(filepath), "%s/img_%s_fmt%d_w%d_h%d.%s",
+                                                capture_dir, ts, (int)fb->format, fb->width, fb->height, ext);
                                     
                                     esp_camera_fb_return(fb);
                                     xSemaphoreGive(camera_mutex);
@@ -522,6 +526,53 @@ static void usb_cdc_command_task(void *pvParameters) {
     }
 }
 
+
+static void input_controls_monitor_task(void *pvParameters) {
+    (void)pvParameters;
+    InputControlsSnapshot previous = input_controls_get_snapshot();
+    dual_printf("INPUT_STATUS,encoder=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,enc_level=%d,clk=%d,dt=%d\n",
+                (long)previous.encoder_position,
+                (unsigned long)previous.encoder_button_presses,
+                (unsigned long)previous.button2_presses,
+                previous.button2_level,
+                previous.encoder_button_level,
+                previous.encoder_clk_level,
+                previous.encoder_dt_level);
+    while (true) {
+        const InputControlsSnapshot current = input_controls_get_snapshot();
+        if (current.encoder_position != previous.encoder_position ||
+            current.encoder_button_presses != previous.encoder_button_presses ||
+            current.button2_presses != previous.button2_presses ||
+            current.button2_level != previous.button2_level) {
+            const bool shutter_pressed = current.button2_presses != previous.button2_presses;
+            dual_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d\n",
+                        (long)current.encoder_position,
+                        (long)(current.encoder_position - previous.encoder_position),
+                        (unsigned long)current.encoder_button_presses,
+                        (unsigned long)current.button2_presses,
+                        current.button2_level,
+                        current.encoder_clk_level,
+                        current.encoder_dt_level);
+            if (shutter_pressed) {
+                usb_cdc_msg_t msg = {};
+                char cmd[32];
+                snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
+                msg.buf_len = strlen(cmd);
+                memcpy(msg.buf, cmd, msg.buf_len);
+                msg.buf[msg.buf_len] = '\0';
+                msg.itf = 0;
+                QueueHandle_t q = usb_cdc_get_queue();
+                if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
+                    dual_printf("WARN,physical_shutter_queue_full\n");
+                } else {
+                    dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
+                }
+            }
+            previous = current;
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
 extern "C" void app_main() {
     ESP_LOGI(TAG, "Starting camera_usb_demo firmware...");
     
@@ -541,6 +592,15 @@ extern "C" void app_main() {
         ESP_LOGE(TAG, "Camera init failed: %s", esp_err_to_name(err));
     }
     
+    if (ENABLE_INPUT_CONTROLS) {
+        esp_err_t input_err = input_controls_init();
+        if (input_err != ESP_OK) {
+            ESP_LOGW(TAG, "Input controls init failed: %s", esp_err_to_name(input_err));
+        } else {
+            xTaskCreatePinnedToCore(input_controls_monitor_task, "input_controls_monitor", 4096, NULL, 3, NULL, 0);
+        }
+    }
+
     xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(usb_cdc_command_task, "usb_cdc_command_task", 8192, NULL, 5, NULL, 0);
 }

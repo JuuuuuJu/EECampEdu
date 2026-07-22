@@ -191,19 +191,21 @@ static bool save_photo96_bmp(const uint8_t *full_gray, int w, int h, const char 
     bmp_put_u16le(hdr + 28, 8);               // bits per pixel
     bmp_put_u32le(hdr + 34, pixels);          // image size
     bmp_put_u32le(hdr + 46, 256);             // colours used
-    bmp_put_u32le(hdr + 50, 256);             // important colours
-
-    (void)ts;
-    char path[32];
+    bmp_put_u32le(hdr + 50, 256);             // important colours    (void)ts;
+    const char *photo_dir = "/usb/main_inference";
+    if (mkdir(photo_dir, 0775) != 0 && errno != EEXIST) {
+        dual_printf("ERROR: could not create %s for 96x96 photos: errno=%d (%s)\n", photo_dir, errno, strerror(errno));
+        return false;
+    }
+    char path[64];
     bool found_path = false;
     for (unsigned i = 1; i <= 99999; ++i) {
-        snprintf(path, sizeof(path), "/usb/P96%05u.BMP", i);
+        snprintf(path, sizeof(path), "%s/P96%05u.BMP", photo_dir, i);
         if (access(path, F_OK) != 0) {
             found_path = true;
             break;
         }
-    }
-    if (!found_path) {
+    }    if (!found_path) {
         dual_printf("ERROR: no available 96x96 photo filename\n");
         return false;
     }
@@ -461,8 +463,12 @@ static void usb_cdc_command_task(void *pvParameters) {
                 }
 
                 switch (action) {
+                    case 'j':
+                    case 'J':
                     case 'c':
                     case 'C': {
+                        const bool save_capture = (action == 'c' || action == 'C');
+
                         // 1. Pause stream to prevent serial collision
                         bool was_streaming = streaming_mode;
                         if (was_streaming) {
@@ -473,9 +479,11 @@ static void usb_cdc_command_task(void *pvParameters) {
                             vTaskDelay(pdMS_TO_TICKS(100));
                         }
 
-                        // 2. Prepare USB drive
-                        usb_msc_mount_to_app();
-                        vTaskDelay(pdMS_TO_TICKS(500));
+                        // 2. Prepare USB drive only when this command really stores a photo.
+                        if (save_capture) {
+                            usb_msc_mount_to_app();
+                            vTaskDelay(pdMS_TO_TICKS(500));
+                        }
 
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
 
@@ -525,11 +533,13 @@ static void usb_cdc_command_task(void *pvParameters) {
                                     else original_frame.format = CameraFrameFormat::kJpeg;
                                     original_frame.handle = nullptr;
 
-                                    esp_err_t store_err = photo_storage_write_capture(original_frame, "main");
-                                    if (store_err == ESP_OK) {
-                                        dual_printf("[System] Image saved to ESP flash storage.\n");
-                                    } else {
-                                        dual_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(store_err), photo_storage_last_error());
+                                    if (save_capture) {
+                                        esp_err_t store_err = photo_storage_write_capture(original_frame, "main");
+                                        if (store_err == ESP_OK) {
+                                            dual_printf("[System] Image saved to ESP flash storage.\n");
+                                        } else {
+                                            dual_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(store_err), photo_storage_last_error());
+                                        }
                                     }
                                     // --- PART B: Prepare & Run Inference (Like 'i' command) ---
                                     if (allocate_frame_buffers()) {
@@ -558,10 +568,10 @@ static void usb_cdc_command_task(void *pvParameters) {
                                                 inf_frame.format = CameraFrameFormat::kGrayscale;
                                                 inf_frame.handle = nullptr;
 
-                                                photo_storage_write_latest(inf_frame);
-
-                                                // Also persist a 96x96 model-input photo (viewable/downloadable).
-                                                save_photo96_bmp(full_gray_buf, w, h, ts);
+                                                if (save_capture) {
+                                                    // Also persist a 96x96 model-input photo (viewable/downloadable).
+                                                    save_photo96_bmp(full_gray_buf, w, h, ts);
+                                                }
 
                                                 dual_printf("[System] Inference started on live capture.\n");
                                                 run_inference_on_grayscale_frame(g_raw_frame);
@@ -1163,15 +1173,14 @@ static void input_controls_monitor_task(void *pvParameters) {
             current.button2_presses != previous.button2_presses ||
             current.button2_level != previous.button2_level) {
             const bool shutter_pressed = current.button2_presses != previous.button2_presses;
-            ESP_LOGI(TAG,
-                     "INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d",
-                     (long)current.encoder_position,
-                     (long)(current.encoder_position - previous.encoder_position),
-                     (unsigned long)current.encoder_button_presses,
-                     (unsigned long)current.button2_presses,
-                     current.button2_level,
-                     current.encoder_clk_level,
-                     current.encoder_dt_level);
+            dual_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d\n",
+                        (long)current.encoder_position,
+                        (long)(current.encoder_position - previous.encoder_position),
+                        (unsigned long)current.encoder_button_presses,
+                        (unsigned long)current.button2_presses,
+                        current.button2_level,
+                        current.encoder_clk_level,
+                        current.encoder_dt_level);
             if (shutter_pressed) {
                 usb_cdc_msg_t msg = {};
                 char cmd[32];
@@ -1182,9 +1191,9 @@ static void input_controls_monitor_task(void *pvParameters) {
                 msg.itf = 0;
                 QueueHandle_t q = usb_cdc_get_queue();
                 if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
-                    ESP_LOGW(TAG, "Physical shutter command queue unavailable/full.");
+                    dual_printf("WARN,physical_shutter_queue_full\n");
                 } else {
-                    ESP_LOGI(TAG, "Physical shutter queued: capture photo to ESP flash.");
+                    dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
                 }
             }
             previous = current;

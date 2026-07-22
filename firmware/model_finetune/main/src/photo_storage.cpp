@@ -9,6 +9,7 @@
 #include "ff.h"
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <string.h>
 #include <errno.h>
 #include <stdarg.h>
@@ -84,19 +85,38 @@ static bool wait_storage_ready(uint32_t timeout_ms) {
     return false;
 }
 
+static const char *folder_for_prefix(const char *prefix) {
+    if (prefix == nullptr || prefix[0] == '\0') return "/usb";
+    if (strcmp(prefix, "model_finetune") == 0) return "/usb/model_finetune";
+    if (strcmp(prefix, "camera_usb") == 0) return "/usb/camera_usb";
+    if (strcmp(prefix, "main") == 0 || strcmp(prefix, "main_inference") == 0) {
+        return "/usb/main_inference";
+    }
+    return "/usb";
+}
+
+static esp_err_t ensure_directory(const char *folder) {
+    if (strcmp(folder, "/usb") == 0) return ESP_OK;
+    if (mkdir(folder, 0775) == 0 || errno == EEXIST) return ESP_OK;
+    set_last_error("mkdir %s failed: errno=%d (%s)", folder, errno, strerror(errno));
+    return ESP_FAIL;
+}
+
 static esp_err_t next_capture_paths(const char *prefix, const char *ext, char *raw_path, size_t raw_len, char *bmp_path, size_t bmp_len) {
-    (void)prefix;
-    // Use strict FAT 8.3 names for maximum TinyUSB MSC / FatFs compatibility.
+    const char *folder = folder_for_prefix(prefix);
+    esp_err_t dir_err = ensure_directory(folder);
+    if (dir_err != ESP_OK) return dir_err;
+
+    // Keep file names 8.3 inside each folder for maximum TinyUSB MSC / FatFs compatibility.
     for (unsigned i = 1; i <= 99999; ++i) {
-        snprintf(raw_path, raw_len, "/usb/CAP%05u.%s", i, ext);
+        snprintf(raw_path, raw_len, "%s/CAP%05u.%s", folder, i, ext);
         if (access(raw_path, F_OK) == 0) continue;
-        snprintf(bmp_path, bmp_len, "/usb/BMP%05u.BMP", i);
+        snprintf(bmp_path, bmp_len, "%s/BMP%05u.BMP", folder, i);
         if (access(bmp_path, F_OK) == 0) continue;
         return ESP_OK;
     }
     return ESP_ERR_NO_MEM;
 }
-
 esp_err_t photo_storage_init() {
     // Initialization is handled by usb_composite_init() in app_main.cpp
     // which mounts the FATFS partition to /usb.
