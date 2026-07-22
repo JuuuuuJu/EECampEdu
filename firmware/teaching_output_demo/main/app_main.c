@@ -12,6 +12,7 @@
 //   RGB,<r>,<g>,<b>      set an explicit color (0-255 each) and turn on
 //   BLINK | STOP         start/stop the blink loop
 //   TEST                 cycle red -> green -> blue -> white -> off (proves RGB)
+//   PATTERN              run the student teaching-block pattern once
 //   STATUS               report gpio, on/off, level, color, blink
 //   PIN,<gpio>           move the LED data pin at runtime (board debugging)
 //   ACTIVE,<1|0>         accepted but not applicable to an addressable LED
@@ -116,7 +117,7 @@ static esp_err_t led_driver_reinit(gpio_num_t gpio) {
 
 // ---- command helpers (assume g_lock held) ---------------------------------
 static void print_help(void) {
-    printf("Commands: LED,1 | LED,0 | PWM,<0-255> | RGB,<r>,<g>,<b> | BLINK | STOP | TEST | STATUS | PIN,<gpio> | HELP\n");
+    printf("Commands: LED,1 | LED,0 | PWM,<0-255> | RGB,<r>,<g>,<b> | BLINK | STOP | TEST | PATTERN | STATUS | PIN,<gpio> | HELP\n");
     fflush(stdout);
 }
 
@@ -203,6 +204,39 @@ static void set_pin(int gpio) {
     fflush(stdout);
 }
 
+// ---- Teaching API (use these inside the teaching block) -------------------
+// Simple, safe helpers so students control the LED without touching the RMT
+// driver below.
+//   led_set_rgb(r, g, b)  light the LED this color right now (0-255 each)
+//   led_delay_ms(ms)      wait this many milliseconds
+static void led_set_rgb(int r, int g, int b) {
+    led_show_rgb((uint8_t)(r < 0 ? 0 : r > 255 ? 255 : r),
+                 (uint8_t)(g < 0 ? 0 : g > 255 ? 255 : g),
+                 (uint8_t)(b < 0 ? 0 : b > 255 ? 255 : b));
+}
+static void led_delay_ms(int ms) {
+    if (ms < 0) ms = 0;
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
+
+// ===========================================================================
+// TEACHING BLOCK — in the portal you edit ONLY the code between the two
+// markers below. student_pattern() runs once each time you click
+// "Run student pattern" (serial command PATTERN). Use led_set_rgb(r,g,b) and
+// led_delay_ms(ms). Everything outside the markers is fixed.
+// >>> TEACHING_BLOCK_START <<<
+static void student_pattern(void) {
+    led_set_rgb(255, 0, 0);   // red
+    led_delay_ms(300);
+    led_set_rgb(0, 255, 0);   // green
+    led_delay_ms(300);
+    led_set_rgb(0, 0, 255);   // blue
+    led_delay_ms(300);
+    led_set_rgb(0, 0, 0);     // off
+}
+// >>> TEACHING_BLOCK_END <<<
+// ===========================================================================
+
 static void rstrip(char *s) {
     size_t n = strlen(s);
     while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r' || s[n - 1] == ' ' || s[n - 1] == '\t')) {
@@ -261,6 +295,14 @@ static void handle_command(char *line) {
         set_led(false);
     } else if (strcasecmp(verb, "TEST") == 0) {
         diagnostic_test();
+    } else if (strcasecmp(verb, "PATTERN") == 0) {
+        blink_enabled = false;
+        printf("PATTERN,start\n");
+        fflush(stdout);
+        student_pattern();           // student teaching-block code
+        led_render();                // restore the logical LED state afterwards
+        printf("PATTERN,done\n");
+        fflush(stdout);
     } else if (strcasecmp(verb, "STATUS") == 0) {
         print_status();
     } else if (verb[0] == '\0' || strcasecmp(verb, "HELP") == 0) {

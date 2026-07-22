@@ -71,7 +71,7 @@ CSS, JS, env vars, or certificates. Job logs remain under `apps/training_portal/
 
 - `/model_finetune`: dataset upload, class-to-action mapping, TensorFlow/PyTorch training, camera-only firmware flash, and browser-side OV2640 preview/capture. OV2640 is like flashing: the browser borrows the serial port from the student PC; the AI PC server does not directly own that camera USB port.
 - `/deploy`: deploy benchmark firmware flash, quantization, model flashing, and **browser Web Serial benchmark** (runs on the student PC's board; the AI PC only serves dataset images).
-- `/output`: output teaching firmware flash + LED/PWM controls.
+- `/output`: **edit → build → flash** teaching flow. Students edit only the `student_pattern()` block; the server patches it into `firmware/teaching_output_demo/main/app_main.c`, runs a fixed allowlisted `idf.py build` (full log streamed as a background job), and unlocks flashing only on build success. Then LED/PWM/**Run pattern** controls over Web Serial. Endpoints: `GET /api/output/teaching-block`, `POST /api/output/build`, `POST /api/output/reset-block`.
 - `/firmware`: full main board firmware flash + live OV2640 preview/inference.
 - `/camera_usb`: full OV2640 camera + USB-storage control demo (pixel format, resolution, exposure/gain/AWB/brightness, capture to flash, expose as USB drive), modeled on `firmware/pc/tools/camera_controller.py`. Runs on the main board firmware over browser Web Serial.
 - `/drive`: **AI PC Drive** — this team's shared file storage on the AI PC (see below).

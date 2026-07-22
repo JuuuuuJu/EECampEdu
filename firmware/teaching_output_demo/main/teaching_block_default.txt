@@ -1,0 +1,9 @@
+static void student_pattern(void) {
+    led_set_rgb(255, 0, 0);   // red
+    led_delay_ms(300);
+    led_set_rgb(0, 255, 0);   // green
+    led_delay_ms(300);
+    led_set_rgb(0, 0, 255);   // blue
+    led_delay_ms(300);
+    led_set_rgb(0, 0, 0);     // off
+}

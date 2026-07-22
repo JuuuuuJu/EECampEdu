@@ -50,13 +50,13 @@ over the `https://` portal address. You never plug the board into the AI PC and 
 
 ## Output Page
 
-Purpose: test GPIO/PWM output independently from the full robot arm.
+Purpose: write a little output code, build it on the AI PC, flash it, and run it on the board's RGB LED — independently from the full robot arm.
 
-1. Flash the output demo firmware from the page.
-2. Connect for control.
-3. Use LED ON/OFF, brightness slider, blink, and status controls.
+1. **Edit your code & build.** In the editor, change only the `student_pattern()` function. Use the two helpers shown on the page: `led_set_rgb(r, g, b)` (each 0–255) and `led_delay_ms(ms)`. Click **Build firmware**. The **full compiler log** streams in the Build log; a green "Build succeeded" unlocks flashing. If it fails, read the compiler errors, fix your code, and build again. **Reset to default** restores the starter pattern.
+2. **Flash** the output demo firmware (enabled only after a successful build).
+3. **Connect for control**, then click **Run pattern** to run your `student_pattern()` once. LED ON/OFF, brightness slider, blink, TEST, and status also work.
 
-Expected result: LED digital output and PWM brightness respond immediately.
+Expected result: your build succeeds, flashing is enabled, and **Run pattern** plays your edited light sequence on the RGB LED.
 
 ## Firmware Page
 

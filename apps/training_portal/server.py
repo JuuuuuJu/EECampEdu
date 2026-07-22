@@ -129,6 +129,17 @@ FLASH_OFFSET = 0x310000
 # Robot-arm output actions a class may be mapped to (matches control board output firmware).
 OUTPUT_ACTIONS = ["up", "down", "left", "right", "clamp", "release"]
 
+# Output teaching demo: students edit only the code between these markers in
+# firmware/teaching_output_demo/main/app_main.c, then build+flash from the portal.
+OUTPUT_DEMO_DIR = REPO_ROOT / "firmware" / "teaching_output_demo"
+OUTPUT_DEMO_SOURCE = OUTPUT_DEMO_DIR / "main" / "app_main.c"
+OUTPUT_DEMO_DEFAULT_BLOCK = OUTPUT_DEMO_DIR / "main" / "teaching_block_default.txt"
+TEACHING_BLOCK_START = "// >>> TEACHING_BLOCK_START <<<"
+TEACHING_BLOCK_END = "// >>> TEACHING_BLOCK_END <<<"
+TEACHING_BLOCK_MAX_CHARS = 20000
+# ESP-IDF environment for allowlisted firmware builds (idf.py).
+IDF_EXPORT_SH = os.environ.get("IDF_EXPORT_SH", "/opt/esp/idf/export.sh")
+
 
 def _current_class_order():
     """Saved class order if a dataset was imported, else the fallback default."""
@@ -1174,6 +1185,92 @@ def _benchmark_images(ds_id, limit=200):
 
 
 # --------------------------------------------------------------------------- #
+# Output teaching demo: edit-block -> build -> flash
+# --------------------------------------------------------------------------- #
+def _read_output_source():
+    """Return the full app_main.c text, or raise a friendly error."""
+    if not OUTPUT_DEMO_SOURCE.is_file():
+        raise ValueError("Output demo source file is missing on the AI PC.")
+    return OUTPUT_DEMO_SOURCE.read_text(encoding="utf-8")
+
+
+def _split_teaching_block(text):
+    """Return (prefix, block, suffix) split on the teaching-block markers.
+
+    `block` is the text strictly between the marker lines (students edit this);
+    prefix/suffix are the fixed surrounding code (kept verbatim). Raises if the
+    markers are absent or malformed.
+    """
+    start = text.find(TEACHING_BLOCK_START)
+    if start < 0:
+        raise ValueError("Teaching-block start marker not found in firmware source.")
+    # include the marker line itself + its trailing newline in the prefix
+    start_eol = text.find("\n", start)
+    if start_eol < 0:
+        raise ValueError("Malformed teaching-block start marker.")
+    end = text.find(TEACHING_BLOCK_END, start_eol)
+    if end < 0:
+        raise ValueError("Teaching-block end marker not found in firmware source.")
+    # keep the end marker (and everything after) in the suffix; back up to the
+    # start of the end-marker line so the block ends with a clean newline.
+    end_line = text.rfind("\n", start_eol, end) + 1
+    prefix = text[:start_eol + 1]
+    block = text[start_eol + 1:end_line]
+    suffix = text[end_line:]
+    return prefix, block, suffix
+
+
+def _read_teaching_block():
+    return _split_teaching_block(_read_output_source())[1]
+
+
+def _default_teaching_block():
+    if OUTPUT_DEMO_DEFAULT_BLOCK.is_file():
+        return OUTPUT_DEMO_DEFAULT_BLOCK.read_text(encoding="utf-8")
+    return _read_teaching_block()
+
+
+def _validate_teaching_block(code):
+    """Light guardrails on student code. It is compiled, not run on the AI PC,
+    but we still keep it inside the marked region and bounded in size."""
+    if code is None:
+        raise ValueError("No code provided.")
+    if len(code) > TEACHING_BLOCK_MAX_CHARS:
+        raise ValueError(f"Code is too long (max {TEACHING_BLOCK_MAX_CHARS} characters).")
+    if TEACHING_BLOCK_START in code or TEACHING_BLOCK_END in code:
+        raise ValueError("Do not include the teaching-block markers in your code.")
+    if "#include" in code:
+        # includes belong in the fixed header, not the teaching block.
+        raise ValueError("#include is not allowed in the teaching block.")
+    if code.count("{") != code.count("}"):
+        raise ValueError("Unbalanced { } braces in your code.")
+    return code
+
+
+def _write_teaching_block(code):
+    """Replace the teaching block in app_main.c with `code` (validated)."""
+    text = _read_output_source()
+    prefix, _old, suffix = _split_teaching_block(text)
+    body = code.replace("\r\n", "\n").rstrip("\n") + "\n"
+    OUTPUT_DEMO_SOURCE.write_text(prefix + body + suffix, encoding="utf-8")
+
+
+def build_output_firmware_command():
+    """Allowlisted ESP-IDF build for the output teaching demo.
+
+    Fixed command (no student input on the command line) — the edited code is
+    written into the source file, then this compiles it. The IDF environment is
+    sourced from export.sh; the target dir is the fixed teaching demo folder.
+    """
+    rel = OUTPUT_DEMO_DIR.resolve().relative_to(REPO_ROOT.resolve())
+    script = (
+        f'. "{IDF_EXPORT_SH}" >/dev/null 2>&1 && '
+        f'idf.py -C "{rel}" build'
+    )
+    return ["bash", "-lc", script]
+
+
+# --------------------------------------------------------------------------- #
 # Flask app
 # --------------------------------------------------------------------------- #
 def create_app():
@@ -1400,6 +1497,50 @@ def create_app():
         if not candidate.is_file() or candidate.suffix.lower() != ".bin":
             abort(404, "Firmware image not found.")
         return send_file(str(candidate), as_attachment=True, download_name=candidate.name)
+
+    @app.get("/api/output/teaching-block")
+    def output_teaching_block():
+        """Return the current + default editable teaching block for the output demo."""
+        try:
+            return jsonify({
+                "code": _read_teaching_block(),
+                "default": _default_teaching_block(),
+                "max_chars": TEACHING_BLOCK_MAX_CHARS,
+                "source": "firmware/teaching_output_demo/main/app_main.c",
+            })
+        except ValueError as exc:
+            abort(500, str(exc))
+
+    @app.post("/api/output/build")
+    def output_build():
+        """Write the student's teaching block into app_main.c, then start an
+        allowlisted `idf.py build`. Flashing is enabled by the UI only once this
+        job succeeds. Returns the job id; logs stream via /api/jobs/<id>/log."""
+        data = request.get_json(force=True, silent=True) or {}
+        try:
+            code = _validate_teaching_block(data.get("code"))
+        except ValueError as exc:
+            abort(400, str(exc))
+        try:
+            _write_teaching_block(code)
+        except ValueError as exc:
+            abort(500, str(exc))
+        try:
+            cmd = build_output_firmware_command()
+            job = jobs.start("build", "build:teaching_output_demo", cmd)
+        except JobBusyError as exc:
+            return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
+        return jsonify({"ok": True, "job": job.to_dict()})
+
+    @app.post("/api/output/reset-block")
+    def output_reset_block():
+        """Restore the teaching block to its shipped default (does not build)."""
+        try:
+            code = _default_teaching_block()
+            _write_teaching_block(code)
+        except ValueError as exc:
+            abort(500, str(exc))
+        return jsonify({"ok": True, "code": code})
 
     @app.get("/api/reports")
     def quant_reports():

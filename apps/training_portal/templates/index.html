@@ -122,31 +122,48 @@
   <!-- ==================== OUTPUT DEMO ==================== -->
   <section class="pane" id="pane-output">
     <div class="card">
-      <h2>Output class — hardware</h2>
-      <p class="note">Board: <b>ESP32-S3</b> with an LED on <code>GPIO38</code> (onboard on most dev boards).
-         Demonstrates <code>gpio_reset_pin</code> / <code>gpio_set_direction</code> / <code>gpio_set_level</code>,
-         a <code>while(1)</code> blink, and <b>LEDC PWM</b> brightness. Use <b>Chrome/Edge</b>.</p>
+      <h2>Output class — write code, build, flash</h2>
+      <p class="note">Board: <b>ESP32-S3</b> with an addressable RGB LED on <code>GPIO38</code>. You write a small
+         light pattern in the editor below, <b>build</b> it on the AI PC, then <b>flash</b> it to the board and run it.
+         Use <b>Chrome/Edge</b>.</p>
     </div>
 
     <div class="card">
-      <h2><span class="step">1.</span>Flash output demo firmware</h2>
-      <p class="note">Flashes <code>firmware/teaching_output_demo</code>. Offsets come from the ESP-IDF build.</p>
-      <div id="outFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <h2><span class="step">1.</span>Edit your output code &amp; build</h2>
+      <p class="note">Edit only <code>student_pattern()</code> below — it runs once each time you click
+         <b>Run pattern</b> after flashing. Available helpers:
+         <code>led_set_rgb(r, g, b)</code> (0–255 each) and <code>led_delay_ms(ms)</code>.</p>
+      <label>Teaching code block</label>
+      <textarea id="outCode" spellcheck="false" style="width:100%;min-height:220px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre;overflow:auto" wrap="off">Loading…</textarea>
+      <div class="row" style="margin-top:10px">
+        <div><button id="outBuildBtn">Build firmware</button></div>
+        <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
+      </div>
+      <div class="msg" id="outBuildStatus"></div>
+      <label style="margin-top:12px">Build log (full compiler output)</label>
+      <pre class="log" id="outBuildLog">Edit the code above, then click Build firmware. Flashing unlocks after a successful build.</pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">2.</span>Flash output demo firmware</h2>
+      <p class="note">Enabled after a successful build. Flashes your compiled <code>firmware/teaching_output_demo</code>.</p>
+      <div id="outFwImages" class="imglist"><div class="note">Build first to enable flashing.</div></div>
       <div class="row">
         <div><button id="outFwFlashBtn" disabled>Connect &amp; flash output firmware</button></div>
         <div><button class="secondary" id="outFwRefreshBtn">Re-check build</button></div>
       </div>
       <div class="msg" id="outFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="outFwLog">Flash the output firmware first, then control the LED below.</pre>
+      <pre class="log" id="outFwLog">Build your code first, then flash, then control the LED below.</pre>
     </div>
 
     <div class="card">
-      <h2><span class="step">2.</span>Control the LED</h2>
+      <h2><span class="step">3.</span>Control the LED</h2>
       <p class="note">After flashing, connect to the board's serial port to drive the LED live.</p>
       <button class="secondary" id="ctrlConnectBtn">Connect for control</button>
       <div class="row" style="margin-top:10px">
-        <div><button id="ledOnBtn" disabled>LED ON</button></div>
+        <div><button id="ledPatternBtn" disabled>Run pattern</button></div>
+        <div><button class="secondary" id="ledOnBtn" disabled>LED ON</button></div>
         <div><button class="secondary" id="ledOffBtn" disabled>LED OFF</button></div>
         <div><button class="secondary" id="ledBlinkBtn" disabled>Blink</button></div>
         <div><button class="secondary" id="ledTestBtn" disabled>TEST</button></div>
@@ -569,7 +586,7 @@ function activateTopic(topic, push){
   if(push && PATH_BY_TOPIC[topic] && window.location.pathname !== PATH_BY_TOPIC[topic]) history.pushState({topic}, "", PATH_BY_TOPIC[topic]);
   if(topic==="mainfw") loadFirmware("main_board", MAINFW);
   if(topic==="camerausb") loadFirmware("camera_usb_demo", USBFW);
-  if(topic==="output") loadFirmware("output_demo", OUTFW);
+  if(topic==="output"){ loadTeachingBlock(); lockOutputFlash(); }
   if(topic==="model"){ loadFirmware("model_finetune", MODELFW); refreshModelDemo(); }
   if(topic==="deploy"){ loadFirmware("deploy_benchmark", BENCHFW); refreshReports(); loadBenchOptions(); }
   if(topic==="drive") loadDrive();
@@ -593,7 +610,6 @@ async function init(){
   populateQuantModels(); populateModelPredictModels(); populateRecipes(); refreshClassMap(); refreshArtifacts(); refreshJobs();
   setInterval(refreshJobs, 5000);
   initFlashPanel();
-  loadFirmware("output_demo", OUTFW);   // default tab
   loadBenchOptions();
 }
 // ---------- theme selector (dark / light / high-contrast; persisted) ----------
@@ -1592,6 +1608,52 @@ $("benchFwFlashBtn").onclick = makeFwFlash(BENCHFW);
 $("mainFwFlashBtn").onclick = makeFwFlash(MAINFW);
 $("usbFwFlashBtn").onclick = makeFwFlash(USBFW);
 $("outFwRefreshBtn").onclick = () => loadFirmware("output_demo", OUTFW);
+
+// ---------- OUTPUT DEMO: edit teaching block -> build -> gate flashing ----------
+let OUTPUT_DEFAULT_BLOCK = "";
+let outBuildTimer = null, outBuildOffset = 0, outBuildJobId = null;
+function lockOutputFlash(){
+  const b=$("outFwFlashBtn"); if(b) b.disabled=true;
+  if(OUTFW) OUTFW.meta=null;
+  const host=$("outFwImages"); if(host) host.innerHTML='<div class="note">Build first to enable flashing.</div>';
+  setMsg($("outFwStatus"),"Build your code first to enable flashing.","warn");
+}
+async function loadTeachingBlock(){
+  const ta=$("outCode"); if(!ta) return;
+  try { const r=await api("/api/output/teaching-block"); ta.value=r.code; OUTPUT_DEFAULT_BLOCK=r.default||""; }
+  catch(e){ ta.value="// Could not load code from the server."; setMsg($("outBuildStatus"),"Could not load code: "+e.message,"bad"); }
+}
+async function pollOutBuild(){
+  if(!outBuildJobId) return;
+  try {
+    const r=await api(`/api/jobs/${outBuildJobId}/log?offset=${outBuildOffset}`);
+    if(r.data){ const el=$("outBuildLog"); el.textContent+=r.data; el.scrollTop=el.scrollHeight; }
+    outBuildOffset=r.offset;
+    if(r.status==="succeeded"){ clearInterval(outBuildTimer); outBuildTimer=null; $("outBuildBtn").disabled=false;
+      setMsg($("outBuildStatus"),"Build succeeded — flashing unlocked below.","ok"); await loadFirmware("output_demo", OUTFW); refreshJobs(); }
+    else if(r.status==="failed"){ clearInterval(outBuildTimer); outBuildTimer=null; $("outBuildBtn").disabled=false;
+      setMsg($("outBuildStatus"),"Build failed (rc="+r.returncode+"). Read the compiler errors above, fix your code, and build again.","bad"); lockOutputFlash(); refreshJobs(); }
+  } catch(e){}
+}
+$("outBuildBtn").onclick = async () => {
+  const code=$("outCode").value;
+  $("outBuildBtn").disabled=true; lockOutputFlash();
+  $("outBuildLog").textContent=""; setMsg($("outBuildStatus"),"Saving code & starting build…","warn");
+  let job;
+  try { const r=await api("/api/output/build",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})}); job=r.job; }
+  catch(e){ setMsg($("outBuildStatus"),"Could not start build: "+e.message+" (a training/quantization job may be running)","bad"); $("outBuildBtn").disabled=false; return; }
+  outBuildJobId=job.id; outBuildOffset=0;
+  setMsg($("outBuildStatus"),"Building "+job.id+"… compiling on the AI PC (this can take a minute).","warn");
+  if(outBuildTimer) clearInterval(outBuildTimer);
+  pollOutBuild(); outBuildTimer=setInterval(pollOutBuild,1500);
+  refreshJobs();
+};
+$("outResetBtn").onclick = async () => {
+  if(!confirm("Reset the code to the default pattern? Your edits will be lost.")) return;
+  try { const r=await api("/api/output/reset-block",{method:"POST"}); $("outCode").value=r.code;
+    setMsg($("outBuildStatus"),"Reset to the default pattern. Click Build firmware to compile it.","ok"); lockOutputFlash(); }
+  catch(e){ setMsg($("outBuildStatus"),"Reset failed: "+e.message,"bad"); }
+};
 $("modelFwRefreshBtn").onclick = () => loadFirmware("model_finetune", MODELFW);
 $("benchFwRefreshBtn").onclick = () => loadFirmware("deploy_benchmark", BENCHFW);
 $("mainFwRefreshBtn").onclick = () => loadFirmware("main_board", MAINFW);
@@ -1609,12 +1671,13 @@ $("ctrlConnectBtn").onclick = async () => {
   try {
     $("ctrlLog").textContent="";
     await serialOpenRaw({ logId:"ctrlLog", baudRate:115200 });   // releases any prior flow, opens, starts pump (echoes to ctrlLog)
-    ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
+    ["ledPatternBtn","ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
     setMsg($("ctrlStatus"),"Connected. Use the buttons / slider.","ok");
   } catch(e){ const raw=e.message||String(e);
     setMsg($("ctrlStatus"), /No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect failed: "+raw), "bad");
     await releaseSerial("ctrlLog"); }
 };
+$("ledPatternBtn").onclick = () => ctrlSend("PATTERN");
 $("ledOnBtn").onclick   = () => ctrlSend("LED,1");
 $("ledOffBtn").onclick  = () => ctrlSend("LED,0");
 $("ledBlinkBtn").onclick= () => ctrlSend("BLINK");

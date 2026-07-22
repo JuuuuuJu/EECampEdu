@@ -103,8 +103,13 @@ hardcoded.
 ## Safety model
 
 - **No arbitrary shell.** Jobs are built from a fixed allowlist of project
-  scripts with validated numeric/enum arguments; every subprocess uses
-  `shell=False`.
+  scripts with validated numeric/enum arguments; subprocesses use `shell=False`.
+  The one exception is the output-demo firmware build, which runs a **constant**
+  command (`. export.sh && idf.py -C firmware/teaching_output_demo build`) with
+  **no student input on the command line** — the student's C is written into the
+  marked teaching block of `app_main.c` and only ever *compiled* (never executed
+  on the AI PC). The edited region is bounded (size cap, must stay inside the
+  markers, no `#include`, balanced braces).
 - **Background jobs.** Training/quantization run in a worker thread; HTTP
   requests never block. Only **one** job runs at a time (HTTP 409 while busy) so
   a shared AI PC is not overloaded.
@@ -142,10 +147,13 @@ apps/training_portal/runs/
 | GET | `/api/flash-meta` | Model-partition flash metadata (hidden offset) |
 | GET | `/api/firmware/meta` | Main board firmware flash plan from `flasher_args.json` (or "not built" message) |
 | GET | `/api/firmware/download?name=…` | Download one firmware `.bin` (allowlisted to the build dir) |
+| GET | `/api/output/teaching-block` | Output demo: current + default editable teaching code block |
+| POST | `/api/output/build` | Patch student `code` into `teaching_output_demo` and start an allowlisted `idf.py build` (returns a job id) |
+| POST | `/api/output/reset-block` | Restore the output teaching block to its shipped default |
 
 ## Pages
 
-The GUI is a responsive **top navigation bar** (team name + Logout + Dark/Light/High-contrast theme selector at the top-right) over topic routes: `/model_finetune`, `/deploy`, `/output`, `/firmware`, `/camera_usb` (full OV2640 camera + USB-storage control, modeled on `firmware/pc/tools/camera_controller.py`), and `/drive` (**AI PC Drive** — this team's shared file storage under `runs/drive/` with folders `0_shared/` and `1/`…`12/`; upload/list/download/delete + image preview; zip many files before upload; captured photos are stored on the ESP32-S3, not here). Every Web Serial workflow — flash, model flash, benchmark, OV2640 preview, camera+USB demo, and output control — shares one lifecycle: exactly one port is open at a time, each flow releases the previous owner before acquiring, and the port is fully closed after every workflow. Firmware targets are separated by class: `firmware/model_finetune` is camera-only OV2640 preview/capture, `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is GPIO/PWM output practice.
+The GUI is a responsive **top navigation bar** (team name + Logout + Dark/Light/High-contrast theme selector at the top-right) over topic routes: `/model_finetune`, `/deploy`, `/output`, `/firmware`, `/camera_usb` (full OV2640 camera + USB-storage control, modeled on `firmware/pc/tools/camera_controller.py`), and `/drive` (**AI PC Drive** — this team's shared file storage under `runs/drive/` with folders `0_shared/` and `1/`…`12/`; upload/list/download/delete + image preview; zip many files before upload; captured photos are stored on the ESP32-S3, not here). Every Web Serial workflow — flash, model flash, benchmark, OV2640 preview, camera+USB demo, and output control — shares one lifecycle: exactly one port is open at a time, each flow releases the previous owner before acquiring, and the port is fully closed after every workflow. Firmware targets are separated by class: `firmware/model_finetune` is camera-only OV2640 preview/capture, `firmware/main_board` is full camera/USB/continuous inference, `firmware/deploy_benchmark` is benchmark-only `RuntimeMode::kTestUartFrame`, and `firmware/teaching_output_demo` is the output-practice firmware students **edit → build → flash** (RGB LED on GPIO38). On `/output`, students edit only the `student_pattern()` teaching block; the portal patches it into `firmware/teaching_output_demo/main/app_main.c`, runs a fixed allowlisted `idf.py build` (full compiler log streamed as a background job), and unlocks flashing only after the build succeeds.
 Train/Quantize run as background jobs (shared job log / artifacts / history
 panels); the flash, OV2640 preview, and **`/deploy` on-device benchmark** all run
 in the browser via Web Serial against the board on the **student PC** (the AI PC
