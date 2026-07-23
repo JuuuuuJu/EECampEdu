@@ -1,101 +1,65 @@
-# Model Fine-Tune
+# Model Finetune
 
-This folder keeps only the files needed to train gesture models and hand off
-`.keras` source models to the firmware deploy pipeline.
+Training and model preparation live here. Students normally use the portal instead of running these scripts manually.
 
-## Folder Structure
+## Dataset
 
-```text
-model_finetune/
-  dataset/
-    train/          Training images used by the training scripts
-    validation/     Preserved validation set for benchmark / manual checks
-  models/
-    tf/             TensorFlow/Keras source models (.keras) and weights (.h5)
-    pytorch/        PyTorch weights (.pth) and exported ONNX models (.onnx)
-  pytorch/          PyTorch versions of training and demonstration scripts
-    train_mini_resnet.py PyTorch training (96x96, grayscale, 6-class)
-    webcam_demo.py  PC webcam demo using OpenCV DNN to load and test ONNX models
-  train_mini_resnet.py Keras/TensorFlow Mini ResNet training (96x96, grayscale, 6-class)
-  train_mobilenet.py Keras/TensorFlow MobileNetV2 training (96x96, grayscale, 6-class)
-  webcam_demo.py    Optional PC camera demo (Keras/TensorFlow version)
-```
-
-## Class Order
+Recommended dataset layout:
 
 ```text
-up, ok, thumb, palm, rock, stone (6 classes)
+dataset/
+  train/
+    gesture_a/
+      image001.jpg
+    gesture_b/
+      image001.jpg
+  validation/
+    gesture_a/
+      image101.jpg
+    gesture_b/
+      image101.jpg
 ```
 
-Keep this order aligned across the training scripts, local datasets, and the webcam demo tool.
+The dataset can contain more than 6 class folders. One run uses at most 6 active classes selected in the portal. This lets students collect many gestures and choose which 6 to train or deploy.
 
-## Train Models
+Camera captures are normalized to the model input path: resize/crop to `96x96`, grayscale, and scale consistently before training, quantization, and inference.
 
-### MobileNetV2 version (Recommended for best accuracy/speed)
+## Source Frameworks
 
-Run from this folder:
+Source framework can be PyTorch or TensorFlow/Keras. The deploy target is TFLite for the ESP32-S3 firmware.
 
-```powershell
-cd model_finetune
-python train_mobilenet.py   # Keras Transfer Learning (6-class MobileNetV2)
-```
+Typical outputs:
 
-This trains a MobileNetV2 model using Keras/TensorFlow. It is highly recommended due to its superior accuracy and execution speed on target devices.
+| Source | Intermediate | Deploy |
+|---|---|---|
+| TensorFlow/Keras | `.keras` | `.tflite` |
+| PyTorch | `.pth`, optional `.onnx` / converted model | `.tflite` |
 
-### Mini ResNet version (Alternative)
+Model outputs are grouped under:
 
-You can train a Mini ResNet base model using either the PyTorch or Keras version:
+- `model_finetune/models/tf/`
+- `model_finetune/models/pytorch/`
 
-#### PyTorch version
+Deployable `.tflite` artifacts are copied to `firmware/pc/artifacts/models/` for the portal flashing and benchmark flow.
 
-```powershell
-cd model_finetune
-python pytorch/train_mini_resnet.py # PyTorch Transfer Learning (6-class ResNet)
-```
+## Quantization
 
-During execution, the PyTorch training script will automatically convert existing Keras weights, complete classification head warmup, full fine-tuning, and save models under `models/pytorch/`.
+Supported deploy formats depend on TFLite Micro kernels:
 
-#### Keras version (Legacy)
+- `int8` per-tensor or per-channel
+- `int16` where the converted model and kernels support it
+- `float32` for comparison or when size/performance is acceptable
 
-```powershell
-cd model_finetune
-python train_mini_resnet.py # Keras Transfer Learning (6-class ResNet)
-```
+Unsupported or comparison-only formats should not be shown as flashable artifacts.
 
-The training script reads images from `dataset/train/`, converts them to
-grayscale, resizes them, normalizes pixels to `[0.0, 1.0]`, and
-splits the training set internally for validation.
+Quantization reports should include:
 
-The important handoff artifacts are:
+- Source model accuracy
+- TFLite accuracy
+- Prediction distribution
+- Output variation
+- Quantization format and granularity in the file name
 
-```text
-models/tf/<model_name>.keras
-```
+## Webcam Demo
 
-Firmware deploy quantization reads these `.keras` files and generates int8
-TFLite models under:
-
-```text
-../firmware/pc/artifacts/models/
-```
-
-## Optional Demo
-
-### ONNX Demo (Recommended for PyTorch)
-
-Run from this folder:
-
-```powershell
-python pytorch/webcam_demo.py
-```
-
-This runs the demo by loading ONNX models (`.onnx`) directly using OpenCV DNN. It does not require TensorFlow or PyTorch.
-
-### Keras Demo (Legacy)
-
-```powershell
-python webcam_demo.py
-```
-
-This is kept only for PC-side visual testing. It is not required by firmware
-deployment. The demo loads Keras source `.keras` models directly from `models/tf/`.
+`webcam_demo.py` is a local fallback for PC webcam preview. In the classroom flow, students should prefer the portal and OV2640 capture path.

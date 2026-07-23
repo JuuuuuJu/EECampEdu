@@ -1,89 +1,97 @@
 # Student Guide
 
-Use **Chrome or Edge**. Your instructor gives you a team URL and account.
+Use the AI PC portal from Chrome or Edge. Do not run Python commands unless a teaching assistant asks you to use the local fallback.
 
-Example:
+## Login
 
-```text
-https://140.112.194.42:8081
-```
+Open your team URL:
 
-If the browser shows a certificate warning, choose **Advanced -> Proceed** once. After login, use the **top navigation bar** to open each page. Your team name and **Logout** are at the top-right, along with a **Theme** selector (Dark / Light / High contrast) that is remembered on your browser.
+| Team | URL |
+|---:|---|
+| 1 | `https://140.112.194.42:4431` |
+| 2 | `https://140.112.194.42:4432` |
+| 3 | `https://140.112.194.42:4433` |
+| 4 | `https://140.112.194.42:4434` |
+| 5 | `https://140.112.194.42:4435` |
+| 6 | `https://140.112.194.42:4436` |
+| 7 | `https://140.112.194.42:4437` |
+| 8 | `https://140.112.194.42:4438` |
+| 9 | `https://140.112.194.42:4439` |
+| 10 | `https://140.112.194.42:4440` |
 
-## AI PC Drive Page
+Your teacher will provide the team password. You can change it from the Account settings page.
 
-Your team's shared file storage **on the AI PC** (login required). Keep code, trained models, reports, build logs, and general uploads here. Pick a folder — `0_shared` for team-wide files, or `1`–`12` per member/station — then **Upload**, **download**, **delete**, and **preview images**.
+## Portal Pages
 
-- **Zip many files before uploading** — one `.zip` uploads much faster than many small files.
-- **Captured photos are not stored here** — they live on the ESP32-S3 and are viewed/downloaded from the camera pages.
+| Page | What You Do |
+|---|---|
+| Home | Landing page and project link. |
+| Model finetune | Capture OV2640 images, choose active gesture classes, train, quantize, and preview inference. |
+| Deploy & benchmark | Flash benchmark firmware and model, then run on-device benchmark in the browser. |
+| Output demo | Edit a small code block, build output firmware, flash it, and test LED/PWM behavior. |
+| Main board firmware | Flash full main-board firmware and model, preview camera, see prediction, and connect the control board. |
+| Camera + USB demo | Test camera streaming, capture, ESP flash storage, and USB MSC behavior. |
+| AI PC Drive | Upload/download team files stored on this AI PC. Zip large file groups before upload. |
 
-## Model Finetune Page
+## Normal Full Flow
 
-Purpose: collect/check gesture data, train a model, and preview camera/model behavior.
+1. Go to Model finetune.
+2. Capture photos or upload a dataset zip.
+3. Select up to 6 active gesture classes.
+4. Train a model.
+5. Quantize it to a deployable `.tflite`.
+6. Go to Deploy & benchmark and flash the benchmark firmware.
+7. Flash the `.tflite` model.
+8. Run the benchmark and check accuracy, latency, throughput, MAE, Max Error, and Cosine Similarity.
+9. Go to Main board firmware.
+10. Flash full main-board firmware and flash the chosen model again if needed.
+11. Connect the main board and control board. The browser forwards predictions to the control board.
 
-1. Upload a dataset zip when provided. Accepted layout: one folder per gesture class such as `up/`, `ok/`, `thumb/`, or any custom names. You can include **more than six** classes — collect extras or replace gestures freely.
-2. **Choose the active classes** (up to six). Your dataset can hold many classes, but each training / inference run uses the active set you tick. Click **Save active classes**. You can also capture new gesture frames (any class name) and activate them later by swapping the active set.
-3. Map each active class to a robot action: `up`, `down`, `left`, `right`, `clamp`, `release`.
-4. Choose TensorFlow or PyTorch and a model recipe.
-5. Click **Start training** and watch the live job log.
-6. Flash the model/full camera firmware shown on the page if the instructor asks you to update it.
-7. For OV2640 preview, plug the ESP32-S3 main board into your PC, then click **Connect OV2640 preview**. The browser borrows the serial port, sends camera stream commands, displays incoming JPEG frames, and shows live prediction/result lines. No Python or terminal command is needed.
+## Hardware Connections
 
-Expected result: a trained source model appears in the artifact list, and OV2640 preview shows frames plus current prediction when the full main board firmware is running.
+Main board input pins:
 
-## Deploy Page
+| Signal | GPIO | Meaning |
+|---|---:|---|
+| Encoder CLK | 21 | Rotary encoder phase A. |
+| Encoder DT | 47 | Rotary encoder phase B. |
+| Encoder SW | 48 | Encoder push button. |
+| Shutter button OUT | 39 | Physical capture button. |
 
-Purpose: quantize, flash model, and benchmark deployment quality.
+The shutter module has `VCC`, `GND`, and `OUT`:
 
-1. Flash **deploy benchmark firmware** from the Deploy page if the instructor asks you to update it.
-2. Pick a trained `.keras` model.
-3. Choose a deployable quantization format, usually `int8 / per-channel`.
-4. Click **Start quantization** and wait for a `.tflite` artifact and report.
-5. Plug the ESP32-S3 main board into **your PC**, then use **Flash model**. The model partition offset is hidden.
-6. Pick a **dataset** and how many **images to test**, then click **Connect ESP32-S3 & run benchmark**. This runs
-   **in your browser over Web Serial** against the board on your PC (the AI PC only serves the images) — pick your
-   board in the port chooser. The portal shows label accuracy, model latency, preprocess latency, device compute,
-   and throughput/FPS. (Flash the **deploy benchmark firmware** first so the board answers with `RESULT` lines.)
+- `VCC` -> 3.3 V
+- `GND` -> board GND
+- `OUT` -> GPIO39
 
-Expected result: model flashing succeeds and benchmark results appear in the page table + log. Use **Chrome or Edge**
-over the `https://` portal address. You never plug the board into the AI PC and never run Python.
+Use common ground. The encoder should also use 3.3 V logic, not 5 V logic.
 
-## Output Page
+## Camera Behavior
 
-Purpose: write a little output code, build it on the AI PC, flash it, and run it on the board's RGB LED — independently from the full robot arm.
+- Model finetune captures training images and stores them under the selected dataset class if one is selected.
+- Camera + USB demo captures photos into the `camera_usb` folder on ESP flash.
+- Main board captures photos into the `main_inference` folder on ESP flash when explicitly triggered.
+- Continuous main-board inference should not mount/unmount the USB disk or save a photo for every prediction.
 
-1. **Edit your code & build.** In the editor, change only the `student_pattern()` function. Use the two helpers shown on the page: `led_set_rgb(r, g, b)` (each 0–255) and `led_delay_ms(ms)`. Click **Build firmware**. The **full compiler log** streams in the Build log; a green "Build succeeded" unlocks flashing. If it fails, read the compiler errors, fix your code, and build again. **Reset to default** restores the starter pattern.
-2. **Flash** the output demo firmware (enabled only after a successful build).
-3. **Connect for control**, then click **Run pattern** to run your `student_pattern()` once. LED ON/OFF, brightness slider, blink, TEST, and status also work.
+## Flashing Checklist
 
-Expected result: your build succeeds, flashing is enabled, and **Run pattern** plays your edited light sequence on the RGB LED.
+If flashing is stuck at `Connecting...` or `Board not responding`:
 
-## Firmware Page
+1. Use Chrome or Edge.
+2. Use the HTTPS team URL, not plain HTTP.
+3. Close Arduino Serial Monitor, `idf.py monitor`, PuTTY, VS Code monitor, or any other program using the same COM port.
+4. Try a lower flash baud from the top bar, for example `460800` or `115200`.
+5. Hold BOOT, click Connect/Flash, tap RESET/EN, then release BOOT after about 1 second.
+6. Use a data-capable USB cable and try another USB port.
+7. After a flash finishes, wait until the portal says the serial port is released before flashing the next item.
 
-Purpose: flash the full ESP32-S3 main board firmware.
+## Camera Troubleshooting
 
-Use this for a new board or when the instructor updates camera/USB/continuous-inference firmware. The page flashes the ESP-IDF build images automatically; students do not type offsets or esptool commands. After flashing, use **Connect camera stream** to see OV2640 live preview and the latest prediction result.
+If all camera firmwares suddenly fail with `ESP_ERR_NOT_SUPPORTED`, `camera_fb_null`, or `Failed to acquire camera frame buffer`, but encoder/button logs still work, treat it as a camera hardware or camera-bus issue first:
 
-## Camera + USB Demo Page
-
-Purpose: explore the OV2640 camera and the on-board photo storage with the full control set.
-
-Requires the **main board firmware** (flash it on the Firmware page). Plug the ESP32-S3 into **your PC**, click **Connect camera**, then use the settings: pixel format, resolution, brightness/contrast/saturation, auto exposure/gain/white balance, mirror/flip. No Python or terminal needed.
-
-**Rotary encoder → exposure.** If a rotary encoder is wired (CLK/DT/SW), turning it while connected switches exposure to manual and nudges the manual-exposure value up/down — the page moves the Manual exposure slider for you.
-
-**Board photo storage (two separate paths, one flash).** These are kept clearly apart:
-- **Live preview** streams frames over **USB CDC** (Web Serial) and does **not** save anything.
-- **Captured photos are stored on the ESP32-S3 flash.** Click **Capture photo to flash (96×96)** — it saves a 96×96 model-input image (and the full-resolution frame). Then either:
-  - **Download over CDC** — **List saved photos**, then **download (CDC)** pulls a photo over Web Serial and previews it (96×96 shown enlarged), or
-  - **Mount flash as USB drive (MSC)** — pauses preview and shows the photos to your PC as a removable drive.
-
-## Flashing / Serial Checklist
-
-- Use Chrome or Edge over HTTPS.
-- Close Arduino Serial Monitor, `idf.py monitor`, PuTTY, or any other program using the port.
-- Only one serial workflow runs at a time. After one finishes, wait for the status to say released before starting the next one — no page refresh needed.
-- If auto-reset fails while flashing: hold BOOT, click connect, tap RESET/EN, release BOOT after about 1 second.
-- **Flash baud:** the header has a **Flash baud** selector used for all flashing (model + firmware). Leave it at **460800**; if flashing is unreliable, lower it to **230400** or **115200** and try again. (Connecting always syncs at 115200 first, so this only affects write speed.)
-- Use a data-capable USB cable.
-- **Benchmark:** pick the ESP32-S3 **UART-bridge** COM port (not the USB-JTAG one) — the `READY` handshake only appears there. If the portal reports "no serial data," the port is wrong or in use; if it reports "talking but no READY," flash the deploy benchmark firmware and pick the UART-bridge port.
+1. Fully power-cycle the board and camera.
+2. Reseat the OV2640 FPC cable.
+3. Check the camera power rails and common ground.
+4. Check XCLK on GPIO15, SCCB on GPIO4/GPIO5, PCLK on GPIO13, and data pins.
+5. Try Camera + USB demo before debugging main-board inference.
+6. Do not use Deploy benchmark to debug the camera. That firmware has no OV2640 camera path.

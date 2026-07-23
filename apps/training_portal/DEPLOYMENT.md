@@ -1,203 +1,84 @@
-# AI PC Portal — Classroom Network Deployment
+# AI PC Portal Deployment
 
-How to make each team's training portal reachable at
-`http://140.112.194.42:808X` from student PCs.
+This is the deployment guide for one AI PC serving one team.
 
-The public address `140.112.194.42` is **not** an AI PC — it is the classroom
-**gateway**. Each AI PC only ever serves plain `:8080`; the gateway maps a
-distinct public port (`8081`–`8090`) to each team's AI PC.
+## Public Mapping
 
-```
- Student PC ──http──► 140.112.194.42:808X ──(port forward)──► AI-PC_X (LAN IP):8080
- (browser)            classroom GATEWAY                        training portal (Flask)
+The gateway public IP is:
+
+```text
+140.112.194.42
 ```
 
-Current classroom setup: Team 1 is already wired as
-`140.112.194.42:8081 -> AIPC1:8080`. For Team 1 testing, open
-`http://140.112.194.42:8081` from the student PC browser.
+Team mapping:
 
-The work is two parts. **Part A** is done on each AI PC (you can do it).
-**Part B** is done on the gateway (needs gateway/IT admin).
+| Team | Portal URL | SSH |
+|---:|---|---|
+| 1 | `https://140.112.194.42:4431` | `ssh -p 221 eecamp@140.112.194.42` |
+| 2 | `https://140.112.194.42:4432` | `ssh -p 222 eecamp@140.112.194.42` |
+| 3 | `https://140.112.194.42:4433` | `ssh -p 223 eecamp@140.112.194.42` |
+| 4 | `https://140.112.194.42:4434` | `ssh -p 224 eecamp@140.112.194.42` |
+| 5 | `https://140.112.194.42:4435` | `ssh -p 225 eecamp@140.112.194.42` |
+| 6 | `https://140.112.194.42:4436` | `ssh -p 226 eecamp@140.112.194.42` |
+| 7 | `https://140.112.194.42:4437` | `ssh -p 227 eecamp@140.112.194.42` |
+| 8 | `https://140.112.194.42:4438` | `ssh -p 228 eecamp@140.112.194.42` |
+| 9 | `https://140.112.194.42:4439` | `ssh -p 229 eecamp@140.112.194.42` |
+| 10 | `https://140.112.194.42:4440` | `ssh -p 230 eecamp@140.112.194.42` |
 
----
+Formula:
 
-## Part A — On each AI PC
+- Portal port = `4430 + team number`
+- SSH port = `220 + team number`
 
-### A1. Give the AI PC a stable LAN IP
+## Why HTTPS
 
-Port forwarding breaks if the AI PC's IP changes, so it must be fixed:
+Browser Web Serial requires a secure context. Use HTTPS for the public portal. Chrome or Edge should be used for flashing.
 
-- **Preferred:** add a **DHCP reservation** on the LAN router binding the AI PC's
-  MAC to a fixed IP, or
-- set a **static IP** on the AI PC (netplan / NetworkManager — needs `sudo`).
+## Start The Portal
 
-Find the AI PC's wired IP and the interface/route to the gateway:
+Use the systemd user service:
 
 ```bash
-hostname -I                       # e.g. 192.168.1.125
-ip route get 140.112.194.42       # shows which NIC/IP reaches the gateway
-```
-
-Use the **wired** IP that appears as `src` in `ip route get` (a machine with both
-Ethernet and Wi‑Fi has two IPs — forward to the wired one). Record each team's
-final IP for the Part B table.
-
-### A2. Run the portal so it survives logout / reboot
-
-Bind `0.0.0.0` (already the default) so it is reachable from other machines, not
-just localhost.
-
-**Quick (per boot), no sudo:**
-
-```bash
-conda activate eecampedu
 cd ~/EECampEdu
-nohup python apps/training_portal/server.py --host 0.0.0.0 --port 8080 \
-      > ~/portal.log 2>&1 &
+bash deploy/install_services.sh
+systemctl --user restart eecamp-portal
+systemctl --user status eecamp-portal
+journalctl --user -u eecamp-portal -f
 ```
 
-**Robust (auto-start on boot) — user systemd service, no sudo:**
+If the portal must run before login:
 
 ```bash
-mkdir -p ~/.config/systemd/user
-cat > ~/.config/systemd/user/portal.service <<'EOF'
-[Unit]
-Description=EECampEdu training portal
-After=network-online.target
-
-[Service]
-ExecStart=/home/eecamp/miniconda3/envs/eecampedu/bin/python /home/eecamp/EECampEdu/apps/training_portal/server.py --host 0.0.0.0 --port 8080
-WorkingDirectory=/home/eecamp/EECampEdu
-Restart=always
-
-[Install]
-WantedBy=default.target
-EOF
-systemctl --user daemon-reload
-systemctl --user enable --now portal.service
-# optional: start before login (one-time, needs sudo):
-#   sudo loginctl enable-linger $USER
+sudo loginctl enable-linger $USER
 ```
 
-Adjust the two absolute paths if your env or checkout lives elsewhere.
+## Gateway Requirement
 
-### A3. Open the AI PC firewall for TCP 8080 — needs sudo
+The gateway must forward each public HTTPS port to that team's AI PC portal service. If localhost on the AI PC works but `https://140.112.194.42:443X` fails, check gateway forwarding and firewall rules first.
 
-If a host firewall (`ufw`) is active, inbound `:8080` is blocked until allowed.
-This needs `sudo`, so run it yourself:
+## Health Check
+
+On the AI PC:
 
 ```bash
-sudo ufw status                                              # if 'inactive', skip this step
-sudo ufw allow from 192.168.1.0/24 to any port 8080 proto tcp   # tightest: only the LAN the gateway is on
-# or simply:  sudo ufw allow 8080/tcp
+curl -k https://127.0.0.1:8080/api/health
 ```
-
-### A4. Verify
-
-```bash
-curl -s http://127.0.0.1:8080/api/health        # on the AI PC itself
-curl -s http://<AIPC_LAN_IP>:8080/api/health    # from another PC on the same LAN
-```
-
-Both should return `{"status":"ok", ...}`. If the LAN one fails, the problem is
-the firewall (A3) or the IP (A1) — not the gateway yet.
-
----
-
-## Part B — On the classroom gateway (140.112.194.42)
-
-Done on the gateway device, **not** the AI PC. Needs admin access to
-`140.112.194.42` (its web UI or SSH). If campus/lab IT runs it, hand them this
-mapping table:
-
-| Team | Public endpoint | Forward to (AI PC wired IP : port) |
-|------|-----------------|-----------------------------------|
-| 1 | `140.112.194.42:8081` | `AIPC1_IP:8080` |
-| 2 | `140.112.194.42:8082` | `AIPC2_IP:8080` |
-| 3 | `140.112.194.42:8083` | `AIPC3_IP:8080` |
-| 4 | `140.112.194.42:8084` | `AIPC4_IP:8080` |
-| 5 | `140.112.194.42:8085` | `AIPC5_IP:8080` |
-| 6 | `140.112.194.42:8086` | `AIPC6_IP:8080` |
-| 7 | `140.112.194.42:8087` | `AIPC7_IP:8080` |
-| 8 | `140.112.194.42:8088` | `AIPC8_IP:8080` |
-| 9 | `140.112.194.42:8089` | `AIPC9_IP:8080` |
-| 10 | `140.112.194.42:8090` | `AIPC10_IP:8080` |
-
-Implement the mapping with whichever fits the gateway:
-
-**Option 1 — Router UI (simplest).** Open the **Port Forwarding / Virtual
-Server** page; add one rule per team: External port `808X` (TCP) → Internal IP
-`AIPC_X`, internal port `8080`.
-
-**Option 2 — Linux gateway (iptables DNAT):**
-
-```bash
-# as root on 140.112.194.42
-sysctl -w net.ipv4.ip_forward=1
-iptables -t nat -A PREROUTING  -p tcp --dport 8081 -j DNAT --to-destination AIPC1_IP:8080
-iptables -t nat -A POSTROUTING -p tcp -d AIPC1_IP --dport 8080 -j MASQUERADE
-# repeat 8082→AIPC2 … 8090→AIPC10
-```
-
-The `MASQUERADE` (SNAT) line matters: without it the AI PC needs a route back to
-the student subnet; with it, replies just return via the gateway.
-
-**Option 3 — nginx reverse proxy (cleanest for HTTP):**
-
-```nginx
-# one server block per team
-server { listen 8081; location / { proxy_pass http://AIPC1_IP:8080;
-         proxy_set_header Host $host; proxy_set_header X-Real-IP $remote_addr; } }
-server { listen 8082; location / { proxy_pass http://AIPC2_IP:8080; } }
-# …
-```
-
-Also ensure the gateway's own firewall permits inbound `8081`–`8090` from the
-student network.
-
----
-
-## Part C — End-to-end verification
 
 From a student-side machine:
 
 ```bash
-curl -s http://140.112.194.42:8081/api/health     # team 1
+curl -k https://140.112.194.42:4431/api/health
 ```
 
-Then open `http://140.112.194.42:808X/` in a browser — the portal page should
-load. Walk failures back:
+Use the correct team port.
 
-- Works on `AIPC_IP:8080` but not `140.112.194.42:808X` → gateway rule/firewall (Part B).
-- Fails even on `AIPC_IP:8080` → AI PC firewall, or server not bound to `0.0.0.0` (Part A).
+## Restart After Changes
 
----
+Restart `eecamp-portal` after changing:
 
-## Important caveats
+- `apps/training_portal/server.py`
+- `apps/training_portal/templates/index.html`
+- Portal static files
+- `deploy/eecamp-portal.env`
 
-- **Serve HTTPS on `:8080` for browser flashing.** Run the portal with
-  `--port 8080 --https` (self-signed). Browser Web Serial flashing needs a secure
-  context, so students open **`https://140.112.194.42:8081`** and accept the
-  one-time self-signed certificate warning. Port 8080 carries HTTPS directly —
-  there is no separate HTTPS port. (Plain HTTP still works for training/quantize
-  but not for browser flashing.)
-- **One `:8080` per AI PC.** Every AI PC uses the same internal port; the
-  *gateway* assigns each a distinct public port and forwards it to that `:8080`
-  (TCP passthrough — the gateway does not terminate TLS). Do not give each AI PC
-  a different internal port.
-- **Wired vs Wi‑Fi.** If an AI PC has both, forward to the **wired** IP (the one
-  `ip route get 140.112.194.42` reports as `src`).
-
-## Privilege summary
-
-| Action | Where | Privilege |
-|--------|-------|-----------|
-| Static IP / DHCP reservation | AI PC or LAN router | sudo / router admin |
-| Allow inbound TCP 8080 | AI PC | **sudo** (`ufw`) |
-| `loginctl enable-linger` | AI PC | sudo (only for boot-before-login) |
-| Port-forward `808X → AIPC:8080` | **Gateway 140.112.194.42** | **gateway / campus IT admin** |
-| Open `8081–8090` inbound | Gateway | gateway admin |
-
-The gateway port-forwarding (Part B) is the one piece outside the AI PC's
-control — if you don't administer `140.112.194.42`, send the Part B table to
-whoever does.
+Firmware-only source changes require rebuild/reflash, not necessarily a portal restart.

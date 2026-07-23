@@ -1,23 +1,23 @@
-# Control Board Output Firmware
+# Control Board Firmware
 
-`firmware/control_board/` is a standalone ESP-IDF project for the normal ESP32 board that controls the robotic arm servos.
+`firmware/control_board/` is the standalone ESP-IDF project for the normal ESP32 board that drives the robotic arm servos.
 
-main board handles camera and model inference. The PC receives main board `RESULT,...` lines, maps the predicted gesture to one output action, then forwards `ACTION,<name>` commands to control board over a second USB serial connection.
+The ESP32-S3 main board handles camera and model inference. The browser receives main board `RESULT,...` lines, maps the predicted class to an action, and forwards the action to the control board over a second serial connection.
 
 ## Servo Pins
 
-Pins match the original output team's `robotic_arm.ino`:
+Pins match the output hardware design:
 
-```text
-base  GPIO18
-arm   GPIO19
-pitch GPIO22
-claw  GPIO21
-```
+| Servo | GPIO |
+|---|---:|
+| base | 18 |
+| arm | 19 |
+| pitch | 22 |
+| claw | 21 |
 
 ## Build And Flash
 
-Use an ESP-IDF terminal:
+Use an ESP-IDF shell:
 
 ```powershell
 cd firmware\control_board
@@ -26,75 +26,42 @@ idf.py build
 idf.py -p COM7 flash monitor
 ```
 
-Expected boot output:
+## Commands
+
+Preferred action commands:
 
 ```text
-READY,CONTROL_BOARD_SERVO_OUTPUT
-STATE,gesture=4,name=null,base=90,arm=90,pitch=90,claw=30
+ACTION,up
+ACTION,down
+ACTION,left
+ACTION,right
+ACTION,clamp
+ACTION,release
+ACTION,none
 ```
 
-## Command Protocol
-
-Preferred action commands from PC / APP:
+Diagnostic and manual commands:
 
 ```text
-ACTION,up       pitch servo moves upward by one step
-ACTION,down     pitch servo moves downward by one step
-ACTION,left     base servo moves left by one step
-ACTION,right    base servo moves right by one step
-ACTION,clamp    claw servo closes
-ACTION,release  claw servo opens
-ACTION,none     no movement
+TEST
+SWEEP
+B90
+A90
+P90
+C30
 ```
 
-Legacy gesture commands are still accepted for compatibility:
+Expected reply:
 
 ```text
-GESTURE,0,up
-GESTURE,1,down
-GESTURE,2,right
-GESTURE,3,left
-GESTURE,4,null
+OK,gesture=4,name=null,base=90,arm=90,pitch=90,claw=30
 ```
 
-Motion diagnostic command:
+## Portal Behavior
 
-```text
-TEST  sweep all four servo channels through visible test positions
-SWEEP same as TEST
-```
+Main board page should connect both:
 
-Manual angle commands:
+1. ESP32-S3 main board
+2. ESP32 control board
 
-```text
-B60 / B120    set base angle/speed command away from the neutral 90 value
-A60 / A140    set arm angle
-P45 / P120    set pitch angle
-C0 / C80      set claw angle
-```
-
-Expected ACK example:
-
-```text
-OK,gesture=0,name=up,base=90,arm=90,pitch=95,claw=30
-```
-
-## Manual PC Test
-
-From repository root:
-
-```powershell
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 up
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 clamp
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 release
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 right --repeat 3
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 TEST --timeout 5
-```
-
-## Full System Paths
-
-```text
-Benchmark path          firmware/pc/benchmark/run_benchmark_png.py --control-board-port COM7
-Python controller path  CONTROL_BOARD_PORT=COM7 python firmware/pc/tools/camera_controller.py
-ImGui app path          Connect Control Board Output panel and enable Auto-forward RESULT
-```
+If prediction confidence is below 70%, the portal forwards idle/null behavior instead of a movement command.

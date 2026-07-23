@@ -1,253 +1,94 @@
 # Firmware
 
-`firmware/` contains all deploy-side code for main board, control board, and PC tooling.
-
-```text
-firmware/
-  main_board/        full ESP32-S3 project: OV2640 camera, USB CDC/MSC, continuous TFLite Micro inference.
-  deploy_benchmark/  benchmark-only ESP32-S3 project: RuntimeMode::kTestUartFrame for PC benchmark frames.
-  control_board/     control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
-  teaching_output_demo/ standalone ESP32-S3 GPIO/LED/PWM teaching firmware.
-  pc/                Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
-```
-
-Deploy contract:
+This repository has multiple firmware targets because each teaching stage needs a different board behavior.
 
-```text
-Source framework can be PyTorch or TensorFlow.
-Deploy target is TensorFlow Lite for main board ESP32-S3 TFLite Micro. Full int8 TFLite is the default/recommended target.
-Servo output target is control board ESP-IDF firmware, controlled by PC serial commands.
-```
+## Projects
 
-## Main Board Full Firmware
+| Path | Board | Purpose |
+|---|---|---|
+| `firmware/main_board/` | ESP32-S3 | Full system: OV2640 camera, USB CDC/MSC, TFLite Micro inference, encoder/button input, and control-board bridge. |
+| `firmware/model_finetune/` | ESP32-S3 | Camera firmware for collecting model-training images and previewing model predictions. |
+| `firmware/camera_usb_demo/` | ESP32-S3 | Camera + USB demo: streaming, capture, exposure controls, ESP flash storage, and MSC. |
+| `firmware/deploy_benchmark/` | ESP32-S3 | Benchmark firmware. Receives frames over serial and returns `RESULT`. No physical OV2640 camera path. |
+| `firmware/control_board/` | ESP32 | Separate servo control board. Receives action commands and drives the arm servos. |
+| `firmware/teaching_output_demo/` | ESP32-S3 | Output teaching demo with a bounded editable code block. |
 
-Build full main board firmware:
+## Main Board Pin Summary
 
-```powershell
-cd firmware\main_board
-idf.py set-target esp32s3
-idf.py fullclean
-idf.py build
-idf.py -p COM6 flash monitor
-```
+Input controls:
 
-No `git clone --recursive` is required. ESP-IDF managed components are declared in `esp/main/idf_component.yml`.
+| Signal | GPIO |
+|---|---:|
+| Encoder CLK | 21 |
+| Encoder DT | 47 |
+| Encoder SW | 48 |
+| Shutter button OUT | 39 |
 
-main board runtime config:
+OV2640 camera:
 
-```text
-firmware/
-  main_board/        full ESP32-S3 project: OV2640 camera, USB CDC/MSC, continuous TFLite Micro inference.
-  deploy_benchmark/  benchmark-only ESP32-S3 project: RuntimeMode::kTestUartFrame for PC benchmark frames.
-  control_board/     control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
-  teaching_output_demo/ standalone ESP32-S3 GPIO/LED/PWM teaching firmware.
-  pc/                Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
-```
+| Signal | GPIO |
+|---|---:|
+| SIOD / SCCB SDA | 4 |
+| SIOC / SCCB SCL | 5 |
+| VSYNC | 6 |
+| HREF | 7 |
+| PCLK | 13 |
+| XCLK | 15 |
+| Y9 / D7 | 16 |
+| Y8 / D6 | 17 |
+| Y7 / D5 | 18 |
+| Y6 / D4 | 12 |
+| Y5 / D3 | 10 |
+| Y4 / D2 | 8 |
+| Y3 / D1 | 9 |
+| Y2 / D0 | 11 |
 
-Important settings:
-
-- `RUNTIME_MODE`: full main board default is `kCameraUsbMsc`; benchmark uses the separate `firmware/deploy_benchmark` project with `kTestUartFrame`.
-- `ENABLE_INPUT_CONTROLS`: enables rotary encoder / button GPIO input on main board.
-- `TENSOR_ARENA_SIZE`: TFLite Micro tensor arena size. Current integration default is `1536 * 1024` bytes so float32 MobileNetV2 can allocate tensors from PSRAM.
-- `MODEL_PARTITION_LABEL`: flash partition containing the selected TFLite model.
-- `STORAGE_PARTITION_LABEL`: FAT storage partition used by camera/USB.
+The shutter module should use 3.3 V logic: `VCC -> 3.3 V`, `GND -> GND`, `OUT -> GPIO39`.
 
-main board does not drive robotic-arm servo GPIO. It only prints inference results such as:
+## Model Partition
 
-```text
-RESULT,<class>,<model_us>,<preprocess_us>,<device_us>,<score0>,<score1>,...
-```
+The model is a `.tflite` file written directly to the model partition. It is not converted into a model `.bin`.
 
+`TFLiteGesture_esp.bin` is the ESP-IDF app firmware for the main board. It contains code, not model weights.
 
-## Deploy Benchmark Firmware
+## Photo Storage Behavior
 
-Build benchmark-only firmware before using the Deploy page benchmark flow:
+Expected folders on ESP flash:
 
-```powershell
-cd firmware\deploy_benchmark
-idf.py set-target esp32s3
-idf.py build
-```
+- `model_finetune` for model-data captures
+- `camera_usb` for camera + USB demo captures
+- `main_inference` for explicit main-board captures
 
-This project is copied from `main_board` but keeps `RuntimeMode::kTestUartFrame` fixed for UART/CDC image-frame benchmark tests. It is intentionally separate from the full camera/USB firmware.
-## Control Board Output Firmware
+Main-board continuous inference should not save a photo for every prediction and should not repeatedly mount/unmount the MSC drive.
 
-Build control board:
+## Control Board Behavior
 
-```powershell
-cd firmware\control_board
-idf.py set-target esp32
-idf.py build
-idf.py -p COM7 flash monitor
-```
+The control board is a separate ESP32 that drives servos. The portal connects to both boards when needed:
 
-control board receives line-based serial commands from the PC:
+1. Main board predicts a gesture.
+2. Browser/PC receives the prediction.
+3. Browser/PC forwards the mapped action to the control board serial port.
+4. Control board updates servo positions.
 
-```text
-GESTURE,0,up
-GESTURE,1,down
-GESTURE,2,right
-GESTURE,3,left
-GESTURE,4,null
-```
+If confidence is below 70%, the prediction is treated as `null` / idle.
 
-It also accepts manual servo angle commands for output unit tests:
+The action mapping is configured in the portal. A typical set is:
 
-```text
-B90  base servo
-A90  arm servo
-P100 pitch servo
-C30  claw servo
-```
+- up
+- down
+- left
+- right
+- clamp
+- release
 
-Servo pins match the original output team's `robotic_arm.ino`:
+## Camera Debug
 
-```text
-base  GPIO18
-arm   GPIO19
-pitch GPIO22
-claw  GPIO21
-```
+If camera initialization fails across `main_board`, `model_finetune`, and `camera_usb_demo` with the same code and power, debug the OV2640 hardware path first:
 
-Manual PC test:
+- Reseat the FPC cable.
+- Fully power-cycle the board.
+- Verify camera power rails and common ground.
+- Probe XCLK GPIO15, SCCB GPIO4/GPIO5, PCLK GPIO13, and data lines.
+- Use `camera_usb_demo` as the first camera sanity test.
 
-```powershell
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 up
-python firmware\pc\tools\send_control_board_gesture.py --port COM7 P100
-```
-
-## Model Deploy
-
-Default source model (recommended):
-
-```text
-model_finetune/models/tf/MobileNetV2_finetuned.keras
-```
-
-Export source model into deployable TFLite. Default/recommended format is full int8:
-
-```powershell
-python firmware\pc\tools\quantize_keras_model.py --quant-format int8 --quant-granularity per-channel
-```
-
-The quantization script:
-
-- loads a `.keras` source model from `model_finetune/models/tf/` or `model_finetune/models/pytorch/`
-- reads calibration images from `model_finetune/dataset/train/`
-- applies grayscale 96x96 preprocessing
-- runs TensorFlow Lite representative calibration for integer formats
-- exports one of the supported ESP deploy formats: `int8`, `int16`, or `float32`
-- writes a quantization report with input/output shape, dtype, scale, zero point, and class order
-Supported deploy formats:
-
-| Format | Calibration | Notes |
-| --- | --- | --- |
-| `int8` | Required | Recommended main board format. Full int8 input/output and weights. |
-| `int16` | Required | Experimental int16 activations with int8 weights. Currently supports `per-channel` only and requires per-model TFLite Micro verification. |
-| `float32` | Not required | Reference export without quantization. |
-
-`float16` is not listed because this ESP TFLite Micro build cannot prepare float16-weight `DEQUANTIZE`; use `float32` for the floating-point reference path.
-
-`--quant-granularity per-channel` is recommended for integer formats. `per-tensor` is available for int8 as a simpler shared tensor scale mode; int16 currently uses per-channel only.
-
-Generated files:
-
-```text
-firmware/
-  main_board/        full ESP32-S3 project: OV2640 camera, USB CDC/MSC, continuous TFLite Micro inference.
-  deploy_benchmark/  benchmark-only ESP32-S3 project: RuntimeMode::kTestUartFrame for PC benchmark frames.
-  control_board/     control board ESP-IDF project: normal ESP32 robotic-arm servo controller.
-  teaching_output_demo/ standalone ESP32-S3 GPIO/LED/PWM teaching firmware.
-  pc/                Quantization, flashing helpers, benchmark, camera controller, control board bridge tools.
-```
-
-Flash only main board model partition:
-
-```powershell
-python firmware\main_board\flash_tflite_model.py "firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" -p COM6
-```
-
-The model partition is independent from the firmware app partition. Current main board partition table reserves `4M` for `model` at `0x310000`, then starts FAT `storage` at `0x710000`.
-
-## Benchmark
-
-Set main board firmware mode:
-
-```cpp
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kTestUartFrame;
-```
-
-Inference benchmark:
-
-```powershell
-cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6
-```
-
-Inference benchmark plus control board output forwarding:
-
-```powershell
-cd firmware\pc
-python -u benchmark\run_benchmark_png.py --model "artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite" --dataset "..\..\model_finetune\dataset\validation" --port COM6 --control-board-port COM7
-```
-
-Primary deploy metrics:
-
-- `Label Accuracy`
-- `Average Model Latency`
-- `Average Preprocess Latency`
-- `Device Compute Throughput`
-- `Top-1 Match`
-- `Average Score MAE`
-- `Max Score Error`
-- `Average Cosine`
-
-## Real Camera Controller Flow
-
-Use this path when testing real camera capture through the Python controller:
-
-```powershell
-$env:MAIN_BOARD_PORT="COM6"
-$env:CONTROL_BOARD_PORT="COM7"
-python firmware\pc\tools\camera_controller.py
-```
-
-When `camera_controller.py` receives `RESULT,...` from main board, it forwards `GESTURE,<index>,<name>` to control board.
-
-## Camera Modes
-
-### Camera Flash Mode
-
-```cpp
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraFlash;
-```
-
-This mode owns the camera task, captures grayscale QVGA frames, writes `LATEST.RAW/LATEST.MET` to `/usb`, resizes to model input, then runs inference.
-
-### Camera USB/MSC Mode
-
-```cpp
-constexpr RuntimeMode RUNTIME_MODE = RuntimeMode::kCameraUsbMsc;
-```
-
-This mode starts TinyUSB CDC/MSC plus the camera stream task.
-
-CDC is used for:
-
-- live JPEG preview frames
-- camera commands
-- input/control debug messages
-- main board inference result logs
-
-MSC exposes the FAT storage partition to the PC as a USB drive. This is frame-by-frame preview over CDC, not UVC.
-
-## Camera Storage Files
-
-Current flash-storage output:
-
-```text
-/usb/LATEST.RAW
-/usb/LATEST.MET
-```
-
-`LATEST.BMP` is intentionally not generated in the firmware hot path. Raw payload and metadata are enough for firmware tests, and avoiding BMP conversion keeps storage writes deterministic.
+Do not use `deploy_benchmark` for camera debug. It has no camera capture path.

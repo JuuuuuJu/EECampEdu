@@ -1,61 +1,26 @@
-# Local Camera / Preview / Control App (student PC)
+# Local Camera App
 
-A small localhost app that runs on the **student PC** (where the ESP32-S3 is
-plugged in) to show the live gesture result and drive the robot arm. It is
-separate from the AI PC training portal on purpose — only the student PC can
-reach the board's USB serial port.
+Legacy localhost helper for a student PC. The normal classroom flow now uses the AI PC portal pages directly through browser Web Serial.
 
-## Three-app architecture (evaluation)
+Use this only when the portal camera/control path is unavailable and a teaching assistant needs a local fallback.
 
-| App | Runs on | Needs local USB? | Purpose |
-|-----|---------|------------------|---------|
-| Training portal (`apps/training_portal`) | **AI PC** | no | upload dataset, train, quantize, download artifacts |
-| Local flash helper (`apps/local_flash_helper`) | **student PC** | yes (flash) | flash the `.tflite` to the ESP32-S3 |
-| Camera/control app (`apps/local_camera_app`) | **student PC** | yes (serial) | live gesture result + class→action mapping + control board forward |
-
-**Why not put camera/preview in the AI PC server?** Live preview and reading the
-inference `RESULT` line require the board's USB port, which physically lives on
-the student PC. The AI PC has no access to it, so this must stay local. Keeping
-it a separate localhost app (rather than merging into the flash helper) keeps
-each concern independent; they *may* be merged later since both are student-PC
-localhost services.
-
-## Run (student PC, board plugged in)
+## Run
 
 ```bash
 conda activate eecampedu
-python apps/local_camera_app/preview_app.py   # http://127.0.0.1:8770
+python apps/local_camera_app/preview_app.py
 ```
 
-Then open `http://127.0.0.1:8770/` for the live view.
+Open:
 
-## Endpoints
+```text
+http://127.0.0.1:8770
+```
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/health` | status + available actions |
-| GET | `/ports` | list local serial ports |
-| POST | `/class-map` | load the `class_mapping.json` downloaded from the portal |
-| POST | `/connect` | `{main_board_port, control_board_port?, baud?}` — open serial + start reader |
-| GET | `/status` | latest gesture: index, scores, class name, mapped action |
+## Scope
 
-The reader parses main board `RESULT,<index>,<t0>,<t1>,<t2>,<score...>` (index-only
-firmware), maps `index → class name → action` via the class map, and forwards
-the action string to control board.
+This helper can read local serial ports and display gesture/control state. It is not the source of truth for training, quantization, or artifact management. Those live in `apps/training_portal/`.
 
-## Class → action mapping
+## Main Limitation
 
-The mapping comes from the training portal's `class_mapping.json` (the same file
-that records the six class folder names). Download it from the portal
-(`/api/class-map`) and `POST` it here, or preload with `--class-map path.json`.
-Actions are `up/down/left/right/clamp/release`, index-aligned with the control board
-output firmware.
-
-## Camera preview status (scope)
-
-Live JPEG-over-USB-CDC **camera preview** is currently provided by the native
-Dear ImGui app in [`apps/esp32_cam_input_app`](../esp32_cam_input_app/). Serving
-those frames as MJPEG from this local web app is a **documented next step**: it
-needs the same ESP CDC JPEG framing the native app already implements. This
-scaffold deliberately implements the firmware-protocol-stable gesture/result +
-action-control path first, and does not fake camera frames.
+`127.0.0.1` always means the student's own PC. The AI PC cannot access a board plugged into a student PC unless the browser grants Web Serial access or a local helper is running on that student PC.

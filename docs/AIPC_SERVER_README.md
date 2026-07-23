@@ -1,171 +1,125 @@
 # AI PC Server Guide
 
-The AI PC runs the web portal for one team. The gateway forwards the public team port to this machine's `:8080`.
+This guide is for teaching assistants and developers who maintain one AI PC for one team.
 
-Example: `https://140.112.194.42:8081` -> `https://<team-ai-pc>:8080`.
+## Network Mapping
 
-## Environment
+Classroom gateway:
 
-```bash
-python scripts/setup_env.py --skip-native
-conda activate eecampedu
-```
+- SSH: `ssh -p <220 + team> eecamp@140.112.194.42`
+- Portal: `https://140.112.194.42:<4430 + team>`
 
-Use ESP-IDF separately when building firmware artifacts.
+Examples:
 
-## Team Login
+- Team 1: SSH `221`, portal `https://140.112.194.42:4431`
+- Team 10: SSH `230`, portal `https://140.112.194.42:4440`
 
-Default development passwords are `eecamp01` ... `eecamp10` for `team01` ... `team10`.
-For real class use, set passwords outside git:
+The portal process on the AI PC should listen on the configured internal port. The gateway must forward the public HTTPS port to that AI PC. Confirm both ends when access fails.
 
-```bash
-export EECAMP_PORTAL_SECRET='change-this-session-secret'
-export EECAMP_TEAM_PASSWORDS='{"team01":"...","team02":"..."}'
-```
-
-## Background Service 1: Training Portal (systemd)
-
-The portal runs as a **systemd user service** (`eecamp-portal`) — no `sudo` for daily
-start/stop/status/logs, and it restarts on failure and at boot. It serves HTTPS on
-port 8080 (browser Web Serial flashing needs a secure context).
-
-**Install once** (creates + enables the user service, and `deploy/eecamp-portal.env`
-for secrets):
+## Setup
 
 ```bash
 cd ~/EECampEdu
-./deploy/install_services.sh              # portal only
-# ./deploy/install_services.sh --with-camera   # also install the camera app service
-# edit secrets, then restart:
-nano deploy/eecamp-portal.env             # set EECAMP_PORTAL_SECRET / team passwords
+conda activate eecampedu
+pip install -r requirements.txt
 ```
 
-If a portal is still running from the old `nohup` method, stop it first so both do
-not bind port 8080: `pkill -f "apps/training_portal/server.py"`.
+If ESP-IDF is needed for firmware builds, make sure `idf.py` works in the same shell. The portal service reads `IDF_EXPORT_SH` from `deploy/eecamp-portal.env` if your ESP-IDF install is not in the default location.
 
-**Manage** (no sudo):
+## Runtime Secrets
+
+Do not commit real passwords.
+
+Use:
 
 ```bash
-systemctl --user start   eecamp-portal      # start
-systemctl --user stop    eecamp-portal      # stop
-systemctl --user restart eecamp-portal      # restart (after code/env/cert changes)
-systemctl --user status  eecamp-portal      # status
-journalctl  --user -u eecamp-portal -f      # live logs
-curl -sk https://127.0.0.1:8080/api/health  # health check
+cp deploy/eecamp-portal.env.example deploy/eecamp-portal.env
+nano deploy/eecamp-portal.env
 ```
 
-Or use the wrapper: `./deploy/eecampctl.sh {start|stop|restart|status|logs} [portal|camera]`.
+`deploy/eecamp-portal.env` is git-ignored and should contain the real portal secret and team passwords.
 
-**Run without an active login** (survive logout / reboot) — the only step needing sudo,
-run once:
+## Services
+
+Install user services:
+
+```bash
+cd ~/EECampEdu
+bash deploy/install_services.sh
+```
+
+If the optional camera helper service is needed:
+
+```bash
+bash deploy/install_services.sh --with-camera
+```
+
+Start, stop, restart, and inspect:
+
+```bash
+systemctl --user start eecamp-portal
+systemctl --user restart eecamp-portal
+systemctl --user status eecamp-portal
+journalctl --user -u eecamp-portal -f
+```
+
+Optional camera helper:
+
+```bash
+systemctl --user start eecamp-camera-app
+systemctl --user restart eecamp-camera-app
+systemctl --user status eecamp-camera-app
+journalctl --user -u eecamp-camera-app -f
+```
+
+To keep services alive after logout, ask for sudo once:
 
 ```bash
 sudo loginctl enable-linger $USER
 ```
 
-The unit is generated from `deploy/systemd/eecamp-portal.service.in` (interpreter and
-repo path substituted at install time). Restart the service after changing Python, HTML,
-CSS, JS, env vars, or certificates. Job logs remain under `apps/training_portal/runs/jobs/`.
+## When To Restart
 
-## Portal Pages
+Restart `eecamp-portal` after editing:
 
-- `/model_finetune`: dataset upload, class-to-action mapping, TensorFlow/PyTorch training, camera-only firmware flash, and browser-side OV2640 preview/capture. OV2640 is like flashing: the browser borrows the serial port from the student PC; the AI PC server does not directly own that camera USB port.
-- `/deploy`: deploy benchmark firmware flash, quantization, model flashing, and **browser Web Serial benchmark** (runs on the student PC's board; the AI PC only serves dataset images).
-- `/output`: **edit → build → flash** teaching flow. Students edit only the `student_pattern()` block; the server patches it into `firmware/teaching_output_demo/main/app_main.c`, runs a fixed allowlisted `idf.py build` (full log streamed as a background job), and unlocks flashing only on build success. Then LED/PWM/**Run pattern** controls over Web Serial. Endpoints: `GET /api/output/teaching-block`, `POST /api/output/build`, `POST /api/output/reset-block`.
-- `/firmware`: full main board firmware flash + live OV2640 preview/inference.
-- `/camera_usb`: full OV2640 camera + on-board **photo storage** demo (pixel format, resolution, exposure/gain/AWB/brightness). Runs on the main board firmware over browser Web Serial. **Photo flow (kept clearly separated):** *live preview* streams frames over **CDC** and saves nothing; *captured photos live on the ESP32-S3 flash* and are retrieved either by **downloading over CDC** (`l` list + `r <name>` → base64 `---START_FILE---` stream, previewed 96×96) or by **mounting the flash as a USB drive (MSC)** (`usb`). Capture (`c<ts>`) now also saves a **96×96** grayscale BMP (`/usb/photo96_<ts>.bmp`) alongside the full-resolution frame. A wired rotary encoder maps to manual exposure in the browser.
-- `/drive`: **AI PC Drive** — this team's shared file storage on the AI PC (see below).
+- `apps/training_portal/server.py`
+- `apps/training_portal/templates/index.html`
+- Portal static files
+- `deploy/eecamp-portal.env`
+- Any firmware/PC tool path that the portal loads at startup
 
-All Web Serial flows (flash, model flash, benchmark, camera preview, camera+USB demo, output control) share one lifecycle: one port open at a time, release-before-acquire, and a full close after each workflow.
+You do not need to restart the portal after only changing firmware source files, unless the page needs to rescan build artifacts.
 
-The UI is a responsive **top navigation bar** with the team name, Logout, a display-theme
-selector (**Dark / Light / High contrast**, remembered per browser), and the flash-baud
-selector at the top-right. Low-level flash offsets, developer mode, and the flash-sync
-(BOOT) selector are not exposed in the student UI.
+## Health Checks
 
-## AI PC Drive
-
-One AI PC serves one team, so the Drive is that team's shared storage on this machine
-(login still required). Files live under `apps/training_portal/runs/drive/` (git-ignored),
-in folders `0_shared/` (team-wide) and `1/` … `12/` (per member/station), auto-created on
-startup. Use it for code, models, reports, build logs, and general uploads.
-
-- **Upload / list / download / delete** and inline **image preview** from the `/drive` page.
-- **Zip many files before uploading** — one `.zip` is far faster than many small files
-  (the server accepts uploads up to 2 GB).
-- **Captured photos are not stored here** — they live on the ESP32-S3 and are viewed /
-  downloaded from the camera pages.
-
-API (all login-gated): `GET /api/drive/folders`, `GET /api/drive/list?folder=`,
-`POST /api/drive/upload` (`folder`,`file`), `GET /api/drive/download?folder=&name=`,
-`GET /api/drive/image?folder=&name=` (inline), `POST /api/drive/delete` (`folder`,`name`).
-File names are sanitized to a single path segment inside the chosen folder (no traversal);
-unknown folders are rejected.
-
-## Build Firmware Artifacts For Browser Flashing
-
-The portal reads ESP-IDF `build/flasher_args.json`. If missing, the page tells you to build first.
+On the AI PC:
 
 ```bash
-cd firmware/model_finetune      # camera-only OV2640 preview/capture firmware
-idf.py set-target esp32s3
-idf.py build
-
-cd ../main_board                # full camera + USB + continuous inference firmware
-idf.py set-target esp32s3
-idf.py build
-
-cd ../deploy_benchmark          # benchmark-only TEST_MODE_UART_FRAME firmware
-idf.py set-target esp32s3
-idf.py build
-
-cd ../teaching_output_demo      # output class GPIO/PWM firmware
-idf.py set-target esp32s3
-idf.py build
+curl -k https://127.0.0.1:8080/api/health
+curl -k https://140.112.194.42:4431/api/health
 ```
 
-## Train And Quantize
+Use the correct team port. If localhost works but gateway does not, the problem is gateway forwarding or firewall policy, not Flask.
 
-Students start jobs from `/model_finetune` and `/deploy`. The server only runs allowlisted project scripts; it does not expose arbitrary shell execution.
+## Build And Flash Artifacts
 
-Generated files:
+Firmware flashing uses ESP-IDF build outputs:
 
-```text
-model_finetune/models/             source models: .keras, .pth, .onnx
-firmware/pc/artifacts/models/      deployable .tflite
-firmware/pc/artifacts/reports/     quantization reports
-apps/training_portal/runs/jobs/    live job logs
-```
+- `bootloader.bin`
+- `partition-table.bin`
+- app firmware `.bin`, for example `TFLiteGesture_esp.bin`
 
-## Benchmark
+Model flashing uses the `.tflite` file directly. There is no `.tflite -> .bin` conversion. The `.tflite` is written as raw bytes into the model partition, and the firmware maps that partition at runtime.
 
-The student benchmark on `/deploy` runs **in the browser over Web Serial**, exactly like browser flashing: the
-ESP32-S3 stays on the **student's PC**, and the AI PC server only serves the dataset images
-(`GET /api/benchmark/options`, `/api/benchmark/images`, `/api/benchmark/image`). There is **no** AI-PC serial port
-and **no** server-side benchmark job. Students flash the deploy benchmark firmware + model, pick a dataset, and the
-browser streams frames to the board and reads `RESULT` lines to compute accuracy/latency/throughput.
+## Logs
 
-**Developer/teacher CLI fallback** (optional, when you deliberately put a board on this machine): run the reference
-benchmark manually — see `docs/LOCAL_LEGACY_README.md` (`firmware/pc/benchmark/run_benchmark_png.py`). It additionally
-computes PC-reference output similarity (Top-1 / MAE / Max Error / Cosine).
+Portal jobs write runtime logs under ignored folders in `apps/training_portal/runs/`.
 
-## Background Service 2: Local Camera / Control App (systemd)
-
-Optional, and runs on the **student PC** that physically owns the USB hardware (not
-the AI PC). The portal now has a browser-side OV2640 preview path; use this helper only
-when testing live gesture/result forwarding outside the portal. It is packaged as the
-`eecamp-camera-app` user service.
+Service logs:
 
 ```bash
-cd ~/EECampEdu
-./deploy/install_services.sh --with-camera   # installs both portal + camera app units
-systemctl --user start  eecamp-camera-app     # start / stop / restart / status
-systemctl --user status eecamp-camera-app
-journalctl  --user -u eecamp-camera-app -f    # live logs
-curl http://127.0.0.1:8770/health
-# or: ./deploy/eecampctl.sh start camera
+journalctl --user -u eecamp-portal -n 200
+journalctl --user -u eecamp-portal -f
 ```
 
-## Flash Helper
-
-`apps/local_flash_helper` is fallback-only. Normal portal flashing uses browser Web Serial directly and does not require a helper or `127.0.0.1`.
+Use these logs first when students report upload, train, quantize, build, flash metadata, or benchmark problems.

@@ -1,82 +1,53 @@
-# Local Legacy Guide
+# Local / Legacy Workflow
 
-This guide is for developers who want to run everything manually on one PC.
-Students should use the AI PC portal instead.
+Use this only when the AI PC portal is unavailable or a developer needs direct CLI control.
 
 ## Environment
 
-```bash
-python scripts/setup_env.py
+```powershell
 conda activate eecampedu
+pip install -r requirements.txt
 ```
 
-ESP-IDF must be installed separately for firmware builds.
+For ESP-IDF commands, open an ESP-IDF enabled shell first.
 
-## Train
+## Quantize A Keras Model
 
-```bash
-python model_finetune/train_mobilenet.py
-# or
-python model_finetune/train_mini_resnet.py
-# or
-python model_finetune/pytorch/train_mini_resnet.py
+```powershell
+python firmware\pc\tools\quantize_keras_model.py --keras model_finetune\models\tf\MobileNetV2_finetuned.keras --quant-format int8 --quant-granularity per-channel
 ```
 
-Dataset layout:
+The output `.tflite` goes to `firmware\pc\artifacts\models\` and can be flashed to the model partition.
 
-```text
-model_finetune/dataset/train/<class>/*.{jpg,jpeg,png,bmp}
-model_finetune/dataset/validation/<class>/*.{jpg,jpeg,png,bmp}
+## Flash Model Partition
+
+```powershell
+python firmware\esp\flash_tflite_model.py firmware\pc\artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite -p COM5
 ```
 
-Class folder names may be custom. The class order/action mapping is stored in `model_finetune/dataset/class_mapping.json`.
-
-## Quantize
-
-```bash
-python firmware/pc/tools/quantize_keras_model.py --quant-format int8 --quant-granularity per-channel
-```
-
-Deployable formats currently offered by the portal: `int8`, `int16`, `float32`.
-
-## Build And Flash Main Board Firmware
-
-```bash
-cd firmware/main_board
-idf.py set-target esp32s3
-idf.py build
-idf.py -p COM6 flash monitor
-```
-
-## Flash Only The Model Partition
-
-```bash
-python firmware/main_board/flash_tflite_model.py firmware/pc/artifacts/models/<model>.tflite -p COM6
-```
+This writes the `.tflite` bytes directly to the model partition. It does not build or convert a model `.bin`.
 
 ## Benchmark
 
-```bash
-python firmware/pc/benchmark/run_benchmark_png.py --model firmware/pc/artifacts/models/<model>.tflite --dataset model_finetune/dataset/validation --port COM6
+Flash `firmware\deploy_benchmark` first. Then run:
+
+```powershell
+cd firmware\pc
+python -u benchmark\run_benchmark_png.py --model artifacts\models\MobileNetV2_finetuned_int8_per-channel.tflite --dataset ..\..\model_finetune\dataset\validation --port COM5
 ```
 
-Metrics include label accuracy, latency, throughput/FPS, Top-1 match, MAE, Max Error, and Cosine Similarity.
+Expected report includes:
 
-## Output Demo
+- Label accuracy
+- Average model latency
+- Preprocess latency
+- Device compute latency
+- Throughput
+- Top-1 match
+- Score MAE
+- Max score error
+- Cosine similarity
 
-```bash
-cd firmware/teaching_output_demo
-idf.py set-target esp32s3
-idf.py build
-idf.py -p COM6 flash monitor
-```
+## Camera Debug
 
-Commands: `LED,1`, `LED,0`, `PWM,<0-255>`, `BLINK`, `STOP`, `STATUS`.
-
-## Model Webcam Demo
-
-```bash
-python model_finetune/pytorch/webcam_demo.py
-```
-
-This is a developer/local test path. It is not the student portal workflow.
+Use `firmware/camera_usb_demo` for camera debug. Do not use `firmware/deploy_benchmark` because it has no OV2640 camera path.
