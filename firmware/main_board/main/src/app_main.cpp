@@ -105,6 +105,38 @@ static void dual_printf(const char *format, ...) {
 
     usb_cdc_printf("%s", buffer);
 }
+static esp_err_t ensure_camera_config_with_fallback(const char *context) {
+    esp_err_t err = camera_capture_reinit((int)g_current_format, (int)g_current_size);
+    if (err == ESP_OK) {
+        return ESP_OK;
+    }
+
+    const pixformat_t requested_format = g_current_format;
+    const framesize_t requested_size = g_current_size;
+    dual_printf("WARN,camera_config_failed,%s,context=%s,format=%d,size=%d\n",
+                esp_err_to_name(err),
+                context,
+                (int)requested_format,
+                (int)requested_size);
+
+    if (requested_format == PIXFORMAT_GRAYSCALE && requested_size == FRAMESIZE_96X96) {
+        return err;
+    }
+
+    dual_printf("WARN,camera_fallback_try,grayscale_96x96,context=%s\n", context);
+    err = camera_capture_reinit((int)PIXFORMAT_GRAYSCALE, (int)FRAMESIZE_96X96);
+    if (err == ESP_OK) {
+        g_current_format = PIXFORMAT_GRAYSCALE;
+        g_current_size = FRAMESIZE_96X96;
+        dual_printf("WARN,camera_fallback_ok,grayscale_96x96,context=%s\n", context);
+        return ESP_OK;
+    }
+
+    dual_printf("ERROR,camera_fallback_failed,%s,context=%s\n", esp_err_to_name(err), context);
+    g_current_format = requested_format;
+    g_current_size = requested_size;
+    return err;
+}
 
 static void send_frame_to_pc(const CameraFrame &frame) {
     // Map the internal CameraFrameFormat explicitly to what the Python script expects:
@@ -489,12 +521,27 @@ static void usb_cdc_command_task(void *pvParameters) {
 
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
 
+                            esp_err_t config_err = ensure_camera_config_with_fallback("capture");
+                            if (config_err != ESP_OK) {
+                                dual_printf("ERROR,camera_config,%s\n", esp_err_to_name(config_err));
+                                xSemaphoreGive(camera_mutex);
+                                if (was_streaming) streaming_mode = true;
+                                break;
+                            }
+
                             // Flush one stale buffer
                             camera_fb_t *dummy = esp_camera_fb_get();
                             if (dummy) esp_camera_fb_return(dummy);
 
-                            // Capture the real, clean frame
+                            // Capture the real, clean frame. If the camera was reconfigured while streaming,
+                            // one fb_get can fail; reinit the requested config once and retry.
                             camera_fb_t *fb = esp_camera_fb_get();
+                            if (!fb) {
+                                dual_printf("WARN,camera_fb_null,reinit_retry\n");
+                                (void)ensure_camera_config_with_fallback("retry_fb_get");
+                                vTaskDelay(pdMS_TO_TICKS(180));
+                                fb = esp_camera_fb_get();
+                            }
                             if (!fb) {
                                 dual_printf("ERROR: Failed to acquire camera frame buffer.\n");
                                 xSemaphoreGive(camera_mutex);
@@ -610,8 +657,24 @@ static void usb_cdc_command_task(void *pvParameters) {
                     }
                     case 'd':
                     case 'D': {
-                        streaming_mode = (val == 1);
-                        dual_printf("[System] Streaming: %s\n", streaming_mode ? "ENABLED" : "DISABLED");
+                        if (val == 1) {
+                            if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(3000)) == pdTRUE) {
+                                esp_err_t err = ensure_camera_config_with_fallback("stream_or_reconfig");
+                                xSemaphoreGive(camera_mutex);
+                                if (err == ESP_OK) {
+                                    streaming_mode = true;
+                                    dual_printf("[System] Streaming: ENABLED\n");
+                                } else {
+                                    streaming_mode = false;
+                                    dual_printf("ERROR,camera_config,%s\n", esp_err_to_name(err));
+                                }
+                            } else {
+                                dual_printf("ERROR,camera_busy,stream_start\n");
+                            }
+                        } else {
+                            streaming_mode = false;
+                            dual_printf("[System] Streaming: DISABLED\n");
+                        }
                         break;
                     }
                     case 'w':
@@ -633,12 +696,27 @@ static void usb_cdc_command_task(void *pvParameters) {
 
                         if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
 
+                            esp_err_t config_err = ensure_camera_config_with_fallback("capture");
+                            if (config_err != ESP_OK) {
+                                dual_printf("ERROR,camera_config,%s\n", esp_err_to_name(config_err));
+                                xSemaphoreGive(camera_mutex);
+                                if (was_streaming) streaming_mode = true;
+                                break;
+                            }
+
                             // Flush one stale buffer left behind by the DMA stream
                             camera_fb_t *dummy = esp_camera_fb_get();
                             if (dummy) esp_camera_fb_return(dummy);
 
-                            // Capture the real, clean frame
+                            // Capture the real, clean frame. If the camera was reconfigured while streaming,
+                            // one fb_get can fail; reinit the requested config once and retry.
                             camera_fb_t *fb = esp_camera_fb_get();
+                            if (!fb) {
+                                dual_printf("WARN,camera_fb_null,reinit_retry\n");
+                                (void)ensure_camera_config_with_fallback("retry_fb_get");
+                                vTaskDelay(pdMS_TO_TICKS(180));
+                                fb = esp_camera_fb_get();
+                            }
                             if (!fb) {
                                 dual_printf("ERROR: Failed to acquire camera frame buffer.\n");
                                 xSemaphoreGive(camera_mutex);
@@ -996,17 +1074,26 @@ static void usb_cdc_command_task(void *pvParameters) {
                         else if (val == 2) format_val = PIXFORMAT_YUV422;
                         else if (val == 3) format_val = PIXFORMAT_JPEG;
 
-                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera hardware breathe before re-init
-                            esp_err_t err = camera_capture_reinit(format_val, (int)g_current_size);
-                            if (err == ESP_OK) {
-                                g_current_format = (pixformat_t)format_val;
-                                dual_printf("[System] Pixel Format updated successfully.\n");
+                        const bool was_streaming = streaming_mode;
+                        streaming_mode = false;
+                        g_current_format = (pixformat_t)format_val;
+
+                        if (was_streaming) {
+                            vTaskDelay(pdMS_TO_TICKS(180));
+                            if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(3000)) == pdTRUE) {
+                                esp_err_t err = ensure_camera_config_with_fallback("stream_or_reconfig");
+                                xSemaphoreGive(camera_mutex);
+                                if (err != ESP_OK) {
+                                    dual_printf("ERROR: Reinit format failed: %s\n", esp_err_to_name(err));
+                                    break;
+                                }
+                                streaming_mode = true;
                             } else {
-                                dual_printf("ERROR: Reinit format failed: %s\n", esp_err_to_name(err));
+                                dual_printf("ERROR,camera_busy,reinit_format\n");
+                                break;
                             }
-                            xSemaphoreGive(camera_mutex);
                         }
+                        dual_printf("[System] Pixel Format updated successfully.\n");
                         break;
                     }
                     case 's':
@@ -1018,17 +1105,26 @@ static void usb_cdc_command_task(void *pvParameters) {
                         else if (val == 4) size_val = FRAMESIZE_SVGA;
                         else if (val == 5) size_val = FRAMESIZE_UXGA;
 
-                        if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
-                            vTaskDelay(pdMS_TO_TICKS(100)); // Let the camera hardware breathe before re-init
-                            esp_err_t err = camera_capture_reinit((int)g_current_format, size_val);
-                            if (err == ESP_OK) {
-                                g_current_size = (framesize_t)size_val;
-                                dual_printf("[System] Resolution updated successfully.\n");
+                        const bool was_streaming = streaming_mode;
+                        streaming_mode = false;
+                        g_current_size = (framesize_t)size_val;
+
+                        if (was_streaming) {
+                            vTaskDelay(pdMS_TO_TICKS(180));
+                            if (xSemaphoreTake(camera_mutex, pdMS_TO_TICKS(3000)) == pdTRUE) {
+                                esp_err_t err = ensure_camera_config_with_fallback("stream_or_reconfig");
+                                xSemaphoreGive(camera_mutex);
+                                if (err != ESP_OK) {
+                                    dual_printf("ERROR: Reinit resolution failed: %s\n", esp_err_to_name(err));
+                                    break;
+                                }
+                                streaming_mode = true;
                             } else {
-                                dual_printf("ERROR: Reinit resolution failed: %s\n", esp_err_to_name(err));
+                                dual_printf("ERROR,camera_busy,reinit_resolution\n");
+                                break;
                             }
-                            xSemaphoreGive(camera_mutex);
                         }
+                        dual_printf("[System] Resolution updated successfully.\n");
                         break;
                     }
                     case 'e':
@@ -1962,10 +2058,7 @@ extern "C" void app_main() {
             ESP_LOGE(TAG, "Photo storage init failed: %s", esp_err_to_name(err));
         }
 
-        err = camera_capture_init();
-        if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Camera init failed: %s", esp_err_to_name(err));
-        }
+        ESP_LOGI(TAG, "Camera init deferred until stream or capture command.");
 
         // 3. Create camera streaming and command parsing tasks
         xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 1, NULL, 1);

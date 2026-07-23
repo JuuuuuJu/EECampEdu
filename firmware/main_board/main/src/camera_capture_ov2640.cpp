@@ -30,7 +30,7 @@ static constexpr int VSYNC_GPIO_NUM = 6;
 static constexpr int HREF_GPIO_NUM = 7;
 static constexpr int PCLK_GPIO_NUM = 13;
 
-static constexpr int kXclkFrequencyHz = 10000000;
+static constexpr int kXclkFrequencyHz = 20000000;
 static constexpr int kJpegQuality = 12;
 
 int g_hmirror = 0;
@@ -99,10 +99,9 @@ esp_err_t camera_capture_init() {
     config.pixel_format = g_current_format;
     config.frame_size = g_current_size;
     config.jpeg_quality = kJpegQuality;
-    config.grab_mode = CAMERA_GRAB_LATEST;
+    config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
     config.fb_count = 1;
     config.fb_location = CAMERA_FB_IN_PSRAM;
-    config.fb_count = 1;
 
     ESP_LOGI(TAG,
              "Initializing OV2640: format=%s frame_size=%d xclk=%d Hz fb_count=%d location=PSRAM",
@@ -114,8 +113,22 @@ esp_err_t camera_capture_init() {
 
     esp_err_t err = esp_camera_init(&config);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "esp_camera_init failed: %s", esp_err_to_name(err));
-        return err;
+        ESP_LOGW(TAG, "esp_camera_init failed with PSRAM fb: %s", esp_err_to_name(err));
+        esp_camera_deinit();
+        vTaskDelay(pdMS_TO_TICKS(150));
+
+        if (g_current_size <= FRAMESIZE_QVGA) {
+            config.fb_location = CAMERA_FB_IN_DRAM;
+            config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+            ESP_LOGW(TAG, "Retrying OV2640 init with DRAM fb for small frame_size=%d", (int)g_current_size);
+            err = esp_camera_init(&config);
+        }
+
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "esp_camera_init failed after fallback: %s", esp_err_to_name(err));
+            esp_camera_deinit();
+            return err;
+        }
     }
 
     sensor_t *sensor = esp_camera_sensor_get();
@@ -140,6 +153,8 @@ esp_err_t camera_capture_init() {
 esp_err_t camera_capture_reinit(int format_val, int framesize_val) {
     pixformat_t format = (pixformat_t)format_val;
     framesize_t size = (framesize_t)framesize_val;
+    const pixformat_t previous_format = g_current_format;
+    const framesize_t previous_size = g_current_size;
 
     // if (size >= FRAMESIZE_VGA && format != PIXFORMAT_JPEG) {
     //     ESP_LOGE(TAG, "ERROR: Raw formats at VGA and higher resolutions are disabled to prevent DRAM overflow crashes.");
@@ -147,21 +162,47 @@ esp_err_t camera_capture_reinit(int format_val, int framesize_val) {
     // }
 
     if (g_camera_initialized && g_current_format == format && g_current_size == size) {
-        return ESP_OK; // Re-configuration already active; bypass.
+        return ESP_OK;
     }
 
     if (g_camera_initialized) {
+        sensor_t *sensor = esp_camera_sensor_get();
+        if (sensor != nullptr) {
+            bool runtime_ok = true;
+            if (g_current_format != format && sensor->set_pixformat(sensor, format) != 0) {
+                runtime_ok = false;
+            }
+            if (runtime_ok && g_current_size != size && sensor->set_framesize(sensor, size) != 0) {
+                runtime_ok = false;
+            }
+            if (runtime_ok) {
+                g_current_format = format;
+                g_current_size = size;
+                vTaskDelay(pdMS_TO_TICKS(120));
+                return ESP_OK;
+            }
+            ESP_LOGW(TAG, "Runtime camera reconfigure failed; retrying full init.");
+        }
+
         esp_camera_deinit();
-        vTaskDelay(pdMS_TO_TICKS(150));
+        vTaskDelay(pdMS_TO_TICKS(300));
         g_camera_initialized = false;
     }
 
     g_current_format = format;
     g_current_size = size;
 
-    return camera_capture_init();
+    esp_err_t err = camera_capture_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "camera reinit failed for format=%s size=%d: %s", format_name(format), (int)size, esp_err_to_name(err));
+        esp_camera_deinit();
+        g_camera_initialized = false;
+        g_current_format = previous_format;
+        g_current_size = previous_size;
+        vTaskDelay(pdMS_TO_TICKS(300));
+    }
+    return err;
 }
-
 esp_err_t camera_capture_frame(CameraFrame *frame) {
     if (frame == nullptr) {
         return ESP_ERR_INVALID_ARG;

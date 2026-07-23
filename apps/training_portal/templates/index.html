@@ -37,9 +37,13 @@
   }
   :root[data-theme="contrast"] body { background:#000000; }
   :root[data-theme="contrast"] .topbar { border-bottom-color:#00ffff; }
+  :root[data-theme="contrast"] .topbar nav button, :root[data-theme="contrast"] .topbar .right button { background:#000000; color:#ffffff; border-color:#007acc; }
+  :root[data-theme="contrast"] .topbar nav button:hover, :root[data-theme="contrast"] .topbar .right button:hover { background:#000000; color:#ffffff; border-color:#00ffff; }
   :root[data-theme="contrast"] .topbar nav button.active { background:#000000; color:#ffffff; border-color:#ffcc00; box-shadow:0 0 0 1px #ffcc00 inset; }
   :root[data-theme="solarized"] body { background:#fdf6e3; }
   :root[data-theme="solarized"] .topbar { background:#eee8d5; }
+  :root[data-theme="solarized"] .topbar nav button, :root[data-theme="solarized"] .topbar .right button { background:#6c4f2a; color:#fdf6e3; border-color:#5c431f; }
+  :root[data-theme="solarized"] .topbar nav button:hover, :root[data-theme="solarized"] .topbar .right button:hover { background:#5c431f; color:#fdf6e3; border-color:#b58900; }
   :root[data-theme="solarized"] .topbar nav button.active { background:#e6dcc3; color:#586e75; border-color:#b58900; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
@@ -47,26 +51,31 @@
          color:var(--text); line-height:1.55; font-size:16px; letter-spacing:.005em; }
   html[data-theme="contrast"] body { background:#000000; }
   html[data-theme="solarized"] body { background:#fdf6e3; }
-  .topbar { display:flex; align-items:center; gap:18px; flex-wrap:wrap; padding:13px 22px;
+  .topbar { display:flex; align-items:center; gap:18px; flex-wrap:nowrap; padding:13px 22px;
     background:rgba(17,24,39,.92); background:color-mix(in srgb, var(--panel) 92%, transparent);
     border-bottom:1px solid var(--border); position:sticky; top:0; z-index:20; backdrop-filter:blur(12px); }
-  .topbar .brand { display:inline-flex; align-items:center; min-height:40px; min-width:156px; color:var(--text); text-decoration:none; font-weight:800; font-size:18px; white-space:nowrap; letter-spacing:.03em; }
+  .topbar .brand { display:inline-flex; align-items:center; min-height:40px; min-width:118px; color:var(--text); text-decoration:none; font-weight:800; font-size:18px; white-space:nowrap; letter-spacing:.03em; }
   .topbar .brand small { color:var(--muted); font-weight:600; font-size:13px; margin-left:8px; }
-  .topbar nav { display:flex; gap:6px; flex-wrap:wrap; flex:1 1 auto; align-items:center; }
-  .topbar nav button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
-    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px;
-    height:46px; width:174px; flex:0 0 174px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; overflow:hidden; }
+  .topbar nav { display:flex; gap:4px; flex:0 0 200px; align-items:center; justify-content:center; overflow:visible; min-width:200px; }
+  .topbar nav button { cursor:pointer; padding:0; border-radius:6px; border:1px solid var(--border);
+    background:transparent; color:var(--text); font-weight:700; margin-top:0;
+    height:34px; width:30px; flex:0 0 30px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1; overflow:hidden; }
   .topbar nav button:hover, button:hover { font-family:Consolas, 'Courier New', monospace; }
-  .topbar nav button:hover { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
+  .topbar nav button .nav-icon { display:inline-flex; align-items:center; justify-content:center; width:19px; height:19px; color:currentColor; }
+  .topbar nav button .nav-icon svg { width:19px; height:19px; display:block; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .topbar nav button:hover { background:color-mix(in srgb, var(--accent) 18%, transparent); color:var(--text); border-color:var(--accent); }
   .topbar nav button.active { background:var(--accent); color:var(--accent-text); border-color:var(--accent); }
+  #tabs { display:grid !important; grid-template-columns:repeat(6, 38px) !important; gap:5px !important; flex:0 0 253px !important; min-width:253px !important; max-width:253px !important; align-items:center !important; justify-content:center !important; overflow:visible !important; }
+  #tabs button { width:38px !important; min-width:38px !important; max-width:38px !important; height:38px !important; min-height:38px !important; max-height:38px !important; flex:0 0 38px !important; padding:0 !important; margin:0 !important; border-radius:7px !important; }
+  #tabs .nav-icon, #tabs svg { width:21px !important; height:21px !important; }
   .topbar .right { display:flex; align-items:center; gap:10px; margin-left:auto; white-space:nowrap; }
   .topbar .right .team { font-size:14px; color:var(--muted); }
   .topbar .right .team b { color:var(--text); }
   .topbar select { width:auto; min-width:120px; height:38px; padding:6px 9px; }
   .topbar form { margin:0; }
   .topbar .right button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
-    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px;
-    height:46px; width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; overflow:hidden; }
+    background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:0;
+    height:42px; width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; overflow:hidden; }
   .toplink { display:inline-flex; align-items:center; justify-content:center; height:38px; width:150px; color:var(--text); text-decoration:none;
     font-size:14px; font-weight:800; padding:7px 13px; border-radius:7px; border:1px solid var(--border);
     background:var(--panel2); box-shadow:0 1px 0 color-mix(in srgb, var(--text) 8%, transparent) inset; overflow:hidden; }
@@ -147,14 +156,14 @@
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="/home">EECampEdu<small>AI PC Portal</small></a>
+  <a class="brand" href="/home">EECampEdu</a>
   <nav id="tabs">
-    <button data-topic="model" data-path="/model_finetune">Model finetune</button>
-    <button data-topic="deploy" data-path="/deploy">Deploy &amp; benchmark</button>
-    <button data-topic="output" data-path="/output">Output demo</button>
-    <button data-topic="camerausb" data-path="/camera_usb">Camera + USB demo</button>
-    <button data-topic="mainfw" data-path="/firmware">Main board firmware</button>
-    <button data-topic="drive" data-path="/drive">AI PC Drive</button>
+    <button data-topic="model" data-path="/model_finetune" title="Model finetune" aria-label="Model finetune"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="10" rx="3"></rect><path d="M12 5v3"></path><path d="M8 12h.01"></path><path d="M16 12h.01"></path><path d="M9 16h6"></path><path d="M3 11v4"></path><path d="M21 11v4"></path></svg></span></button>
+    <button data-topic="deploy" data-path="/deploy" title="Deploy & benchmark" aria-label="Deploy and benchmark"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M9 1v4"></path><path d="M15 1v4"></path><path d="M9 19v4"></path><path d="M15 19v4"></path><path d="M1 9h4"></path><path d="M1 15h4"></path><path d="M19 9h4"></path><path d="M19 15h4"></path><path d="M10 13l2 2 4-5"></path></svg></span></button>
+    <button data-topic="output" data-path="/output" title="Output demo" aria-label="Output demo"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18h6"></path><path d="M10 22h4"></path><path d="M8 14a6 6 0 1 1 8 0c-.7.7-1 1.5-1 2H9c0-.5-.3-1.3-1-2z"></path><path d="M12 2v2"></path><path d="M4 10H2"></path><path d="M22 10h-2"></path></svg></span></button>
+    <button data-topic="camerausb" data-path="/camera_usb" title="Camera + USB demo" aria-label="Camera and USB demo"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3"></circle><path d="M17 11h.01"></path></svg></span></button>
+    <button data-topic="mainfw" data-path="/firmware" title="Main board firmware" aria-label="Main board firmware"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M15.5 5.5a4.5 4.5 0 0 0 5 5L10.2 20.8a2.2 2.2 0 0 1-3.1-3.1L17.4 7.4a4.5 4.5 0 0 1-1.9-1.9z"></path><path d="M7.8 18.2l-1.6 1.6"></path></svg></span></button>
+    <button data-topic="drive" data-path="/drive" title="AI PC Drive" aria-label="AI PC Drive"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 3h9v9H3z"></path><path d="M3 7v12"></path></svg></span></button>
   </nav>
   <div class="right">
     <label style="margin:0;color:var(--muted);font-size:12px">Theme
@@ -244,6 +253,11 @@
 
   <!-- ==================== MODEL DEMO ==================== -->
   <section class="pane" id="pane-model">
+    <div class="card">
+      <h2>Model finetune — dataset &amp; training</h2>
+      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: flash model camera firmware → collect OV2640 images → train or fine-tune a model → preview prediction before deploy.</p>
+    </div>
+
     <div class="card">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
       <p class="note">Use this for the model class OV2640 preview/capture workflow. It is built from <code>firmware/model_finetune</code>, a camera-only firmware separate from full integration and deploy benchmark firmware.</p>
@@ -470,6 +484,13 @@
         <div><button class="secondary" id="fullCameraStopBtn" disabled>Stop stream</button></div>
       </div>
       <div class="msg" id="fullCameraMsg"></div>
+      <div class="row compact" style="margin-top:10px">
+        <div><button class="secondary" id="fullControlConnectBtn">Connect control board</button></div>
+        <div><button class="secondary" id="fullControlIdleBtn" disabled>Send idle</button></div>
+      </div>
+      <div class="msg" id="fullControlStatus">Connect control board to forward prediction actions to servo.</div>
+      <label style="margin-top:10px">Control board messages</label>
+      <pre class="log" id="fullControlLog">Waiting for control board serial.</pre>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <img id="fullCameraPreview" alt="Full firmware OV2640 preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none" />
         <div class="note" id="fullCameraPlaceholder">No OV2640 frame yet.</div>
@@ -1198,6 +1219,71 @@ $("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn
 $("cameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
 $("fullCameraConnectBtn").onclick = async () => connectCameraPreview(FULL_CAMERA_UI);
 $("fullCameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
+function actionForControlBoard(action){
+  const normalized = String(action || "none").toLowerCase();
+  if(["up","down","left","right","clamp","release"].includes(normalized)) return normalized;
+  return "none";
+}
+async function connectFullControlBoard(){
+  const sup = webSerialSupport();
+  if(!sup.ok){ setMsg($("fullControlStatus"), "Web Serial unavailable (Chrome/Edge + HTTPS).", "bad"); return; }
+  if(ControlBoard.connected){ setMsg($("fullControlStatus"), "Control board already connected.", "ok"); return; }
+  try{
+    $("fullControlLog").textContent = "";
+    const port = await navigator.serial.requestPort();
+    await port.open({ baudRate:115200, bufferSize:4096 });
+    ControlBoard.port = port;
+    ControlBoard.writer = port.writable.getWriter();
+    ControlBoard.reader = port.readable.getReader();
+    ControlBoard.connected = true;
+    ControlBoard.reading = true;
+    ControlBoard.lastAction = null;
+    $("fullControlIdleBtn").disabled = false;
+    setMsg($("fullControlStatus"), "Control board connected. Predictions now forward to servo.", "ok");
+    appendLog("fullControlLog", "[portal] control board connected @115200\n");
+    (async()=>{
+      const decoder = new TextDecoder();
+      while(ControlBoard.reading && ControlBoard.reader){
+        const {value, done} = await ControlBoard.reader.read();
+        if(done) break;
+        if(value) appendLog("fullControlLog", decoder.decode(value, {stream:true}));
+      }
+    })().catch(e=>appendLog("fullControlLog", "[portal] control read stopped: "+(e.message||e)+"\n"));
+  }catch(e){
+    setMsg($("fullControlStatus"), "Control board connect failed: "+(e.message||e), "bad");
+    try{ await releaseControlBoard(); }catch(_){}
+  } finally { syncFlashButtons(); }
+}
+async function releaseControlBoard(){
+  ControlBoard.reading = false;
+  try{ if(ControlBoard.reader){ await ControlBoard.reader.cancel(); ControlBoard.reader.releaseLock(); } }catch(_){}
+  try{ if(ControlBoard.writer){ ControlBoard.writer.releaseLock(); } }catch(_){}
+  try{ if(ControlBoard.port){ await ControlBoard.port.close(); } }catch(_){}
+  ControlBoard.port = null;
+  ControlBoard.reader = null;
+  ControlBoard.writer = null;
+  ControlBoard.connected = false;
+  ControlBoard.lastAction = null;
+  if($("fullControlIdleBtn")) $("fullControlIdleBtn").disabled = true;
+  syncFlashButtons();
+}
+async function sendFullControlAction(eff, force=false){
+  if(!eff || !ControlBoard.connected || !ControlBoard.writer) return;
+  const action = actionForControlBoard(eff.action);
+  if(!force && action === ControlBoard.lastAction) return;
+  ControlBoard.lastAction = action;
+  const cmd = "ACTION," + action;
+  try{
+    await ControlBoard.writer.write(new TextEncoder().encode(cmd + "\n"));
+    appendLog("fullControlLog", "> " + cmd + "\n");
+    setMsg($("fullControlStatus"), "Forwarded action: " + action, action === "none" ? "warn" : "ok");
+  }catch(e){
+    setMsg($("fullControlStatus"), "Control send failed: "+(e.message||e), "bad");
+    await releaseControlBoard();
+  }
+}
+$("fullControlConnectBtn").onclick = connectFullControlBoard;
+$("fullControlIdleBtn").onclick = () => sendFullControlAction({action:"none"}, true);
 
 // ---------- CAMERA + USB DEMO (full OV2640 control over the unified raw serial) ----------
 function usbCamCmd(cmd, label){
@@ -1365,6 +1451,7 @@ const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPrev
 const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
 const USBCAM_UI       = { msgId:"usbCamMsg", logId:"usbCamLog", imgId:"usbCamPreview", placeholderId:"usbCamPlaceholder", resultId:"usbCamResult", connectBtn:"usbCamConnectBtn", stopBtn:"usbCamStopBtn" };
 let camUi = MODEL_CAMERA_UI;
+const ControlBoard = { port:null, reader:null, writer:null, reading:false, connected:false, lastAction:null };
 
 // Firmware flash targets (one class day / runtime mode per target).
 const OUTFW   = { target:"output_demo",      meta:null, imagesEl:"outFwImages",    statusEl:"outFwStatus",    logEl:"outFwLog",    flashBtn:"outFwFlashBtn",    refreshBtn:"outFwRefreshBtn" };
@@ -1506,6 +1593,8 @@ function syncFlashButtons(){
   if($("cameraStopBtn")) $("cameraStopBtn").disabled = !rawConnected;
   if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !sup;
   if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !rawConnected;
+  if($("fullControlConnectBtn")) $("fullControlConnectBtn").disabled = !sup;
+  if($("fullControlIdleBtn")) $("fullControlIdleBtn").disabled = !ControlBoard.connected;
   if($("usbCamConnectBtn")) $("usbCamConnectBtn").disabled = !sup;
   if($("usbCamStopBtn")) $("usbCamStopBtn").disabled = !rawConnected;
   if($("benchRunBtn")) $("benchRunBtn").disabled = false;
@@ -1587,6 +1676,7 @@ function updateGestureResult(line){
   const text = `Prediction: ${eff.pred} (${eff.name}) → ${eff.action || "idle"}${conf}${raw} · model ${modelMs} ms`;
   setText(camUi.resultId, text);
   setMsg(camUi.msgId, text, eff.pred === -1 ? "warn" : "ok");
+  return eff;
 }
 function isBase64PayloadLine(line){
   return /^[A-Za-z0-9+/]+={0,2}$/.test(line || "");
@@ -1738,7 +1828,8 @@ function cameraOnLine(rawLine){
     appendLog(camUi.logId, line + "\n");
   } else if(line.startsWith("RESULT,")){
     appendLog(camUi.logId, line + "\n");
-    updateGestureResult(line);
+    const eff = updateGestureResult(line);
+    if(camUi === FULL_CAMERA_UI) void sendFullControlAction(eff);
   } else if(line.indexOf("INPUT_CONTROL,") >= 0){
     appendLog(camUi.logId, line + "\n");
     handleInputControl(line);
