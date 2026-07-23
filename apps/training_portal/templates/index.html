@@ -213,6 +213,55 @@
         <div><button id="outBuildBtn">Build firmware</button></div>
         <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
       </div>
+  </nav>
+  <div class="right">
+    <label style="margin:0;color:var(--muted);font-size:12px">Theme
+      <select id="themeSelect" title="Display theme" style="margin-left:4px">
+        <option value="dark">Dark modern</option><option value="light">Light</option><option value="contrast">Dark high contrast</option><option value="solarized">Solarized light</option>
+      </select>
+    </label>
+    <label style="margin:0;color:var(--muted);font-size:12px" title="Baud rate for all Web Serial flashing (model + firmware). ROM sync stays 115200; lower this if flashing is unreliable.">Flash baud
+      <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800">460800</option><option value="921600" selected>921600</option></select>
+    </label>
+        <span class="team">Team <b>{{ team }}</b></span>
+    <a class="toplink" href="/account">Account settings</a>
+    <form method="post" action="/logout"><button class="secondary">Logout</button></form>
+  </div>
+</header>
+
+<main>
+  <!-- ==================== HOME ==================== -->
+  <section class="pane" id="pane-home">
+    <div class="home-hero">
+      <div class="card home-card">
+        <div class="home-icon">
+          <img src="/static/Logo.png" alt="NTUEE Camp logo" />
+        </div>
+        <h1 class="home-script">Welcome to NTUEE Camp</h1>
+        <p class="home-joke">Give us a hand — the robot is still learning yours.</p>
+      </div>
+    </div>
+  </section>
+<!-- ==================== OUTPUT DEMO ==================== -->
+  <section class="pane" id="pane-output">
+    <div class="card">
+      <h2>Output class — write code, build, flash</h2>
+      <p class="note">Board: <b>ESP32-S3</b> with an addressable RGB LED on <code>GPIO38</code>. You write a small
+         light pattern in the editor below, <b>build</b> it on the AI PC, then <b>flash</b> it to the board and run it.
+         Use <b>Chrome/Edge</b>.</p>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">1.</span>Edit your output code &amp; build</h2>
+      <p class="note">Edit only <code>student_pattern()</code> below — it runs once each time you click
+         <b>Run pattern</b> after flashing. Available helpers:
+         <code>led_set_rgb(r, g, b)</code> (0–255 each) and <code>led_delay_ms(ms)</code>.</p>
+      <label>Teaching code block</label>
+      <textarea id="outCode" class="code-editor" spellcheck="false" style="width:100%;min-height:240px;white-space:pre;overflow:auto" wrap="off">Loading…</textarea>
+      <div class="row" style="margin-top:10px">
+        <div><button id="outBuildBtn">Build firmware</button></div>
+        <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
+      </div>
       <div class="msg" id="outBuildStatus"></div>
       <label style="margin-top:12px">Build log (full compiler output)</label>
       <pre class="log" id="outBuildLog">Edit the code above, then click Build firmware. Flashing unlocks after a successful build.</pre>
@@ -221,6 +270,7 @@
     <div class="card">
       <h2><span class="step">2.</span>Flash output demo firmware</h2>
       <p class="note">Enabled after a successful build. Flashes your compiled <code>firmware/teaching_output_demo</code>.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
       <div id="outFwImages" class="imglist"><div class="note">Build first to enable flashing.</div></div>
       <div class="row">
         <div><button id="outFwFlashBtn" disabled>Connect &amp; flash output firmware</button></div>
@@ -234,6 +284,7 @@
     <div class="card">
       <h2><span class="step">3.</span>Control the LED</h2>
       <p class="note">After flashing, connect to the board's serial port to drive the LED live.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect for live control.</p>
       <button class="secondary" id="ctrlConnectBtn">Connect for control</button>
       <div class="row" style="margin-top:10px">
         <div><button id="ledPatternBtn" disabled>Run pattern</button></div>
@@ -261,6 +312,7 @@
     <div class="card">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
       <p class="note">Use this for the model class OV2640 preview/capture workflow. It is built from <code>firmware/model_finetune</code>, a camera-only firmware separate from full integration and deploy benchmark firmware.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
       <div id="modelFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="modelFwFlashBtn" disabled>Connect &amp; flash model firmware</button></div>
@@ -306,6 +358,7 @@
     <div class="card">
       <h2><span class="step">C.</span>Model class — capture → train → preview</h2>
       <p class="note">Training runs on the AI PC. OV2640 preview uses the browser to borrow the ESP32-S3 serial port, the same idea as browser flashing.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect the camera preview stream.</p>
       <div class="row compact">
         <div><button id="modelPreviewBtn">Start AI-PC webcam preview</button></div>
         <div><button class="secondary" id="cameraConnectBtn">Connect OV2640 preview</button></div>
@@ -349,6 +402,7 @@
     <div class="card">
       <h2><span class="step">A.</span>Flash deploy benchmark firmware</h2>
       <p class="note">Uses <code>RuntimeMode::kTestUartFrame</code> so the benchmark script can send frames over UART/CDC and collect latency/results. This is separate from model finetune camera firmware.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
       <div id="benchFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="benchFwFlashBtn" disabled>Connect &amp; flash benchmark firmware</button></div>
@@ -385,6 +439,7 @@
       <h2><span class="step">C.</span>Flash model partition (.tflite)</h2>
       <p class="note">Flashes only the model into its partition — the main board firmware is untouched.
          Chrome/Edge; the browser asks you to pick the serial port. No offsets shown.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to flash the model partition.</p>
       <label>TFLite model</label>
       <select id="flashArtifact"></select>
       <div class="row">
@@ -417,6 +472,7 @@
          into <b>your PC</b> — no install, no AI-PC serial port. Flash the <b>deploy benchmark firmware</b>
          and your model first, then run this. Use <b>Chrome or Edge</b>. The AI PC only serves the
          dataset images.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to run the benchmark stream.</p>
       <div class="row compact">
         <div><label>Dataset</label><select id="benchDataset"></select></div>
         <div><label>Images to test</label><input type="number" id="benchLimit" min="1" max="2000" value="60" /></div>
@@ -439,6 +495,7 @@
       <p class="note">Flashes the <b>full ESP32-S3 main board firmware</b> (camera + USB + TFLite Micro).
          Separate from flashing a model. Offsets come from the ESP-IDF build (<code>flasher_args.json</code>)
          and are hidden unless developer mode is on.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing firmware.</p>
       <div id="mainFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="mainFwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
@@ -465,6 +522,7 @@
     <div class="card">
       <h2>Flash model partition (.tflite)</h2>
       <p class="note">Same as Deploy: flashes only the model into the ESP32-S3 model partition. Use this after flashing main board firmware when you want to update the model only.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to flash the model partition.</p>
       <label>TFLite model</label>
       <select id="mainFlashArtifact"></select>
       <div class="row">
@@ -478,7 +536,8 @@
 
     <div class="card">
       <h2>Full firmware live preview + inference</h2>
-      <p class="note">After flashing the full main board firmware, connect the same ESP32-S3 serial port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
+      <p class="note">After flashing the full main board firmware, connect the ESP32-S3 USB / OTG port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect camera stream &amp; inference.</p>
       <div class="row compact">
         <div><button class="secondary" id="fullCameraConnectBtn">Connect camera stream</button></div>
         <div><button class="secondary" id="fullCameraStopBtn" disabled>Stop stream</button></div>
