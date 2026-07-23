@@ -213,55 +213,6 @@
         <div><button id="outBuildBtn">Build firmware</button></div>
         <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
       </div>
-  </nav>
-  <div class="right">
-    <label style="margin:0;color:var(--muted);font-size:12px">Theme
-      <select id="themeSelect" title="Display theme" style="margin-left:4px">
-        <option value="dark">Dark modern</option><option value="light">Light</option><option value="contrast">Dark high contrast</option><option value="solarized">Solarized light</option>
-      </select>
-    </label>
-    <label style="margin:0;color:var(--muted);font-size:12px" title="Baud rate for all Web Serial flashing (model + firmware). ROM sync stays 115200; lower this if flashing is unreliable.">Flash baud
-      <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800">460800</option><option value="921600" selected>921600</option></select>
-    </label>
-        <span class="team">Team <b>{{ team }}</b></span>
-    <a class="toplink" href="/account">Account settings</a>
-    <form method="post" action="/logout"><button class="secondary">Logout</button></form>
-  </div>
-</header>
-
-<main>
-  <!-- ==================== HOME ==================== -->
-  <section class="pane" id="pane-home">
-    <div class="home-hero">
-      <div class="card home-card">
-        <div class="home-icon">
-          <img src="/static/Logo.png" alt="NTUEE Camp logo" />
-        </div>
-        <h1 class="home-script">Welcome to NTUEE Camp</h1>
-        <p class="home-joke">Give us a hand — the robot is still learning yours.</p>
-      </div>
-    </div>
-  </section>
-<!-- ==================== OUTPUT DEMO ==================== -->
-  <section class="pane" id="pane-output">
-    <div class="card">
-      <h2>Output class — write code, build, flash</h2>
-      <p class="note">Board: <b>ESP32-S3</b> with an addressable RGB LED on <code>GPIO38</code>. You write a small
-         light pattern in the editor below, <b>build</b> it on the AI PC, then <b>flash</b> it to the board and run it.
-         Use <b>Chrome/Edge</b>.</p>
-    </div>
-
-    <div class="card">
-      <h2><span class="step">1.</span>Edit your output code &amp; build</h2>
-      <p class="note">Edit only <code>student_pattern()</code> below — it runs once each time you click
-         <b>Run pattern</b> after flashing. Available helpers:
-         <code>led_set_rgb(r, g, b)</code> (0–255 each) and <code>led_delay_ms(ms)</code>.</p>
-      <label>Teaching code block</label>
-      <textarea id="outCode" class="code-editor" spellcheck="false" style="width:100%;min-height:240px;white-space:pre;overflow:auto" wrap="off">Loading…</textarea>
-      <div class="row" style="margin-top:10px">
-        <div><button id="outBuildBtn">Build firmware</button></div>
-        <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
-      </div>
       <div class="msg" id="outBuildStatus"></div>
       <label style="margin-top:12px">Build log (full compiler output)</label>
       <pre class="log" id="outBuildLog">Edit the code above, then click Build firmware. Flashing unlocks after a successful build.</pre>
