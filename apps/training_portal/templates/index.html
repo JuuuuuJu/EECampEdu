@@ -594,9 +594,9 @@
 
     <div class="card">
       <h2>Board photo storage (flash)</h2>
-      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a <span id="aiPcDriveEgg" style="cursor:pointer;text-decoration:underline dotted">USB drive (MSC)</span></b> on your PC. Capture saves a <b>96×96</b> model-input image (plus the full-resolution frame).</p>
+      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a <span id="aiPcDriveEgg" style="cursor:pointer;text-decoration:underline dotted">USB drive (MSC)</span></b> on your PC. Capture saves the photo using the camera's current format and resolution settings.</p>
       <div class="row compact">
-        <div><button class="secondary" id="usbCamCaptureBtn">Capture photo to flash (96×96)</button></div>
+        <div><button class="secondary" id="usbCamCaptureBtn">Capture photo to flash</button></div>
         <div><button class="secondary" id="usbCamListBtn">List saved photos</button></div>
         <div><button class="secondary" id="usbCamMountBtn">Mount flash as USB drive (MSC)</button></div>
       </div>
@@ -605,7 +605,7 @@
       <div id="usbPhotoList"><div class="note">Click “List saved photos”. <b>Download (CDC)</b> pulls a photo over Web Serial; <b>Mount as USB drive</b> pauses preview and shows the files to your PC as a removable drive.</div></div>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:120px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <img id="usbPhotoPreview" alt="downloaded photo" style="max-width:100%;max-height:280px;image-rendering:pixelated;display:none" />
-        <div class="note" id="usbPhotoPlaceholder">Downloaded photo preview (96×96 shown enlarged).</div>
+        <div class="note" id="usbPhotoPlaceholder">Downloaded photo preview.</div>
       </div>
       <div class="row compact" style="margin-top:12px">
         <div style="flex:2; min-width:240px"><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · format · l · r 0" /></div>
@@ -1360,7 +1360,7 @@ $("usbCamGain").onchange     = (e) => usbCamCmd("a"+e.target.value, "gain value"
 $("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "AWB");
 $("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "mirror");
 $("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "flip");
-$("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "capture 96×96 photo to flash"); };
+$("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "capture photo to flash"); };
 $("usbCamListBtn").onclick = () => { photoListBuf = []; photoListCapture = true; usbCamCmd("l", "list saved photos"); };
 $("usbCamMountBtn").onclick = () => { usbCamCmd("usb", "mount flash as USB drive"); setMsg($("usbCamCmdMsg"), "Flash mounted as a USB drive on your PC — live preview is paused. Open your file explorer to see the ESP32-S3 photos.", "ok"); };
 $("usbCamRawBtn").onclick  = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, c); };
@@ -1863,7 +1863,7 @@ function cameraOnLine(rawLine){
   }
 }
 // Decode a base64 file streamed over CDC (r command), download it, and preview
-// images (96x96 photos shown enlarged with crisp pixels).
+// images (photos shown enlarged with crisp pixels).
 function finishPhotoDownload(b64, path){
   try{
     const bin=atob((b64||"").replace(/\s+/g,""));
