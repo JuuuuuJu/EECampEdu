@@ -23,12 +23,12 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define SERVO_DUTY_BITS LEDC_TIMER_16_BIT
 #define SERVO_MIN_US 500
 #define SERVO_MAX_US 2500
-#define STEP_DEG 2
+#define STEP_DEG 1
 
 #define BASE_INITIAL_DEG 90
 #define ARM_INITIAL_DEG 90
 #define PITCH_INITIAL_DEG 90
-#define CLAW_INITIAL_DEG 30
+#define CLAW_INITIAL_DEG 60
 #define ARM_MIN_DEG 45
 #define ARM_MAX_DEG 180
 #define PITCH_MIN_DEG 30
@@ -42,14 +42,11 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
-static int pitch_angle = PITCH_INITIAL_DEG;
+static int pitch_angle = pitch_angle_calculator(ARM_INITIAL_DEG);
 static int claw_angle = CLAW_INITIAL_DEG;
 
 static int target_arm = ARM_INITIAL_DEG;
 static int target_base = BASE_INITIAL_DEG;
-
-static robot_state_t current_state = ROBOT_IDLE;
-static void print_state(const char *prefix, int gesture);
 
 typedef enum {
     ROBOT_IDLE = 0,
@@ -58,6 +55,9 @@ typedef enum {
     ROBOT_MOVING_LEFT,
     ROBOT_MOVING_RIGHT
 } robot_state_t;
+
+static robot_state_t current_state = ROBOT_IDLE;
+static void print_state(const char *prefix, int gesture);
 
 static int clamp_int(int value, int low, int high) {
     if (value < low) return low;
@@ -351,10 +351,12 @@ static void apply_smart_action(int action) {
             current_state = ROBOT_MOVING_RIGHT;
             break;
         case 4: 
+            current_state = ROBOT_IDLE;
             claw_angle = clamp_int(CLAW_CLAMP_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
             write_servo(LEDC_CHANNEL_3, claw_angle);
             break;
         case 5:
+            current_state = ROBOT_IDLE;    
             claw_angle = clamp_int(CLAW_RELEASE_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
             write_servo(LEDC_CHANNEL_3, claw_angle);
             break;
@@ -430,7 +432,7 @@ static void handle_command(char *line) {
         print_state("OK_MANUAL", 4);
         return;
     }
-
+    current_state = ROBOT_IDLE; 
     printf("ERR,unknown_command,%s\n", line);
     fflush(stdout);
 }
