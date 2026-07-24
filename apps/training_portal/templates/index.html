@@ -594,19 +594,13 @@
 
     <div class="card">
       <h2>Board photo storage (flash)</h2>
-      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a <span id="aiPcDriveEgg" style="cursor:pointer;text-decoration:underline dotted">USB drive (MSC)</span></b> on your PC. Capture saves the photo using the camera's current format and resolution settings.</p>
+      <p class="note">The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — view or copy them by clicking <b>Mount flash as USB drive (MSC)</b> to open the storage drive on your PC. Click <b>List saved photos</b> to view the list of files in the console log below.</p>
       <div class="row compact">
         <div><button class="secondary" id="usbCamCaptureBtn">Capture photo to flash</button></div>
         <div><button class="secondary" id="usbCamListBtn">List saved photos</button></div>
         <div><button class="secondary" id="usbCamMountBtn">Mount flash as USB drive (MSC)</button></div>
       </div>
       <div class="msg" id="usbCamCmdMsg"></div>
-      <label style="margin-top:12px">Saved photos on the board</label>
-      <div id="usbPhotoList"><div class="note">Click “List saved photos”. <b>Download (CDC)</b> pulls a photo over Web Serial; <b>Mount as USB drive</b> pauses preview and shows the files to your PC as a removable drive.</div></div>
-      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:120px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
-        <img id="usbPhotoPreview" alt="downloaded photo" style="max-width:100%;max-height:280px;image-rendering:pixelated;display:none" />
-        <div class="note" id="usbPhotoPlaceholder">Downloaded photo preview.</div>
-      </div>
       <div class="row compact" style="margin-top:12px">
         <div style="flex:2; min-width:240px"><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · format · l · r 0" /></div>
         <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
@@ -1361,7 +1355,7 @@ $("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "AWB");
 $("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "mirror");
 $("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "flip");
 $("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "capture photo to flash"); };
-$("usbCamListBtn").onclick = () => { photoListBuf = []; photoListCapture = true; usbCamCmd("l", "list saved photos"); };
+$("usbCamListBtn").onclick = () => { usbCamCmd("l", "list saved photos"); };
 $("usbCamMountBtn").onclick = () => { usbCamCmd("usb", "mount flash as USB drive"); setMsg($("usbCamCmdMsg"), "Flash mounted as a USB drive on your PC — live preview is paused. Open your file explorer to see the ESP32-S3 photos.", "ok"); };
 $("usbCamRawBtn").onclick  = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, c); };
 $("mazeFlagInput").oninput = (e) => {
@@ -1836,21 +1830,6 @@ function cameraOnLine(rawLine){
       camAsm.receiving=false; camAsm.lines=[];
       cameraOnLine(rawLine);
     }
-  } else if(line.startsWith("---START_FILE:")){
-    const fm=/^---START_FILE:\d+:\d+:\d+:(\d+):(.+)---$/.exec(line);
-    fileAsm={receiving:true, lines:[], size:fm?Number(fm[1]):0, path:fm?fm[2]:"file"};
-  } else if(line.startsWith("---END_FILE---")){
-    if(fileAsm.receiving) finishPhotoDownload(fileAsm.lines.join(""), fileAsm.path);
-    fileAsm={receiving:false, lines:[], size:0, path:""};
-  } else if(fileAsm.receiving){
-    fileAsm.lines.push(line);
-  } else if(photoListCapture && /\/usb\//.test(line) && /\(\d+\s*bytes\)/.test(line)){
-    const lm=/\/usb\/(\S+)\s+\((\d+)/.exec(line);
-    if(lm) photoListBuf.push({name:lm[1], size:Number(lm[2])});
-    appendLog(camUi.logId, line + "\n");
-  } else if(photoListCapture && /^Total:/.test(line)){
-    photoListCapture=false; renderPhotoList(photoListBuf);
-    appendLog(camUi.logId, line + "\n");
   } else if(line.startsWith("RESULT,")){
     appendLog(camUi.logId, line + "\n");
     const eff = updateGestureResult(line);
@@ -1861,44 +1840,6 @@ function cameraOnLine(rawLine){
   } else if(/READY|ERROR|CAMERA|TFLM|INPUT|CROP|System|Streaming|SETTING|OK|FILE|Total|^-|^\s*-|---/i.test(line)){
     appendLog(camUi.logId, line + "\n");
   }
-}
-// Decode a base64 file streamed over CDC (r command), download it, and preview
-// images (photos shown enlarged with crisp pixels).
-function finishPhotoDownload(b64, path){
-  try{
-    const bin=atob((b64||"").replace(/\s+/g,""));
-    const bytes=new Uint8Array(bin.length);
-    for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i);
-    const name=(path||"photo").split("/").pop();
-    const ext=(name.split(".").pop()||"").toLowerCase();
-    const mime = ext==="bmp"?"image/bmp" : (ext==="jpg"||ext==="jpeg")?"image/jpeg" : ext==="png"?"image/png":"application/octet-stream";
-    const blob=new Blob([bytes], {type:mime});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
-    const img=$("usbPhotoPreview"), ph=$("usbPhotoPlaceholder");
-    if(img && ["bmp","jpg","jpeg","png"].includes(ext)){
-      if(usbPhotoUrl) URL.revokeObjectURL(usbPhotoUrl);
-      usbPhotoUrl=url; img.src=url; img.style.display="block"; if(ph) ph.style.display="none";
-    } else { URL.revokeObjectURL(url); }
-    setMsg($("usbCamCmdMsg"), "Downloaded "+name+" ("+bytes.length+" bytes) over CDC.", "ok");
-  }catch(e){ setMsg($("usbCamCmdMsg"), "Download decode failed: "+(e.message||e), "bad"); }
-}
-function renderPhotoList(list){
-  const host=$("usbPhotoList"); if(!host) return;
-  if(!list.length){ host.innerHTML='<div class="note">No photos on the board yet. Click “Capture photo to flash”.</div>'; return; }
-  host.innerHTML="";
-  list.forEach(f=>{
-    const row=document.createElement("div"); row.style.display="flex"; row.style.justifyContent="space-between"; row.style.gap="10px"; row.style.padding="4px 0"; row.style.borderBottom="1px solid var(--border)";
-    const nm=document.createElement("span"); nm.textContent=f.name+" ("+fmtSize(f.size)+")";
-    const dl=document.createElement("button"); dl.className="secondary"; dl.textContent="download (CDC)"; dl.style.padding="2px 10px";
-    dl.onclick=()=>downloadPhoto(f.name);
-    row.appendChild(nm); row.appendChild(dl); host.appendChild(row);
-  });
-}
-function downloadPhoto(name){
-  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }
-  setMsg($("usbCamCmdMsg"), "Downloading "+name+" over CDC…", "warn");
-  cameraWrite("r "+name);
 }
 function parseInputControl(line){
   const out = {};
