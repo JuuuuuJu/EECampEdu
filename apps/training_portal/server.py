@@ -22,6 +22,7 @@ Start (on the AI PC):
 import argparse
 import base64
 import binascii
+import hashlib
 import io
 import json
 import os
@@ -31,9 +32,11 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from flask import (
     Flask,
@@ -59,6 +62,7 @@ TEMPLATES_DIR = APP_DIR / "templates"
 RUNS_DIR = APP_DIR / "runs"                 # git-ignored runtime folder
 UPLOAD_DIR = RUNS_DIR / "uploads"
 JOBS_DIR = RUNS_DIR / "jobs"
+ML_RUNTIME_DIR = RUNS_DIR / "ml_runtime"
 # AI PC Drive: one AI PC serves one team, so this is that team's shared storage
 # (code / models / reports / build logs / general uploads — NOT the primary place
 # for captured photos, which live on the ESP32-S3). Login is still required.
@@ -179,14 +183,6 @@ TRAINING_RECIPES = {
         "supports": [],  # module-level script, no CLI arguments
         "description": "Lightweight Keras Mini ResNet. Runs with default settings.",
     },
-    "pytorch_mini_resnet": {
-        "framework": "pytorch",
-        "label": "Mini ResNet (PyTorch)",
-        "script": "model_finetune/pytorch/train_mini_resnet.py",
-        "keras_model_name": "Mini_ResNet_finetuned",
-        "supports": [],  # has its own internal warmup/fine-tune flow, no CLI args
-        "description": "PyTorch Mini ResNet; also exports .pth/.onnx and a .keras handoff.",
-    },
 }
 
 QUANTIZE_SCRIPT = "firmware/pc/tools/quantize_keras_model.py"
@@ -221,6 +217,18 @@ SERIAL_PORT_RE = re.compile(r"^(/dev/[A-Za-z0-9._\-]+|COM[0-9]+)$")
 # request is resolved and confirmed to live inside one of these roots (no traversal).
 ARTIFACT_ROOTS = [TF_MODELS_DIR, PYTORCH_MODELS_DIR, ARTIFACT_MODELS_DIR, ARTIFACT_REPORTS_DIR]
 ARTIFACT_EXTENSIONS = {".keras", ".pth", ".onnx", ".tflite", ".json", ".h5"}
+ML_JOB_KINDS = {"train", "quantize"}
+ML_MAX_PARALLEL_JOBS = max(1, int(os.environ.get("EECAMP_MAX_PARALLEL_ML_JOBS", "6")))
+TEMP_ARTIFACT_TTL_SECONDS = max(
+    60,
+    int(os.environ.get("EECAMP_TEMP_ARTIFACT_TTL_SECONDS", str(3 * 60 * 60))),
+)
+TEMP_ARTIFACT_SWEEP_SECONDS = max(
+    60,
+    int(os.environ.get("EECAMP_TEMP_ARTIFACT_SWEEP_SECONDS", "300")),
+)
+TEMP_ARTIFACT_DIRNAME = "temporary"
+LOCAL_TIMEZONE = ZoneInfo(os.environ.get("EECAMP_PORTAL_TIMEZONE", "Asia/Taipei"))
 # Classroom authentication. One AI PC usually serves one team, but the portal
 # supports team01..team10 accounts so the same code can be reused across machines.
 # Configure real passwords outside git:
@@ -239,6 +247,19 @@ def _load_team_passwords():
 
 TEAM_PASSWORDS = _load_team_passwords()
 TEAM_PASSWORD_STORE = RUNS_DIR / "team_passwords.json"
+
+def _team_from_hostname():
+    override = os.environ.get("EECAMP_PORTAL_TEAM", "").strip()
+    if override in TEAM_PASSWORDS:
+        return override
+    hostname = os.uname().nodename.lower()
+    for suffix in reversed(re.findall(r"\d+", hostname)):
+        team = f"team{int(suffix):02d}"
+        if team in TEAM_PASSWORDS:
+            return team
+    if len(TEAM_PASSWORDS) == 1:
+        return next(iter(TEAM_PASSWORDS))
+    return None
 
 def _load_runtime_password_hashes():
     try:
@@ -287,18 +308,23 @@ TOPIC_ROUTES = {
 # Background job manager
 # --------------------------------------------------------------------------- #
 class Job:
-    """One background subprocess (a training or quantization run)."""
+    """One background subprocess or queued subprocess."""
 
-    def __init__(self, job_id, kind, label, cmd, log_path, meta_path):
+    def __init__(self, job_id, kind, label, cmd, log_path, meta_path, cwd=None, extra=None):
         self.id = job_id
-        self.kind = kind          # "train" | "quantize"
+        self.kind = kind
         self.label = label
         self.cmd = cmd
         self.log_path = log_path
         self.meta_path = meta_path
-        self.status = "starting"  # starting | running | succeeded | failed
+        self.cwd = Path(cwd) if cwd else REPO_ROOT
+        self.extra = extra or {}
+        self.owner_id = self.extra.get("owner_id")
+        self.owner_team = self.extra.get("owner_team")
+        self.status = "queued"  # queued | starting | running | succeeded | failed
         self.returncode = None
         self.created_at = _now_iso()
+        self.started_at = None
         self.finished_at = None
         self.proc = None
 
@@ -312,7 +338,9 @@ class Job:
             "status": self.status,
             "returncode": self.returncode,
             "created_at": self.created_at,
+            "started_at": self.started_at,
             "finished_at": self.finished_at,
+            "owner_team": self.owner_team,
             "log": self.id,  # log fetched via /api/jobs/<id>/log
         }
 
@@ -324,15 +352,18 @@ class Job:
 
 
 class JobManager:
-    """Serializes jobs: at most one training/quantization job runs at a time.
+    """Run train/quantize jobs through a bounded queue.
 
-    A shared classroom AI PC has limited CPU/RAM; running two TensorFlow jobs at
-    once would thrash. Callers get HTTP 409 while a job is active.
+    Training and quantization are allowed to run concurrently up to
+    ML_MAX_PARALLEL_JOBS. Other job kinds remain exclusive so firmware builds,
+    camera demos, and similar local-device operations do not overlap with ML
+    jobs or each other.
     """
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._active_id = None
+        self._active_ids = set()
+        self._queued_ids = []
         self._jobs = {}  # id -> Job (this process lifetime)
         self._counter = 0
 
@@ -343,31 +374,90 @@ class JobManager:
 
     def active_job(self):
         with self._lock:
-            if self._active_id is None:
-                return None
-            return self._jobs.get(self._active_id)
+            for job_id in sorted(self._active_ids):
+                job = self._jobs.get(job_id)
+                if job is not None:
+                    return job
+            return None
 
-    def start(self, kind, label, cmd, env=None):
+    def _active_ml_count_locked(self):
+        return sum(1 for job_id in self._active_ids
+                   if self._jobs.get(job_id) and self._jobs[job_id].kind in ML_JOB_KINDS)
+
+    def _has_active_non_ml_locked(self):
+        return any(self._jobs.get(job_id) and self._jobs[job_id].kind not in ML_JOB_KINDS
+                   for job_id in self._active_ids)
+
+    def _first_live_job_locked(self):
+        for job_id in list(self._active_ids) + list(self._queued_ids):
+            job = self._jobs.get(job_id)
+            if job is not None and job.status in ("queued", "starting", "running"):
+                return job
+        return None
+
+    def _live_owner_job_locked(self, owner_id):
+        if not owner_id:
+            return None
+        for job_id in list(self._active_ids) + list(self._queued_ids):
+            job = self._jobs.get(job_id)
+            if (
+                job is not None
+                and job.kind in ML_JOB_KINDS
+                and job.owner_id == owner_id
+                and job.status in ("queued", "starting", "running")
+            ):
+                return job
+        return None
+
+    def start(self, kind, label, cmd, env=None, cwd=None, extra=None):
+        extra = extra or {}
         with self._lock:
-            if self._active_id is not None:
-                active = self._jobs.get(self._active_id)
-                if active and active.status in ("starting", "running"):
+            if kind not in ML_JOB_KINDS:
+                active = self._first_live_job_locked()
+                if active is not None:
                     raise JobBusyError(active)
-                self._active_id = None
+            else:
+                active = self._live_owner_job_locked(extra.get("owner_id"))
+                if active is not None:
+                    raise JobBusyError(active)
 
             job_id = self._new_id(kind)
             job_dir = JOBS_DIR / job_id
             job_dir.mkdir(parents=True, exist_ok=True)
             log_path = job_dir / "job.log"
             meta_path = job_dir / "meta.json"
-            job = Job(job_id, kind, label, cmd, log_path, meta_path)
+            job = Job(job_id, kind, label, cmd, log_path, meta_path, cwd=cwd, extra=extra)
             self._jobs[job_id] = job
-            self._active_id = job_id
+            if kind in ML_JOB_KINDS:
+                self._queued_ids.append(job_id)
+            else:
+                self._spawn_locked(job, env)
 
+        job.persist()
+        if kind in ML_JOB_KINDS:
+            with self._lock:
+                self._drain_locked()
+        return job
+
+    def _spawn_locked(self, job, env=None):
+        if job.id in self._active_ids:
+            return
+        job.status = "starting"
+        job.started_at = _now_iso()
+        self._active_ids.add(job.id)
         job.persist()
         thread = threading.Thread(target=self._run, args=(job, env), daemon=True)
         thread.start()
-        return job
+
+    def _drain_locked(self):
+        if self._has_active_non_ml_locked():
+            return
+        while self._queued_ids and self._active_ml_count_locked() < ML_MAX_PARALLEL_JOBS:
+            job_id = self._queued_ids.pop(0)
+            job = self._jobs.get(job_id)
+            if job is None or job.status != "queued":
+                continue
+            self._spawn_locked(job)
 
     def _run(self, job, env):
         run_env = dict(os.environ)
@@ -389,7 +479,7 @@ class JobManager:
                 job.persist()
                 job.proc = subprocess.Popen(
                     job.cmd,
-                    cwd=str(REPO_ROOT),
+                    cwd=str(job.cwd),
                     stdout=log_fh,
                     stderr=subprocess.STDOUT,
                     env=run_env,
@@ -398,9 +488,18 @@ class JobManager:
                 returncode = job.proc.wait()
             job.returncode = returncode
             job.status = "succeeded" if returncode == 0 else "failed"
+            if job.status == "succeeded":
+                _finalize_job_artifacts(job)
+                if _job_has_artifacts(job):
+                    _prune_owner_kind_artifacts(job)
+                else:
+                    _remove_job_artifacts(job)
+            else:
+                _remove_job_artifacts(job)
         except Exception as exc:  # noqa: BLE001 - record any launch failure in the log
             job.status = "failed"
             job.returncode = -1
+            _remove_job_artifacts(job)
             try:
                 with open(job.log_path, "a", encoding="utf-8") as log_fh:
                     log_fh.write(f"\n[portal] failed to run job: {exc}\n")
@@ -408,10 +507,12 @@ class JobManager:
                 pass
         finally:
             job.finished_at = _now_iso()
+            _cleanup_job_runtime(job)
+            _prune_expired_temp_artifacts()
             job.persist()
             with self._lock:
-                if self._active_id == job.id:
-                    self._active_id = None
+                self._active_ids.discard(job.id)
+                self._drain_locked()
 
     def get(self, job_id):
         return self._jobs.get(job_id)
@@ -426,11 +527,203 @@ class JobBusyError(Exception):
         self.active_job = active_job
 
 
+def _artifact_owner_slug(owner_id):
+    if not owner_id:
+        raise ValueError("Temporary artifacts require an owner.")
+    return hashlib.sha256(str(owner_id).encode("utf-8")).hexdigest()[:16]
+
+
+def _artifact_token(job):
+    token = str(job.extra.get("artifact_token", ""))
+    if not re.fullmatch(r"[a-f0-9]{32}", token):
+        raise ValueError("Temporary artifacts require a valid result ID.")
+    return token
+
+
+def _temporary_artifact_dir(root, owner_id, kind, token, create=False):
+    if kind not in ML_JOB_KINDS:
+        raise ValueError(f"Unsupported temporary artifact kind: {kind}")
+    if not re.fullmatch(r"[a-f0-9]{32}", str(token)):
+        raise ValueError("Invalid temporary artifact result ID.")
+    target = (
+        root
+        / "runs"
+        / TEMP_ARTIFACT_DIRNAME
+        / _artifact_owner_slug(owner_id)
+        / kind
+        / str(token)
+    )
+    if create:
+        target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
+def _artifact_run_dir(root, job):
+    return _temporary_artifact_dir(
+        root,
+        job.owner_id,
+        job.kind,
+        _artifact_token(job),
+        create=True,
+    )
+
+
+def _remove_empty_temp_parents(path, stop):
+    current = path
+    while current != stop:
+        try:
+            current.rmdir()
+        except OSError:
+            break
+        current = current.parent
+
+
+def _remove_temporary_result(owner_id, kind, token):
+    if kind not in ML_JOB_KINDS or not owner_id:
+        return
+    for root in ARTIFACT_ROOTS:
+        target = _temporary_artifact_dir(root, owner_id, kind, token)
+        shutil.rmtree(target, ignore_errors=True)
+        _remove_empty_temp_parents(
+            target.parent,
+            root / "runs" / TEMP_ARTIFACT_DIRNAME,
+        )
+
+
+def _remove_job_artifacts(job):
+    if job.kind not in ML_JOB_KINDS or not job.owner_id:
+        return
+    try:
+        token = _artifact_token(job)
+    except ValueError:
+        return
+    _remove_temporary_result(job.owner_id, job.kind, token)
+
+
+def _job_has_artifacts(job):
+    try:
+        token = _artifact_token(job)
+    except ValueError:
+        return False
+    for root in ARTIFACT_ROOTS:
+        result_dir = _temporary_artifact_dir(root, job.owner_id, job.kind, token)
+        if result_dir.is_dir() and any(path.is_file() for path in result_dir.rglob("*")):
+            return True
+    return False
+
+
+def _prune_owner_kind_artifacts(job):
+    """Keep only this successful result for its browser session and job kind."""
+    token = _artifact_token(job)
+    for root in ARTIFACT_ROOTS:
+        current = _temporary_artifact_dir(root, job.owner_id, job.kind, token)
+        kind_dir = current.parent
+        if not kind_dir.is_dir():
+            continue
+        for candidate in kind_dir.iterdir():
+            if candidate.name != token and candidate.is_dir() and not candidate.is_symlink():
+                shutil.rmtree(candidate, ignore_errors=True)
+
+
+def _prune_expired_temp_artifacts():
+    cutoff = time.time() - TEMP_ARTIFACT_TTL_SECONDS
+    for root in ARTIFACT_ROOTS:
+        temp_root = root / "runs" / TEMP_ARTIFACT_DIRNAME
+        if not temp_root.is_dir():
+            continue
+        for result_dir in temp_root.glob("*/*/*"):
+            if not result_dir.is_dir() or result_dir.is_symlink():
+                continue
+            try:
+                mtimes = [result_dir.stat().st_mtime]
+                mtimes.extend(
+                    path.stat().st_mtime
+                    for path in result_dir.rglob("*")
+                    if path.is_file()
+                )
+            except OSError:
+                continue
+            if max(mtimes) < cutoff:
+                shutil.rmtree(result_dir, ignore_errors=True)
+                _remove_empty_temp_parents(result_dir.parent, temp_root)
+
+
+def _artifact_cleanup_loop():
+    while True:
+        time.sleep(TEMP_ARTIFACT_SWEEP_SECONDS)
+        try:
+            _prune_expired_temp_artifacts()
+        except Exception:
+            pass
+
+
+def _copy_recent_artifacts(source_root, dest_root, cutoff_mtime, extensions):
+    copied = []
+    if not source_root.is_dir():
+        return copied
+    dest_root.mkdir(parents=True, exist_ok=True)
+    for path in sorted(source_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in extensions:
+            continue
+        try:
+            if path.stat().st_mtime < cutoff_mtime - 1:
+                continue
+        except OSError:
+            continue
+        rel = path.relative_to(source_root)
+        target = dest_root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        copied.append(target)
+    return copied
+
+
+def _finalize_job_artifacts(job):
+    if job.kind != "train":
+        return
+    runtime_root = job.extra.get("runtime_root")
+    if not runtime_root:
+        return
+    runtime_root = Path(runtime_root)
+    cutoff = float(job.extra.get("artifact_cutoff_mtime", 0))
+    copied = []
+    copied += _copy_recent_artifacts(
+        runtime_root / "model_finetune" / "models" / "tf",
+        _artifact_run_dir(TF_MODELS_DIR, job),
+        cutoff,
+        {".keras", ".h5", ".onnx"},
+    )
+    copied += _copy_recent_artifacts(
+        runtime_root / "model_finetune" / "models" / "pytorch",
+        _artifact_run_dir(PYTORCH_MODELS_DIR, job),
+        cutoff,
+        {".keras", ".h5", ".pth", ".onnx"},
+    )
+    if copied:
+        try:
+            with open(job.log_path, "a", encoding="utf-8") as log_fh:
+                log_fh.write("\n[portal] exported artifacts:\n")
+                for path in copied:
+                    log_fh.write(f"[portal]   {path.resolve().relative_to(REPO_ROOT.resolve())}\n")
+        except OSError:
+            pass
+
+
+def _cleanup_job_runtime(job):
+    runtime_root = job.extra.get("runtime_root") if getattr(job, "extra", None) else None
+    if not runtime_root:
+        return
+    try:
+        shutil.rmtree(runtime_root, ignore_errors=True)
+    except OSError:
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
 def _now_iso():
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(LOCAL_TIMEZONE).isoformat(timespec="seconds")
 
 
 def _display_arg(arg):
@@ -1080,7 +1373,14 @@ def build_training_command(recipe_key, params):
     recipe = TRAINING_RECIPES.get(recipe_key)
     if recipe is None:
         raise ValueError(f"Unknown training recipe: {recipe_key}")
-    script = (REPO_ROOT / recipe["script"]).resolve()
+    runtime_root = ML_RUNTIME_DIR / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{recipe_key}-{time.time_ns()}"
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(
+        MODEL_FINETUNE_DIR,
+        runtime_root / "model_finetune",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    script = (runtime_root / recipe["script"]).resolve()
     if not script.is_file():
         raise ValueError(f"Training script missing: {recipe['script']}")
 
@@ -1094,7 +1394,11 @@ def build_training_command(recipe_key, params):
         cmd += ["--alpha", str(_safe_float(params["alpha"], "alpha", 0.1, 2.0))]
     if "export_onnx" in supports and params.get("export_onnx"):
         cmd += ["--export-onnx"]
-    return recipe, cmd
+    extra = {
+        "runtime_root": str(runtime_root),
+        "artifact_cutoff_mtime": time.time(),
+    }
+    return recipe, cmd, runtime_root, extra
 
 
 
@@ -1110,7 +1414,7 @@ def build_model_preview_command(params=None):
     if not script.is_file():
         raise ValueError("Model preview script missing: model_finetune/pytorch/webcam_demo.py")
     return [sys.executable, str(script)]
-def build_quantize_command(params):
+def build_quantize_command(params, owner_extra):
     script = (REPO_ROOT / QUANTIZE_SCRIPT).resolve()
     if not script.is_file():
         raise ValueError(f"Quantization script missing: {QUANTIZE_SCRIPT}")
@@ -1143,6 +1447,25 @@ def build_quantize_command(params):
         "--quant-format", quant_format,
         "--quant-granularity", granularity,
     ]
+    result_dir = _temporary_artifact_dir(
+        ARTIFACT_MODELS_DIR,
+        owner_extra.get("owner_id"),
+        "quantize",
+        owner_extra.get("artifact_token"),
+        create=True,
+    )
+    report_dir = _temporary_artifact_dir(
+        ARTIFACT_REPORTS_DIR,
+        owner_extra.get("owner_id"),
+        "quantize",
+        owner_extra.get("artifact_token"),
+        create=True,
+    )
+    model_slug = re.sub(r"[^A-Za-z0-9_.-]", "_", model_path.stem).strip("._-") or "model"
+    quant_slug = re.sub(r"[^A-Za-z0-9_.-]", "_", f"{quant_format}_{granularity}")
+    output_path = result_dir / f"{model_slug}_{quant_slug}.tflite"
+    report_path = report_dir / f"{model_slug}_{quant_slug}_quantization_report.json"
+    cmd += ["--output", str(output_path), "--report", str(report_path)]
     if params.get("samples") not in (None, ""):
         cmd += ["--samples", str(_safe_int(params["samples"], "samples", 1, 5000))]
     if params.get("skip_source_validation"):
@@ -1318,6 +1641,8 @@ def create_app():
     # 2 GiB cap on uploaded dataset zips.
     app.config["MAX_CONTENT_LENGTH"] = 2 * 1024 * 1024 * 1024
     jobs = JobManager()
+    _prune_expired_temp_artifacts()
+    threading.Thread(target=_artifact_cleanup_loop, daemon=True).start()
 
     @app.errorhandler(HTTPException)
     def _json_error(exc):
@@ -1331,7 +1656,21 @@ def create_app():
 
     def _logged_in_team():
         team = session.get("team")
-        return team if team in TEAM_PASSWORDS else None
+        configured_team = _team_from_hostname()
+        return team if configured_team is not None and team == configured_team else None
+
+    def _session_user_id():
+        user_id = session.get("user_id")
+        if not user_id:
+            user_id = uuid.uuid4().hex
+            session["user_id"] = user_id
+        return user_id
+
+    def _ml_job_owner_extra():
+        return {
+            "owner_id": _session_user_id(),
+            "owner_team": _logged_in_team(),
+        }
 
     @app.before_request
     def _require_login():
@@ -1342,21 +1681,26 @@ def create_app():
             if path.startswith("/api/"):
                 return jsonify({"error": "login required", "status": 401}), 401
             return redirect(url_for("login", next=path))
+        _session_user_id()
         return None
 
     @app.get("/login")
     def login():
-        return render_template("login.html", teams=sorted(TEAM_PASSWORDS), next=request.args.get("next", "/"))
+        team = _team_from_hostname()
+        return render_template("login.html", team=team, team_display=team or "unknown", next=request.args.get("next", "/"))
 
     @app.post("/login")
     def login_post():
-        team = request.form.get("team", "")
+        team = _team_from_hostname()
         password = request.form.get("password", "")
         nxt = request.form.get("next", "/") or "/"
-        if team in TEAM_PASSWORDS and _team_password_matches(team, password):
+        if team is None:
+            return render_template("login.html", team=team, team_display=team or "unknown", next=nxt, error="Could not determine this AI PC team from the hostname."), 500
+        if _team_password_matches(team, password):
             session["team"] = team
+            session.setdefault("user_id", uuid.uuid4().hex)
             return redirect(nxt if nxt.startswith("/") else "/")
-        return render_template("login.html", teams=sorted(TEAM_PASSWORDS), next=nxt, error="Invalid team account or password."), 401
+        return render_template("login.html", team=team, team_display=team or "unknown", next=nxt, error="Invalid password."), 401
 
     @app.post("/api/change-password")
     def change_password():
@@ -1465,6 +1809,7 @@ def create_app():
             "repo_root": str(REPO_ROOT),
             "class_names": _current_class_order(),
             "active_job": active.id if active else None,
+            "max_parallel_ml_jobs": ML_MAX_PARALLEL_JOBS,
             "time": _now_iso(),
         })
 
@@ -1777,25 +2122,40 @@ def create_app():
         data = request.get_json(silent=True) or request.form.to_dict()
         recipe_key = data.get("recipe")
         try:
-            recipe, cmd = build_training_command(recipe_key, data)
+            recipe, cmd, cwd, extra = build_training_command(recipe_key, data)
         except ValueError as exc:
             abort(400, str(exc))
+        extra.update(_ml_job_owner_extra())
+        extra["artifact_token"] = uuid.uuid4().hex
         try:
-            job = jobs.start("train", f"train:{recipe_key}", cmd)
+            job = jobs.start("train", f"train:{recipe_key}", cmd, cwd=cwd, extra=extra)
         except JobBusyError as exc:
+            shutil.rmtree(cwd, ignore_errors=True)
             return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
         return jsonify(job.to_dict()), 202
 
     @app.post("/api/quantize")
     def quantize():
         data = request.get_json(silent=True) or request.form.to_dict()
+        extra = _ml_job_owner_extra()
+        extra["artifact_token"] = uuid.uuid4().hex
         try:
-            cmd = build_quantize_command(data)
+            cmd = build_quantize_command(data, extra)
         except ValueError as exc:
             abort(400, str(exc))
         try:
-            job = jobs.start("quantize", f"quantize:{data.get('model_name')}", cmd)
+            job = jobs.start(
+                "quantize",
+                f"quantize:{data.get('model_name')}",
+                cmd,
+                extra=extra,
+            )
         except JobBusyError as exc:
+            _remove_temporary_result(
+                extra["owner_id"],
+                "quantize",
+                extra["artifact_token"],
+            )
             return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
         return jsonify(job.to_dict()), 202
 
@@ -1986,6 +2346,7 @@ def create_app():
 
     @app.get("/api/artifacts")
     def artifacts():
+        _prune_expired_temp_artifacts()
         items = []
         categories = [
             ("keras_source", TF_MODELS_DIR, {".keras", ".h5"}),

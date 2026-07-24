@@ -99,6 +99,8 @@
     min-height:46px; min-width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; }
   button.secondary { background:var(--panel2); color:var(--text); }
   button:disabled { opacity:.48; cursor:not-allowed; }
+  .spinner { display:inline-block; width:15px; height:15px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; margin-right:8px; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   pre.log { background:var(--logbg); color:var(--logtext); padding:13px; border-radius:7px; height:220px;
             overflow:auto; font:13px/1.55 Consolas, 'Courier New', monospace; white-space:pre-wrap; word-break:break-word; margin:0; }
   pre.log.tall { height:300px; }
@@ -108,6 +110,7 @@
   .status { display:inline-block; padding:3px 9px; border-radius:99px; font-size:12px; font-weight:700; }
   .s-running { background:#0c4a6e; color:#7dd3fc; } .s-succeeded { background:#14532d; color:#86efac; }
   .s-failed { background:#7f1d1d; color:#fca5a5; } .s-starting { background:#3f3f46; color:#e4e4e7; }
+  .s-queued { background:#422006; color:#fde68a; }
   .msg { font-size:14px; margin-top:9px; min-height:18px; }
   .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); } .msg.warn { color:var(--warn); }
   .note { font-size:13px; color:var(--muted); margin-top:7px; }
@@ -291,10 +294,8 @@
       <div id="classMapRows" style="margin-top:6px"><div class="note">Select active classes above to map them to robot actions.</div></div>
       <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
       <div class="msg" id="classMapMsg"></div>
-      <div class="row" style="margin-top:12px">
-        <div><label>Framework</label><select id="framework"><option value="tensorflow">TensorFlow</option><option value="pytorch">PyTorch</option></select></div>
-        <div><label>Model recipe</label><select id="recipe"></select></div>
-      </div>
+      <label style="margin-top:12px">Model recipe</label>
+      <select id="recipe"></select>
       <div class="note" id="recipeDesc"></div>
       <div class="row" id="tuning">
         <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
@@ -682,16 +683,16 @@
   <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div id="sharedJobPanels">
     <div class="card">
-      <h2>Live job log <span class="pill" id="jobPill"></span></h2>
-      <pre class="log tall" id="log">No job selected. Start a training or quantization job (Deploy tab).</pre>
+      <h2><span id="jobLogHeading">Live job log</span> <span class="pill" id="jobPill"></span></h2>
+      <pre class="log tall" id="log">No job selected.</pre>
     </div>
     <div class="card">
-      <h2>Generated artifacts <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
+      <h2><span id="artifactsHeading">Generated artifacts</span> <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
       <table><thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
         <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody></table>
     </div>
     <div class="card">
-      <h2>Job history</h2>
+      <h2 id="jobsHeading">Job history</h2>
       <table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
         <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
     </div>
@@ -828,6 +829,45 @@ function initPasswordForm(){
 // ---------- topic routes ----------
 const TOPIC_BY_PATH = {"/":"home", "/home":"home", "/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/account":"account"};
 const PATH_BY_TOPIC = {home:"/home", model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive", account:"/account"};
+const WORKFLOWS = {
+  model: {
+    kind: "train",
+    logHeading: "Training log",
+    artifactsHeading: "Result Model",
+    jobsHeading: "Training job history",
+    emptyArtifacts: "No generated training artifacts yet.",
+    emptyJobs: "No training jobs yet.",
+  },
+  deploy: {
+    kind: "quantize",
+    logHeading: "Quantization log",
+    artifactsHeading: "Result Quantized Model",
+    jobsHeading: "Quantization job history",
+    emptyArtifacts: "No generated deploy artifacts yet.",
+    emptyJobs: "No quantization jobs yet.",
+  },
+};
+function workflowForTopic(topic){ return WORKFLOWS[topic] || null; }
+function activeWorkflow(){
+  const topic = document.querySelector("#tabs button.active")?.dataset.topic;
+  return workflowForTopic(topic);
+}
+function artifactMatchesWorkflow(artifact, workflow){
+  const marker = `/runs/temporary/`;
+  return artifact.path.includes(marker) && artifact.path.includes(`/${workflow.kind}/`);
+}
+function updateSharedJobPanels(topic){
+  const workflow = workflowForTopic(topic);
+  const panels = $("sharedJobPanels");
+  if(!panels) return;
+  panels.style.display = workflow ? "block" : "none";
+  if(!workflow) return;
+  setText("jobLogHeading", workflow.logHeading);
+  setText("artifactsHeading", workflow.artifactsHeading);
+  setText("jobsHeading", workflow.jobsHeading);
+  refreshArtifacts();
+  refreshJobs();
+}
 function activateTopic(topic, push){
   topic = topic || "home";
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
@@ -841,8 +881,7 @@ function activateTopic(topic, push){
   if(topic==="deploy"){ loadFirmware("deploy_benchmark", BENCHFW); refreshReports(); loadBenchOptions(); }
   if(topic==="drive") loadDrive();
 
-  const panels = $("sharedJobPanels");
-  if(panels) panels.style.display = (topic === "home" || topic === "camerausb" || topic === "drive" || topic === "account") ? "none" : "block";
+  updateSharedJobPanels(topic);
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -987,8 +1026,8 @@ function selectedCaptureClass(){
 }
 async function refreshModelList(){ const r=await api("/api/recipes"); RECIPES=r.recipes; KERAS_MODELS=r.available_keras_models||[]; populateQuantModels(); populateModelPredictModels(); }
 function populateRecipes(){
-  const fw=$("framework").value, sel=$("recipe"); sel.innerHTML="";
-  RECIPES.filter(r=>r.framework===fw).forEach(r=>{ const o=document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o); });
+  const sel=$("recipe"); sel.innerHTML="";
+  RECIPES.filter(r=>r.framework==="tensorflow").forEach(r=>{ const o=document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o); });
   onRecipeChange();
 }
 function onRecipeChange(){
@@ -1009,10 +1048,10 @@ $("uploadBtn").onclick = async () => {
     setMsg($("uploadMsg"),`Imported ${r.total_images} images — ${detail}. Classes: ${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap();
   } catch(e){ setMsg($("uploadMsg"),"Upload failed: "+e.message,"bad"); } $("uploadBtn").disabled=false;
 };
-$("framework").onchange = populateRecipes; $("recipe").onchange = onRecipeChange;
+$("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
   await startJob("/api/train",{ recipe:$("recipe").value, epochs:$("epochs").value||undefined,
-    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked }, $("trainMsg"), "training");
+    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked }, $("trainMsg"), "training", $("trainBtn"));
 };
 $("refreshModelsBtn").onclick = async () => { setMsg($("quantMsg"),"Refreshing…","warn");
   try { await refreshModelList(); setMsg($("quantMsg"),`Found ${KERAS_MODELS.length} model(s).`,"ok"); } catch(e){ setMsg($("quantMsg"),"Refresh failed: "+e.message,"bad"); } };
@@ -1026,13 +1065,44 @@ $("uploadModelBtn").onclick = async () => {
 $("quantBtn").onclick = async () => {
   if(!$("quantModel").value){ setMsg($("quantMsg"),"No .keras model — train/upload first.","bad"); return; }
   await startJob("/api/quantize",{ model_name:$("quantModel").value, quant_format:$("quantFormat").value,
-    quant_granularity:$("quantGranularity").value, skip_source_validation:$("skipValidation").checked }, $("quantMsg"), "quantization");
+    quant_granularity:$("quantGranularity").value, skip_source_validation:$("skipValidation").checked }, $("quantMsg"), "quantization", $("quantBtn"));
 };
-async function startJob(path, body, msgEl, kind){
+let activeJobButton = null;
+let activeJobButtonLabel = "";
+let activeJobButtonJobId = "";
+function setJobButtonLoading(btn, kind){
+  if(!btn) return;
+  activeJobButton = btn;
+  activeJobButtonLabel = btn.dataset.idleText || btn.textContent;
+  btn.dataset.idleText = activeJobButtonLabel;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>${kind} running`;
+}
+function setJobButtonFinished(jobId, status){
+  if(!activeJobButton) return;
+  if(activeJobButtonJobId && jobId !== activeJobButtonJobId) return;
+  const btn = activeJobButton;
+  const idle = btn.dataset.idleText || activeJobButtonLabel || "Start";
+  btn.innerHTML = status==="succeeded" ? "Finished" : "Failed";
+  setTimeout(() => {
+    btn.textContent = idle;
+    btn.disabled = false;
+    if(activeJobButton === btn){ activeJobButton = null; activeJobButtonLabel = ""; activeJobButtonJobId = ""; }
+  }, 2500);
+}
+function resetJobButton(btn){
+  if(!btn) return;
+  btn.textContent = btn.dataset.idleText || activeJobButtonLabel || btn.textContent;
+  btn.disabled = false;
+  if(activeJobButton === btn){ activeJobButton = null; activeJobButtonLabel = ""; activeJobButtonJobId = ""; }
+}
+async function startJob(path, body, msgEl, kind, btn){
   setMsg(msgEl,"Starting "+kind+"…","warn");
+  setJobButtonLoading(btn, kind);
   try { const job=await api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    setMsg(msgEl,"Started job "+job.id,"ok"); attachLog(job.id); refreshJobs();
-  } catch(e){ setMsg(msgEl,"Could not start: "+e.message+" (a job may be running)","bad"); }
+    activeJobButtonJobId = job.id;
+    setMsg(msgEl,(job.status==="queued"?"Queued job ":"Started job ")+job.id,"ok"); attachLog(job.id); refreshJobs();
+  } catch(e){ resetJobButton(btn); setMsg(msgEl,"Could not start: "+e.message+" (a job may be running)","bad"); }
 }
 
 // ---------- job log / artifacts / jobs ----------
@@ -1042,14 +1112,18 @@ async function pollLog(){
   try { const r=await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
     if(r.data){ $("log").textContent+=r.data; $("log").scrollTop=$("log").scrollHeight; } logOffset=r.offset;
     $("jobPill").textContent=`${currentJobId} — ${r.status}`+(r.returncode!==null?` (rc=${r.returncode})`:"");
-    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; refreshArtifacts(); refreshJobs(); refreshReports(); }
+    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; setJobButtonFinished(currentJobId, r.status); refreshArtifacts(); refreshJobs(); refreshReports(); }
   } catch(e){}
 }
 async function refreshArtifacts(){
-  try { const r=await api("/api/artifacts"); const tb=$("artifactsBody"); tb.innerHTML="";
-    if(!r.artifacts.length) tb.innerHTML='<tr><td colspan="5" class="note">No artifacts yet.</td></tr>';
-    r.artifacts.forEach(a=>{ const tr=document.createElement("tr"); const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
-      tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`; tb.appendChild(tr); });
+  try { const r=await api("/api/artifacts"); const workflow=activeWorkflow(); const tb=$("artifactsBody");
+    if(workflow && tb){
+      const visible=r.artifacts.filter(a=>artifactMatchesWorkflow(a, workflow));
+      tb.innerHTML="";
+      if(!visible.length) tb.innerHTML=`<tr><td colspan="5" class="note">${workflow.emptyArtifacts}</td></tr>`;
+      visible.forEach(a=>{ const tr=document.createElement("tr"); const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
+        tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`; tb.appendChild(tr); });
+    }
     fillFlashArtifacts(r.artifacts); fillModelOnnx(r.artifacts);
   } catch(e){}
 }
@@ -1080,9 +1154,11 @@ function fillFlashArtifacts(list){
   if(list) fill(list); else api("/api/artifacts").then(r=>fill(r.artifacts)).catch(()=>{});
 }
 async function refreshJobs(){
-  try { const r=await api("/api/jobs"); const tb=$("jobsBody"); tb.innerHTML="";
-    if(!r.jobs.length){ tb.innerHTML='<tr><td colspan="5" class="note">No jobs yet.</td></tr>'; return; }
-    r.jobs.forEach(j=>{ const tr=document.createElement("tr"); tr.style.cursor="pointer"; tr.onclick=()=>attachLog(j.id);
+  const workflow=activeWorkflow();
+  if(!workflow) return;
+  try { const r=await api("/api/jobs"); const tb=$("jobsBody"); const visible=r.jobs.filter(j=>j.kind===workflow.kind); tb.innerHTML="";
+    if(!visible.length){ tb.innerHTML=`<tr><td colspan="5" class="note">${workflow.emptyJobs}</td></tr>`; return; }
+    visible.forEach(j=>{ const tr=document.createElement("tr"); tr.style.cursor="pointer"; tr.onclick=()=>attachLog(j.id);
       tr.innerHTML=`<td>${j.id}</td><td>${j.kind}</td><td><span class="status s-${j.status}">${j.status}</span></td><td>${j.returncode===null?"":j.returncode}</td><td>${j.created_at}</td>`; tb.appendChild(tr); });
   } catch(e){}
 }

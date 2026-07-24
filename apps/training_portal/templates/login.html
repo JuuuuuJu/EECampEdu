@@ -21,12 +21,10 @@
 <body>
   <form class="card" method="post" action="/login">
     <h1>EECampEdu Portal</h1>
-    <p>Choose your team account. Ask the instructor for the password.</p>
+    <p>This AI PC is assigned from its hostname. Ask the instructor for the password.</p>
     <input type="hidden" name="next" value="{{ next }}" />
     <label>Team</label>
-    <select name="team">
-      {% for team in teams %}<option value="{{ team }}">{{ team }}</option>{% endfor %}
-    </select>
+    <input value="{{ team_display }}" disabled />
     <label>Password</label>
     <input name="password" id="loginPassword" type="password" autocomplete="current-password" autofocus />
     <button type="submit">Login</button>
