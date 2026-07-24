@@ -23,7 +23,7 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define SERVO_DUTY_BITS LEDC_TIMER_16_BIT
 #define SERVO_MIN_US 500
 #define SERVO_MAX_US 2500
-#define STEP_DEG 5
+#define STEP_DEG 2
 
 #define BASE_INITIAL_DEG 90
 #define ARM_INITIAL_DEG 90
@@ -38,11 +38,15 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define CLAW_CLAMP_DEG 0
 #define CLAW_RELEASE_DEG 80
 #define HEIGHT_COEFFICIENT 0.25
+#define SERVO_UPDATE_MS 100
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
 static int pitch_angle = PITCH_INITIAL_DEG;
 static int claw_angle = CLAW_INITIAL_DEG;
+
+static int target_arm = ARM_INITIAL_DEG;
+static int target_base = BASE_INITIAL_DEG;
 
 static void print_state(const char *prefix, int gesture);
 
@@ -260,23 +264,54 @@ static void apply_gesture(int gesture) {
     }
 }
 
+// static void apply_action(int action) {
+//     switch (action) {
+//         case 0:
+//             arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+//             pitch_angle = pitch_angle_calculator(arm_angle);
+//             write_servo(LEDC_CHANNEL_1, arm_angle);
+//             write_servo(LEDC_CHANNEL_2, pitch_angle);
+//             break;
+//         case 1:
+//             arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+//             pitch_angle = pitch_angle_calculator(arm_angle);
+//             write_servo(LEDC_CHANNEL_1, arm_angle);
+//             write_servo(LEDC_CHANNEL_2, pitch_angle);
+//             break;
+//         case 2:
+//             base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
+//             write_servo(LEDC_CHANNEL_0, base_angle);
+//             break;
+//         case 3:
+//             base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
+//             write_servo(LEDC_CHANNEL_0, base_angle);
+//             break;
+//         case 4:
+//             claw_angle = clamp_int(CLAW_CLAMP_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
+//             write_servo(LEDC_CHANNEL_3, claw_angle);
+//             break;
+//         case 5:
+//             claw_angle = clamp_int(CLAW_RELEASE_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
+//             write_servo(LEDC_CHANNEL_3, claw_angle);
+//             break;
+//         case 6:
+//         default:
+//             break;
+//     }
+// }
 static void apply_action(int action) {
     switch (action) {
         case 0:
-            pitch_angle = clamp_int(pitch_angle + STEP_DEG, PITCH_MIN_DEG, PITCH_MAX_DEG);
-            write_servo(LEDC_CHANNEL_2, pitch_angle);
+            target_arm = clamp_int(target_arm + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
             break;
         case 1:
-            pitch_angle = clamp_int(pitch_angle - STEP_DEG, PITCH_MIN_DEG, PITCH_MAX_DEG);
-            write_servo(LEDC_CHANNEL_2, pitch_angle);
+            target_arm = clamp_int(target_arm - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
             break;
         case 2:
-            base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
-            write_servo(LEDC_CHANNEL_0, base_angle);
+            target_base = clamp_int(target_base - STEP_DEG, 0, 180);
             break;
         case 3:
-            base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
-            write_servo(LEDC_CHANNEL_0, base_angle);
+            target_base = clamp_int(target_base + STEP_DEG, 0, 180);
             break;
         case 4:
             claw_angle = clamp_int(CLAW_CLAMP_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
@@ -382,6 +417,36 @@ static void servo_output_init(void) {
              CLAW_SERVO_GPIO);
 }
 
+static int move_towards(int current, int target, int step) {
+    if (current < target) {
+        current += step;
+        if (current > target) current = target;
+    } else if (current > target) {
+        current -= step;
+        if (current < target) current = target;
+    }
+    return current;
+}
+
+static void motor_control_task(void *pvParameter) {
+    while (true) {
+        if (base_angle != target_base) {
+            base_angle = move_towards(base_angle, target_base, STEP_DEG);
+            write_servo(LEDC_CHANNEL_0, base_angle);
+        }
+
+        if (arm_angle != target_arm) {
+            arm_angle = move_towards(arm_angle, target_arm, STEP_DEG);
+            write_servo(LEDC_CHANNEL_1, arm_angle);
+            
+            pitch_angle = pitch_angle_calculator(arm_angle);
+            write_servo(LEDC_CHANNEL_2, pitch_angle);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(SERVO_UPDATE_MS));
+    }
+}
+
 void app_main(void) {
     setvbuf(stdin, NULL, _IONBF, 0);
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -389,7 +454,7 @@ void app_main(void) {
 
     printf("READY,CONTROL_BOARD_SERVO_OUTPUT\n");
     print_state("STATE", 4);
-
+    xTaskCreate(motor_control_task, "motor_control_task", 2048, NULL, 5, NULL);
     char line[128];
     while (true) {
         if (fgets(line, sizeof(line), stdin) != NULL) {
