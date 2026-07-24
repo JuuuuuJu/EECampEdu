@@ -1402,18 +1402,6 @@ def build_training_command(recipe_key, params):
 
 
 
-def build_model_preview_command(params=None):
-    """Build the allowlisted PC-webcam model preview command.
-
-    This launches the existing OpenCV ONNX demo as a background job. It is
-    intentionally not a generic command runner; only this known script is
-    reachable from the portal. It needs a local camera/display on the machine
-    running the server.
-    """
-    script = (REPO_ROOT / "model_finetune" / "pytorch" / "webcam_demo.py").resolve()
-    if not script.is_file():
-        raise ValueError("Model preview script missing: model_finetune/pytorch/webcam_demo.py")
-    return [sys.executable, str(script)]
 def build_quantize_command(params, owner_extra):
     script = (REPO_ROOT / QUANTIZE_SCRIPT).resolve()
     if not script.is_file():
@@ -2159,39 +2147,23 @@ def create_app():
             return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
         return jsonify(job.to_dict()), 202
 
-    @app.post("/api/model/preview")
-    def model_preview():
-        """Start the allowlisted webcam demo as a background job.
-
-        The demo is useful when the AI PC itself has a webcam/display. For the
-        OV2640 classroom camera, use the dedicated camera firmware/app path.
-        """
-        data = request.get_json(silent=True) or request.form.to_dict()
-        try:
-            cmd = build_model_preview_command(data)
-        except ValueError as exc:
-            abort(400, str(exc))
-        try:
-            job = jobs.start("model_preview", "model:webcam_demo", cmd)
-        except JobBusyError as exc:
-            return jsonify({"error": "busy", "active_job": exc.active_job.to_dict()}), 409
-        return jsonify(job.to_dict()), 202
-
     @app.post("/api/model/ov2640/capture")
     def model_ov2640_capture():
-        """Save the latest browser-received OV2640 frame into the training dataset."""
+        """Save a browser-local or OV2640 frame into the training dataset."""
         data = request.get_json(silent=True) or request.form.to_dict()
         try:
             class_name = _sanitize_class_name(data.get("class_name"))
             split = str(data.get("split") or "train").strip().lower()
             if split not in {"train", "validation"}:
                 raise ValueError("split must be 'train' or 'validation'.")
+            source = str(data.get("source") or "camera").strip().lower()
+            prefix = "webcam" if source == "local_webcam" else "ov2640"
             raw, _mime, _ext = _decode_image_payload(data.get("image_data"))
         except ValueError as exc:
             abort(400, str(exc))
         target_dir = DATASET_DIR / split / class_name
         target_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"ov2640_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+        filename = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
         target = target_dir / filename
         try:
             _save_processed_model_image_bytes(raw, target)
@@ -2212,7 +2184,7 @@ def create_app():
 
     @app.post("/api/model/keras/predict")
     def model_keras_predict():
-        """Run one captured OV2640 frame through a selected source .keras model on the AI PC."""
+        """Run one browser-provided camera frame through a source .keras model."""
         data = request.get_json(silent=True) or request.form.to_dict()
         try:
             model_id = str(data.get("model_name") or "").strip()
@@ -2385,6 +2357,54 @@ def create_app():
         if resolved.suffix.lower() not in ARTIFACT_EXTENSIONS:
             abort(403, "File type not downloadable.")
         return send_file(str(resolved), as_attachment=True, download_name=resolved.name)
+
+    @app.post("/api/artifacts/save-to-drive")
+    def save_artifact_to_drive():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        rel = str(data.get("path") or "").strip()
+        if not rel:
+            abort(400, "Missing artifact path.")
+        candidate = (REPO_ROOT / rel).resolve() if not os.path.isabs(rel) else Path(rel)
+        source = _resolve_within_roots(candidate)
+        if source is None or not source.is_file():
+            abort(404, "Artifact not found or outside allowed directories.")
+        if source.suffix.lower() not in ARTIFACT_EXTENSIONS:
+            abort(403, "File type cannot be saved to AI PC Drive.")
+
+        folder = str(data.get("folder") or "0_shared")
+        requested_name = str(data.get("name") or source.name).strip()
+        if (
+            not requested_name
+            or len(requested_name) > 128
+            or requested_name in {".", ".."}
+            or "/" in requested_name
+            or "\\" in requested_name
+        ):
+            abort(400, "Invalid file name.")
+        requested_suffix = Path(requested_name).suffix.lower()
+        if not requested_suffix:
+            requested_name += source.suffix
+        elif requested_suffix != source.suffix.lower():
+            abort(400, f"File name must keep the {source.suffix} extension.")
+        try:
+            destination = _drive_safe_file(folder, requested_name)
+        except ValueError as exc:
+            abort(400, str(exc))
+        if destination.exists():
+            abort(409, f"{destination.name} already exists in {folder}.")
+        try:
+            with source.open("rb") as source_fh, destination.open("xb") as destination_fh:
+                shutil.copyfileobj(source_fh, destination_fh)
+        except FileExistsError:
+            abort(409, f"{destination.name} already exists in {folder}.")
+        except FileNotFoundError:
+            abort(404, "Artifact expired before it could be saved.")
+        return jsonify({
+            "ok": True,
+            "folder": folder,
+            "name": destination.name,
+            "size": destination.stat().st_size,
+        })
 
     return app
 

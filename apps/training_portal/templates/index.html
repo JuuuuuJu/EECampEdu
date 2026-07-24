@@ -149,6 +149,14 @@
   .thumb .cap { font-size:12px; padding:5px 7px; color:var(--muted); word-break:break-all; }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
   .modal.open { display:flex; } .modal img { max-width:95vw; max-height:90vh; object-fit:contain; }
+  .save-modal { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(2,6,23,.72); }
+  .save-modal.open { display:flex; }
+  .save-dialog { width:min(460px, 94vw); padding:20px; border:1px solid var(--border); border-radius:8px; background:var(--panel); box-shadow:0 18px 50px rgba(0,0,0,.45); }
+  .save-dialog h3 { margin:0 0 12px; font-size:19px; }
+  .save-dialog .row { margin-top:14px; }
+  .save-dialog .row button { margin-top:0; }
+  .artifact-actions { display:flex; align-items:center; gap:10px; white-space:nowrap; }
+  .artifact-actions button { min-width:0; min-height:34px; margin:0; padding:6px 10px; }
   @media (max-width:760px){
     .topbar { gap:10px; padding:11px 12px; }
     .topbar .right { width:100%; justify-content:flex-start; flex-wrap:wrap; }
@@ -309,18 +317,19 @@
 
     <div class="card">
       <h2><span class="step">C.</span>Model class — capture → train → preview</h2>
-      <p class="note">Training runs on the AI PC. OV2640 preview uses the browser to borrow the ESP32-S3 serial port, the same idea as browser flashing.</p>
+      <p class="note">Training and prediction run on the AI PC. Preview frames can come from this browser's local webcam or from the ESP32-S3 OV2640 camera.</p>
       <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect the camera preview stream.</p>
       <div class="row compact">
-        <div><button id="modelPreviewBtn">Start AI-PC webcam preview</button></div>
+        <div><button id="localWebcamBtn">Start local webcam</button></div>
         <div><button class="secondary" id="cameraConnectBtn">Connect OV2640 preview</button></div>
-        <div><button class="secondary" id="cameraStopBtn" disabled>Stop preview</button></div>
       </div>
       <div class="msg" id="modelMsg"></div>
-      <p class="note">OV2640 preview opens the board through Web Serial, sends <code>f3</code> JPEG, <code>s1</code> QQVGA, then <code>d1</code> stream, and renders incoming <code>---START_IMAGE---</code> JPEG frames. Students do not run Python.</p>
+      <p class="note">Local webcam access stays in this browser. OV2640 preview opens the board through Web Serial and renders incoming JPEG frames. Students do not run Python.</p>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none"></video>
+        <canvas id="localWebcamCanvas" hidden></canvas>
         <img id="cameraPreview" alt="OV2640 preview" style="max-width:100%;max-height:420px;object-fit:contain;display:none" />
-        <div class="note" id="cameraPlaceholder">No OV2640 frame yet.</div>
+        <div class="note" id="cameraPlaceholder">No camera frame yet.</div>
       </div>
       <div class="row compact" style="margin-top:12px">
         <div><label>Gesture class</label><select id="captureClass"></select></div>
@@ -337,9 +346,9 @@
       <div class="msg" id="captureMsg"></div>
       <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
       <label style="margin-top:12px">Camera / model messages</label>
-      <pre class="log" id="cameraLog">Connect OV2640 preview after the model finetune camera firmware is flashed.</pre>
+      <pre class="log" id="cameraLog">Start the local webcam, or connect OV2640 after flashing the model finetune camera firmware.</pre>
       <label style="margin-top:12px">Model file (ONNX) for preview</label>
-      <div id="modelOnnx" class="note">Looking for a trained ONNX model…</div>
+      <div id="modelOnnx" class="note">Looking for a TensorFlow training export in ONNX format…</div>
     </div>
   </section>
 
@@ -721,6 +730,20 @@
   </div>
 </div>
 <div class="modal" id="imgModal"><img id="imgModalImg" alt="preview" /></div>
+<div class="save-modal" id="artifactSaveModal" role="dialog" aria-modal="true" aria-labelledby="artifactSaveTitle">
+  <div class="save-dialog">
+    <h3 id="artifactSaveTitle">Save to AI PC Drive</h3>
+    <label for="artifactSaveFolder">Folder</label>
+    <select id="artifactSaveFolder"></select>
+    <label for="artifactSaveName">File name</label>
+    <input type="text" id="artifactSaveName" maxlength="128" autocomplete="off" />
+    <div class="msg" id="artifactSaveMsg"></div>
+    <div class="row compact">
+      <div><button type="button" class="secondary" id="artifactSaveCancel">Cancel</button></div>
+      <div><button type="button" id="artifactSaveConfirm">Save</button></div>
+    </div>
+  </div>
+</div>
 
 <script>
 const ORIGIN = window.location.origin;
@@ -730,6 +753,8 @@ let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTime
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 let CLASS_LABELS = [];            // ACTIVE class names (model output order)
 let CLASS_ACTION_BY_NAME = {};
+let artifactSaveTarget = null;
+let artifactSaveTrigger = null;
 let DATASET_COUNTS = {};
 let AVAILABLE_CLASSES = [];        // all gesture classes present in the dataset
 let ACTIVE_CLASSES = [];           // the <= MAX_ACTIVE classes used for train/infer
@@ -740,6 +765,9 @@ let predictBusy = false;
 let lastPredictMs = 0;
 let fpsStart = 0, frameCount = 0, currentFps = 0;
 let previousFormat = "3";
+let localWebcamStream = null;
+let localWebcamTimer = null;
+let localWebcamFrameCount = 0;
 
 function $(id){ return document.getElementById(id); }
 const EGGS = {
@@ -870,6 +898,7 @@ function updateSharedJobPanels(topic){
 }
 function activateTopic(topic, push){
   topic = topic || "home";
+  if(topic!=="model" && localWebcamStream) stopLocalWebcam({message:false});
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   const pane=$("pane-"+topic); if(pane) pane.classList.add('active');
@@ -1115,14 +1144,90 @@ async function pollLog(){
     if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; setJobButtonFinished(currentJobId, r.status); refreshArtifacts(); refreshJobs(); refreshReports(); }
   } catch(e){}
 }
+function closeArtifactSaveDialog(){
+  const modal=$("artifactSaveModal");
+  if(modal) modal.classList.remove("open");
+  artifactSaveTarget=null;
+  artifactSaveTrigger=null;
+}
+async function openArtifactSaveDialog(artifact, trigger){
+  artifactSaveTarget=artifact;
+  artifactSaveTrigger=trigger;
+  const modal=$("artifactSaveModal"), folder=$("artifactSaveFolder"), name=$("artifactSaveName");
+  modal.classList.add("open");
+  name.value=artifact.name;
+  setMsg($("artifactSaveMsg"), "Loading AI PC Drive folders...", "warn");
+  try {
+    const r=await api("/api/drive/folders");
+    const folders=r.folders||["0_shared"];
+    const preferred=$("driveFolder")?.value || "0_shared";
+    folder.innerHTML="";
+    folders.forEach(value=>{
+      const option=document.createElement("option");
+      option.value=value;
+      option.textContent=value==="0_shared" ? "0_shared (team-wide)" : value;
+      folder.appendChild(option);
+    });
+    folder.value=folders.includes(preferred) ? preferred : "0_shared";
+    setMsg($("artifactSaveMsg"), "", "");
+    name.focus();
+    const suffix=artifact.name.lastIndexOf(".");
+    name.setSelectionRange(0, suffix>0 ? suffix : artifact.name.length);
+  } catch(e){
+    setMsg($("artifactSaveMsg"), "Could not load folders: "+e.message, "bad");
+  }
+}
+async function confirmArtifactSave(){
+  if(!artifactSaveTarget) return;
+  const button=$("artifactSaveConfirm");
+  button.disabled=true;
+  setMsg($("artifactSaveMsg"), "Saving...", "warn");
+  try {
+    const result=await api("/api/artifacts/save-to-drive", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        path:artifactSaveTarget.path,
+        folder:$("artifactSaveFolder").value,
+        name:$("artifactSaveName").value,
+      }),
+    });
+    setMsg($("artifactSaveMsg"), `Saved ${result.name} to ${result.folder}.`, "ok");
+    if(artifactSaveTrigger){
+      const trigger=artifactSaveTrigger;
+      const original=trigger.textContent;
+      trigger.textContent="Saved";
+      setTimeout(()=>{ trigger.textContent=original; }, 1800);
+    }
+    if(document.querySelector("#tabs button.active")?.dataset.topic==="drive") refreshDrive();
+    setTimeout(closeArtifactSaveDialog, 900);
+  } catch(e){
+    setMsg($("artifactSaveMsg"), "Save failed: "+e.message, "bad");
+  } finally {
+    button.disabled=false;
+  }
+}
 async function refreshArtifacts(){
   try { const r=await api("/api/artifacts"); const workflow=activeWorkflow(); const tb=$("artifactsBody");
     if(workflow && tb){
       const visible=r.artifacts.filter(a=>artifactMatchesWorkflow(a, workflow));
       tb.innerHTML="";
       if(!visible.length) tb.innerHTML=`<tr><td colspan="5" class="note">${workflow.emptyArtifacts}</td></tr>`;
-      visible.forEach(a=>{ const tr=document.createElement("tr"); const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
-        tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`; tb.appendChild(tr); });
+      visible.forEach(a=>{
+        const tr=document.createElement("tr");
+        const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
+        tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td>`;
+        const actions=document.createElement("td");
+        actions.className="artifact-actions";
+        const download=document.createElement("a");
+        download.href=dl; download.textContent="download";
+        const save=document.createElement("button");
+        save.type="button"; save.className="secondary"; save.textContent="Save to Drive";
+        save.onclick=()=>openArtifactSaveDialog(a, save);
+        actions.append(download, save);
+        tr.appendChild(actions);
+        tb.appendChild(tr);
+      });
     }
     fillFlashArtifacts(r.artifacts); fillModelOnnx(r.artifacts);
   } catch(e){}
@@ -1297,12 +1402,103 @@ $("benchRunBtn").onclick = async () => {
   }
   $("benchRunBtn").disabled = false;
 };
-$("modelPreviewBtn").onclick = async () => {
-  setMsg($("modelMsg"), "Starting AI-PC webcam preview job...", "warn");
-  try { const job = await api("/api/model/preview", {method:"POST"}); currentJobId = job.id; attachLog(job.id); refreshJobs(); setMsg($("modelMsg"), "Preview job started on the AI PC. Watch Live job log.", "ok"); }
-  catch(e){ setMsg($("modelMsg"), "Preview failed: "+e.message, "bad"); }
+function captureLocalWebcamFrame(){
+  const video=$("localWebcamPreview"), canvas=$("localWebcamCanvas");
+  if(!localWebcamStream || !video || !canvas || video.readyState < 2 || !video.videoWidth) return;
+  const width=Math.min(640, video.videoWidth);
+  const height=Math.max(1, Math.round(video.videoHeight * width / video.videoWidth));
+  canvas.width=width; canvas.height=height;
+  canvas.getContext("2d").drawImage(video, 0, 0, width, height);
+  const dataUrl=canvas.toDataURL("image/jpeg", 0.85);
+  const base64=dataUrl.split(",", 2)[1] || "";
+  latestCameraFrame={
+    source:"local_webcam",
+    base64,
+    meta:{format:3, width, height, size:Math.floor(base64.length * 0.75)},
+    mime:"image/jpeg",
+    bytes:Math.floor(base64.length * 0.75),
+    dataUrl,
+  };
+  if($("saveFrameBtn")) $("saveFrameBtn").disabled=false;
+  if($("predictFrameBtn")) $("predictFrameBtn").disabled=!($("predictModel") && $("predictModel").value);
+  localWebcamFrameCount++;
+  if(localWebcamFrameCount % 5 === 0) setMsg($("modelMsg"), `Local webcam ${width}x${height}`, "ok");
+  maybeLivePredict();
+}
+async function stopLocalWebcam(options={}){
+  const preserveFrame=options.preserveFrame !== false;
+  if(localWebcamTimer){ clearInterval(localWebcamTimer); localWebcamTimer=null; }
+  if(localWebcamStream){ localWebcamStream.getTracks().forEach(track=>track.stop()); localWebcamStream=null; }
+  const video=$("localWebcamPreview"), img=$("cameraPreview"), ph=$("cameraPlaceholder");
+  if(video){ video.srcObject=null; video.style.display="none"; }
+  if(!preserveFrame){
+    latestCameraFrame=null;
+    if(img){ img.removeAttribute("src"); img.style.display="none"; }
+    if(ph) ph.style.display="";
+    if($("saveFrameBtn")) $("saveFrameBtn").disabled=true;
+    if($("predictFrameBtn")) $("predictFrameBtn").disabled=true;
+  } else if(latestCameraFrame?.source==="local_webcam" && img){
+    img.src=latestCameraFrame.dataUrl; img.alt="Last local webcam frame"; img.style.display="block";
+    if(ph) ph.style.display="none";
+  } else if(img && !img.src){
+    img.style.display="none";
+    if(ph) ph.style.display="";
+  }
+  if($("localWebcamBtn")){
+    $("localWebcamBtn").disabled=false;
+    $("localWebcamBtn").textContent="Start local webcam";
+  }
+  if(options.message !== false) setMsg($("modelMsg"), "Local webcam stopped.", "ok");
+}
+async function startLocalWebcam(){
+  if(!navigator.mediaDevices?.getUserMedia){
+    setMsg($("modelMsg"), "Local webcam access is unavailable. Use Chrome or Edge over HTTPS.", "bad");
+    return;
+  }
+  await stopLocalWebcam({message:false, preserveFrame:false});
+  if(Serial.mode==="raw" && Serial.port) await releaseSerial("cameraLog");
+  try {
+    $("localWebcamBtn").disabled=true;
+    $("localWebcamBtn").textContent="Connecting...";
+    setMsg($("modelMsg"), "Requesting local webcam permission...", "warn");
+    const stream=await navigator.mediaDevices.getUserMedia({
+      video:{width:{ideal:640}, height:{ideal:480}, facingMode:"user"},
+      audio:false,
+    });
+    localWebcamStream=stream;
+    const video=$("localWebcamPreview"), img=$("cameraPreview"), ph=$("cameraPlaceholder");
+    if(img) img.style.display="none";
+    if(ph) ph.style.display="none";
+    video.srcObject=stream; video.style.display="block";
+    await video.play();
+    localWebcamFrameCount=0;
+    captureLocalWebcamFrame();
+    localWebcamTimer=setInterval(captureLocalWebcamFrame, 200);
+    $("localWebcamBtn").disabled=false;
+    $("localWebcamBtn").textContent="Stop local webcam";
+    setMsg($("modelMsg"), "Local webcam connected.", "ok");
+  } catch(e){
+    await stopLocalWebcam({message:false, preserveFrame:false});
+    const denied=e?.name==="NotAllowedError" ? "Camera permission was denied." :
+      e?.name==="NotFoundError" ? "No local webcam was found." :
+      "Local webcam failed: "+(e.message||e);
+    setMsg($("modelMsg"), denied, "bad");
+  }
+}
+$("localWebcamBtn").onclick = () => localWebcamStream ? stopLocalWebcam() : startLocalWebcam();
+window.addEventListener("beforeunload", () => {
+  if(localWebcamStream) localWebcamStream.getTracks().forEach(track=>track.stop());
+});
+$("cameraConnectBtn").onclick = async () => {
+  if(Serial.mode==="raw" && Serial.port && camUi===MODEL_CAMERA_UI){
+    try{ await serialSend("d0\n"); }catch(_){}
+    await releaseSerial("cameraLog");
+    setMsg($("modelMsg"), "OV2640 preview stopped.", "ok");
+    return;
+  }
+  await stopLocalWebcam({message:false, preserveFrame:false});
+  connectCameraPreview(MODEL_CAMERA_UI);
 };
-$("cameraConnectBtn").onclick = async () => connectCameraPreview(MODEL_CAMERA_UI);
 $("saveFrameBtn").onclick = saveCurrentFrameToDataset;
 $("clearCaptureClassBtn").onclick = () => {
   if($("captureClass")) $("captureClass").value = "";
@@ -1311,7 +1507,6 @@ $("clearCaptureClassBtn").onclick = () => {
 };
 $("predictFrameBtn").onclick = predictCurrentFrame;
 $("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn").disabled = !(latestCameraFrame && $("predictModel").value); };
-$("cameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
 $("fullCameraConnectBtn").onclick = async () => connectCameraPreview(FULL_CAMERA_UI);
 $("fullCameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
 function actionForControlBoard(action){
@@ -1464,7 +1659,7 @@ function copyText(text, msgEl, okMsg){
 function fillModelOnnx(list){
   const host=$("modelOnnx"); if(!host) return;
   const onnx=(list||[]).filter(a=>a.name.toLowerCase().endsWith(".onnx"));
-  if(!onnx.length){ host.innerHTML='No ONNX model yet. Train a PyTorch recipe (or export ONNX) first; then it appears here.'; return; }
+  if(!onnx.length){ host.innerHTML='No ONNX model yet. Enable Export ONNX for a supported TensorFlow recipe, then train first.'; return; }
   host.innerHTML = onnx.map(a=>{ const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
     return `<a href="${dl}">${a.name}</a> (${fmtSize(a.size)})`; }).join("<br>");
 }
@@ -1548,10 +1743,11 @@ let shutterLink = { synced:false, button2:0 };
 let fileAsm = { receiving:false, lines:[], size:0, path:"" };
 let photoListCapture = false, photoListBuf = [];
 let usbPhotoUrl = null;
-const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:"cameraStopBtn" };
+const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:null };
 const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
 const USBCAM_UI       = { msgId:"usbCamMsg", logId:"usbCamLog", imgId:"usbCamPreview", placeholderId:"usbCamPlaceholder", resultId:"usbCamResult", connectBtn:"usbCamConnectBtn", stopBtn:"usbCamStopBtn" };
 let camUi = MODEL_CAMERA_UI;
+let modelCameraConnecting = false;
 const ControlBoard = { port:null, reader:null, writer:null, reading:false, connected:false, lastAction:null };
 
 // Firmware flash targets (one class day / runtime mode per target).
@@ -1677,6 +1873,18 @@ async function serialWaitFor(re, timeoutMs){
 }
 
 // Clean disconnected UI state for all flash/control/camera flows.
+function syncModelCameraButton(){
+  const button=$("cameraConnectBtn");
+  if(!button) return;
+  if(modelCameraConnecting){
+    button.textContent="Connecting...";
+    button.disabled=true;
+    return;
+  }
+  const connected=Serial.mode==="raw" && !!Serial.port && camUi===MODEL_CAMERA_UI;
+  button.textContent=connected ? "Stop OV2640 preview" : "Connect OV2640 preview";
+  button.disabled=!webSerialSupport().ok;
+}
 function syncFlashButtons(){
   const sup = webSerialSupport().ok;
   const rawConnected = Serial.mode === "raw" && !!Serial.port;
@@ -1690,8 +1898,7 @@ function syncFlashButtons(){
   if($("usbFwFlashBtn")) $("usbFwFlashBtn").disabled = !(sup && USBFW.meta && USBFW.meta.available);
   ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
-  if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
-  if($("cameraStopBtn")) $("cameraStopBtn").disabled = !rawConnected;
+  syncModelCameraButton();
   if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !sup;
   if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !rawConnected;
   if($("fullControlConnectBtn")) $("fullControlConnectBtn").disabled = !sup;
@@ -1868,7 +2075,7 @@ function renderCameraFrame(base64Data, meta){
       dataUrl = canvas.toDataURL("image/jpeg");
     }
 
-    latestCameraFrame = { base64: clean, meta, mime, bytes: bytes.length, dataUrl: dataUrl.startsWith("data:") ? dataUrl : `data:image/jpeg;base64,${clean}` };
+    latestCameraFrame = { source:"ov2640", base64: clean, meta, mime, bytes: bytes.length, dataUrl: dataUrl.startsWith("data:") ? dataUrl : `data:image/jpeg;base64,${clean}` };
     img.src = dataUrl;
     img.style.display="block";
     if(ph) ph.style.display="none";
@@ -2055,6 +2262,7 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   if(Serial.acquiring){ setMsg($(camUi.msgId), "A serial connection is opening — please wait a moment.", "warn"); return; }
   $(camUi.logId).textContent="";
   setText(camUi.resultId, "Prediction: --");
+  if(ui===MODEL_CAMERA_UI){ modelCameraConnecting=true; syncModelCameraButton(); }
   setMsg($(camUi.msgId), "Opening serial chooser for OV2640 preview...", "warn");
   try {
     fpsStart = 0;
@@ -2066,8 +2274,13 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     encLink = { synced:false, pos:0, aecEnabled:true, aecValue:300 };
     shutterLink = { synced:false, button2:0 };
     await serialOpenRaw({ logId:camUi.logId, baudRate:115200, bufferSize:1048576, onLine:cameraOnLine });
-    if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
-    if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
+    if(ui===MODEL_CAMERA_UI){
+      modelCameraConnecting=false;
+      syncModelCameraButton();
+    } else {
+      if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
+      if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
+    }
     if(ui === USBCAM_UI){
       $("usbCamFormat").value = "3";
       $("usbCamSize").value = "1";
@@ -2087,6 +2300,7 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
     }
     setMsg($(camUi.msgId), ui === FULL_CAMERA_UI ? "Full firmware preview connected. Triggering inference every 3 seconds..." : "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
   } catch(e){
+    if(ui===MODEL_CAMERA_UI) modelCameraConnecting=false;
     const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "Port selection cancelled." : "OV2640 connect failed: "+(e.message||e);
     setMsg($(camUi.msgId), msg, "bad");
     await releaseSerial(camUi.logId);
@@ -2094,13 +2308,13 @@ async function connectCameraPreview(ui=MODEL_CAMERA_UI){
 }
 
 async function saveCurrentFrameToDataset(options={}){
-  if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "No camera frame yet.", "bad"); return; }
   const className = selectedCaptureClass();
   if(!className){ setMsg($("captureMsg"), "Choose or type a gesture class first.", "bad"); return; }
   const fromPhysical = options.source === "physical_shutter";
   setMsg($("captureMsg"), fromPhysical ? "Physical shutter pressed: saving current frame to dataset..." : "Saving captured frame...", "warn");
   try {
-    const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, image_data:latestCameraFrame.dataUrl})});
+    const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, source:latestCameraFrame.source||"camera", image_data:latestCameraFrame.dataUrl})});
     const prefix = fromPhysical ? "Physical shutter: " : "";
     setMsg($("captureMsg"), `${prefix}Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
     $("newClassName").value="";
@@ -2108,7 +2322,7 @@ async function saveCurrentFrameToDataset(options={}){
   } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
 }
 async function predictCurrentFrame(){
-  if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "No camera frame yet.", "bad"); return; }
   const model = $("predictModel")?.value || "";
   if(!model){ setMsg($("captureMsg"), "Choose a .keras model first.", "bad"); return; }
   if(predictBusy) return;
@@ -2323,6 +2537,17 @@ $("pwmSlider").oninput  = (e) => { setText("pwmVal", e.target.value); };
 $("pwmSlider").onchange = (e) => ctrlSend("PWM,"+e.target.value);
 
 $("refreshArtifacts").onclick = refreshArtifacts;
+$("artifactSaveCancel").onclick = closeArtifactSaveDialog;
+$("artifactSaveConfirm").onclick = confirmArtifactSave;
+$("artifactSaveName").onkeydown = event => {
+  if(event.key==="Enter"){ event.preventDefault(); confirmArtifactSave(); }
+};
+$("artifactSaveModal").onclick = event => {
+  if(event.target===$("artifactSaveModal")) closeArtifactSaveDialog();
+};
+document.addEventListener("keydown", event => {
+  if(event.key==="Escape" && $("artifactSaveModal").classList.contains("open")) closeArtifactSaveDialog();
+});
 
 // ---------- AI PC Drive ----------
 let DRIVE_FOLDERS = [];
