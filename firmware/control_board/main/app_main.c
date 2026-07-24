@@ -43,6 +43,12 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
 
+static int clamp_int(int value, int low, int high) {
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
+}
+
 static int pitch_angle_calculator(int arm){
     double arm_Rad = (double)arm * M_PI / 180.0;
     double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
@@ -66,11 +72,6 @@ typedef enum {
 static robot_state_t current_state = ROBOT_IDLE;
 static void print_state(const char *prefix, int gesture);
 
-static int clamp_int(int value, int low, int high) {
-    if (value < low) return low;
-    if (value > high) return high;
-    return value;
-}
 
 static uint32_t angle_to_duty(int angle) {
     const int pulse_us = SERVO_MIN_US + ((SERVO_MAX_US - SERVO_MIN_US) * angle) / 180;
