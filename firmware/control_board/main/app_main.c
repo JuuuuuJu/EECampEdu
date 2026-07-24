@@ -42,6 +42,13 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
+
+static int pitch_angle_calculator(int arm){
+    double arm_Rad = (double)arm * M_PI / 180.0;
+    double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
+    return clamp_int((int)calculated_pitch, PITCH_MIN_DEG, PITCH_MAX_DEG);
+}
+
 static int pitch_angle = pitch_angle_calculator(ARM_INITIAL_DEG);
 static int claw_angle = CLAW_INITIAL_DEG;
 
@@ -81,11 +88,7 @@ static void write_all_servos(void) {
     write_servo(LEDC_CHANNEL_3, claw_angle);
 }
 
-static int pitch_angle_calculator(int arm){
-    double arm_Rad = (double)arm * M_PI / 180.0;
-    double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
-    return clamp_int((int)calculated_pitch, PITCH_MIN_DEG, PITCH_MAX_DEG);
-}
+
 
 static void set_angles_constant_height(int base, int arm, int claw) {
     base_angle = clamp_int(base, 0, 180);
