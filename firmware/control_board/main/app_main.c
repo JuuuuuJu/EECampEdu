@@ -48,6 +48,7 @@ static int claw_angle = CLAW_INITIAL_DEG;
 static int target_arm = ARM_INITIAL_DEG;
 static int target_base = BASE_INITIAL_DEG;
 
+static robot_state_t current_state = ROBOT_IDLE;
 static void print_state(const char *prefix, int gesture);
 
 typedef enum {
@@ -412,7 +413,7 @@ static void handle_command(char *line) {
     if (strncmp(command_lower, "action,", 7) == 0) {
         const int action = parse_action(line);
         if (action >= 0 && action <= 6) {
-            apply_action(action);
+            apply_smart_action(action);
             print_action_state("OK_ACTION", action);
             return;
         }
