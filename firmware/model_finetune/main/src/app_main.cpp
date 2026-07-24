@@ -364,13 +364,15 @@ static void input_controls_monitor_task(void *pv) {
                previous.encoder_button_level,
                previous.encoder_clk_level,
                previous.encoder_dt_level);
+    const TickType_t startup_ignore_until = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
+    TickType_t last_shutter_tick = 0;
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
-        if (current.encoder_position != previous.encoder_position ||
-            current.encoder_button_presses != previous.encoder_button_presses ||
-            current.button2_presses != previous.button2_presses ||
-            current.button2_level != previous.button2_level) {
-            const bool shutter_pressed = current.button2_presses != previous.button2_presses;
+        const bool pos_changed = current.encoder_position != previous.encoder_position;
+        const bool shutter_pressed = current.button2_presses != previous.button2_presses;
+        const bool button2_changed = shutter_pressed || (current.button2_level != previous.button2_level);
+
+        if (pos_changed || button2_changed) {
             cdc_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d\n",
                        (long)current.encoder_position,
                        (long)(current.encoder_position - previous.encoder_position),
@@ -380,7 +382,13 @@ static void input_controls_monitor_task(void *pv) {
                        current.encoder_clk_level,
                        current.encoder_dt_level);
             if (shutter_pressed) {
-                cdc_printf("[ModelFinetune] Physical shutter pressed.\n");
+                const TickType_t now = xTaskGetTickCount();
+                if (now < startup_ignore_until || (last_shutter_tick != 0 && (now - last_shutter_tick) < pdMS_TO_TICKS(500))) {
+                    cdc_printf("WARN,physical_shutter_ignored,startup_or_bounce\n");
+                } else {
+                    last_shutter_tick = now;
+                    cdc_printf("[ModelFinetune] Physical shutter pressed.\n");
+                }
             }
             previous = current;
         }

@@ -61,34 +61,63 @@ static void send_frame_to_pc(const CameraFrame &frame) {
     usb_cdc_printf("---END_IMAGE---\n");
 }
 
+static void scan_flash_directory(const char *dir_path, int *count, size_t *total_size, int target_idx, char *out_target_path) {
+    DIR *dir = opendir(dir_path);
+    if (!dir) return;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dir_path, entry->d_name);
+        struct stat st;
+        if (stat(filepath, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                scan_flash_directory(filepath, count, total_size, target_idx, out_target_path);
+            } else {
+                if (out_target_path != NULL && target_idx >= 0 && *count == target_idx) {
+                    snprintf(out_target_path, 512, "%s", filepath);
+                }
+                if (out_target_path == NULL) {
+                    usb_cdc_printf("  - %s (%d bytes)\n", filepath, (int)st.st_size);
+                }
+                *total_size += st.st_size;
+                (*count)++;
+            }
+        }
+    }
+    closedir(dir);
+}
+
+static void remove_flash_directory(const char *dir_path) {
+    DIR *dir = opendir(dir_path);
+    if (!dir) return;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+        char filepath[512];
+        snprintf(filepath, sizeof(filepath), "%s/%s", dir_path, entry->d_name);
+        struct stat st;
+        if (stat(filepath, &st) == 0) {
+            if (S_ISDIR(st.st_mode)) {
+                remove_flash_directory(filepath);
+                rmdir(filepath);
+            } else {
+                unlink(filepath);
+            }
+        }
+    }
+    closedir(dir);
+}
+
 static void usb_list_files() {
     usb_cdc_printf("\n--- LOCAL FLASH FILE LIST ---\n");
     usb_msc_mount_to_app();
     vTaskDelay(pdMS_TO_TICKS(50)); // Wait for VFS mount
     
-    DIR *dir = opendir("/usb");
-    if (!dir) {
-        usb_cdc_printf("ERROR: Failed to open root directory.\n");
-        return;
-    }
-    
-    struct dirent *entry;
     int count = 0;
     size_t total_size = 0;
-    
-    while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type != DT_DIR) {
-            char filepath[512];
-            snprintf(filepath, sizeof(filepath), "/usb/%s", entry->d_name);
-            struct stat st;
-            if (stat(filepath, &st) == 0) {
-                usb_cdc_printf("  - /usb/%s (%d bytes)\n", entry->d_name, (int)st.st_size);
-                total_size += st.st_size;
-                count++;
-            }
-        }
-    }
-    closedir(dir);
+    scan_flash_directory("/usb", &count, &total_size, -1, NULL);
+
     usb_cdc_printf("Total: %d files, listed used space: %d bytes\n", count, (int)total_size);
     usb_cdc_printf("-----------------------------\n\n");
 }
@@ -446,21 +475,9 @@ static void usb_cdc_command_task(void *pvParameters) {
                         
                         if (is_index) {
                             int target_idx = atoi(input_buf);
-                            DIR *dir = opendir("/usb");
-                            if (dir) {
-                                struct dirent *entry;
-                                int count = 0;
-                                while ((entry = readdir(dir)) != NULL) {
-                                    if (entry->d_name[0] != '.') {
-                                        if (count == target_idx) {
-                                            snprintf(target_path, sizeof(target_path), "/usb/%s", entry->d_name);
-                                            break;
-                                        }
-                                        count++;
-                                    }
-                                }
-                                closedir(dir);
-                            }
+                            int count = 0;
+                            size_t total_size = 0;
+                            scan_flash_directory("/usb", &count, &total_size, target_idx, target_path);
                             if (strlen(target_path) == 0) {
                                 dual_printf("ERROR: Index %d not found.\n", target_idx);
                                 usb_msc_mount_to_pc();
@@ -504,18 +521,7 @@ static void usb_cdc_command_task(void *pvParameters) {
                     case 'K': {
                         usb_msc_mount_to_app();
                         vTaskDelay(pdMS_TO_TICKS(50));
-                        DIR *dir = opendir("/usb");
-                        if (dir) {
-                            struct dirent *entry;
-                            while ((entry = readdir(dir)) != NULL) {
-                                if (entry->d_name[0] != '.') {
-                                    char filepath[512];
-                                    snprintf(filepath, sizeof(filepath), "/usb/%s", entry->d_name);
-                                    unlink(filepath);
-                                }
-                            }
-                            closedir(dir);
-                        }
+                        remove_flash_directory("/usb");
                         dual_printf("[System] Cleared files in storage partition.\n");
                         usb_msc_mount_to_pc();
                         break;
@@ -543,13 +549,15 @@ static void input_controls_monitor_task(void *pvParameters) {
                 previous.encoder_button_level,
                 previous.encoder_clk_level,
                 previous.encoder_dt_level);
+    const TickType_t startup_ignore_until = xTaskGetTickCount() + pdMS_TO_TICKS(1000);
+    TickType_t last_shutter_tick = 0;
     while (true) {
         const InputControlsSnapshot current = input_controls_get_snapshot();
-        if (current.encoder_position != previous.encoder_position ||
-            current.encoder_button_presses != previous.encoder_button_presses ||
-            current.button2_presses != previous.button2_presses ||
-            current.button2_level != previous.button2_level) {
-            const bool shutter_pressed = current.button2_presses != previous.button2_presses;
+        const bool pos_changed = current.encoder_position != previous.encoder_position;
+        const bool shutter_pressed = current.button2_presses != previous.button2_presses;
+        const bool button2_changed = shutter_pressed || (current.button2_level != previous.button2_level);
+
+        if (pos_changed || button2_changed) {
             dual_printf("INPUT_CONTROL,encoder=%ld,delta=%ld,encoder_button=%lu,button2=%lu,button2_level=%d,clk=%d,dt=%d\n",
                         (long)current.encoder_position,
                         (long)(current.encoder_position - previous.encoder_position),
@@ -559,18 +567,24 @@ static void input_controls_monitor_task(void *pvParameters) {
                         current.encoder_clk_level,
                         current.encoder_dt_level);
             if (shutter_pressed) {
-                usb_cdc_msg_t msg = {};
-                char cmd[32];
-                snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
-                msg.buf_len = strlen(cmd);
-                memcpy(msg.buf, cmd, msg.buf_len);
-                msg.buf[msg.buf_len] = '\0';
-                msg.itf = 0;
-                QueueHandle_t q = usb_cdc_get_queue();
-                if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
-                    dual_printf("WARN,physical_shutter_queue_full\n");
+                const TickType_t now = xTaskGetTickCount();
+                if (now < startup_ignore_until || (last_shutter_tick != 0 && (now - last_shutter_tick) < pdMS_TO_TICKS(500))) {
+                    dual_printf("WARN,physical_shutter_ignored,startup_or_bounce\n");
                 } else {
-                    dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
+                    last_shutter_tick = now;
+                    usb_cdc_msg_t msg = {};
+                    char cmd[32];
+                    snprintf(cmd, sizeof(cmd), "cbtn%lu\n", (unsigned long)current.button2_presses);
+                    msg.buf_len = strlen(cmd);
+                    memcpy(msg.buf, cmd, msg.buf_len);
+                    msg.buf[msg.buf_len] = '\0';
+                    msg.itf = 0;
+                    QueueHandle_t q = usb_cdc_get_queue();
+                    if (!q || xQueueSend(q, &msg, 0) != pdTRUE) {
+                        dual_printf("WARN,physical_shutter_queue_full\n");
+                    } else {
+                        dual_printf("[System] Physical shutter queued: capture photo to ESP flash.\n");
+                    }
                 }
             }
             previous = current;

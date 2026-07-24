@@ -12,13 +12,24 @@
 static const char *TAG = "INPUT_CONTROLS";
 
 static portMUX_TYPE g_input_mux = portMUX_INITIALIZER_UNLOCKED;
-static volatile int g_prev_clk = 0;
+static volatile uint8_t g_prev_ab = 0;
+static volatile int8_t g_quad_accum = 0;
 static volatile int32_t g_encoder_position = 0;
 static volatile uint32_t g_encoder_button_presses = 0;
 static volatile uint32_t g_button2_presses = 0;
 static volatile TickType_t g_last_encoder_button_tick = 0;
 static volatile TickType_t g_last_button2_tick = 0;
+static volatile TickType_t g_last_detent_tick = 0;
 static bool g_initialized = false;
+
+// Quadrature transition table indexed by (prev_ab << 2) | cur_ab.
+// Valid single-bit transitions return +/-1; illegal/bounce transitions return 0.
+static const int8_t kQuadratureTable[16] = {
+    0,  +1, -1,  0,
+   -1,   0,  0, +1,
+   +1,   0,  0, -1,
+    0,  -1, +1,  0,
+};
 
 static bool is_valid_gpio(int gpio) {
     return gpio >= 0;
@@ -34,19 +45,41 @@ static bool debounce_from_isr(volatile TickType_t *last_tick) {
     return true;
 }
 
+static uint8_t read_ab_state() {
+    const int clk = gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_CLK_GPIO));
+    const int dt = gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_DT_GPIO));
+    return static_cast<uint8_t>(((clk & 1) << 1) | (dt & 1));
+}
+
 static void IRAM_ATTR encoder_rotate_isr(void *arg) {
     (void)arg;
-    const int cur_clk = gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_CLK_GPIO));
-    const int cur_dt = gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_DT_GPIO));
+    const uint8_t cur_ab = read_ab_state();
 
     portENTER_CRITICAL_ISR(&g_input_mux);
-    if (g_prev_clk != cur_clk) {
-        if (cur_clk == cur_dt) {
-            g_encoder_position = g_encoder_position - 1;
-        } else {
-            g_encoder_position = g_encoder_position + 1;
+    const uint8_t index = static_cast<uint8_t>((g_prev_ab << 2) | cur_ab);
+    const int8_t step = kQuadratureTable[index];
+    g_prev_ab = cur_ab;
+
+    if (step != 0) {
+        g_quad_accum = static_cast<int8_t>(g_quad_accum + step);
+
+        int8_t detent = 0;
+        if (g_quad_accum >= INPUT_ENCODER_STEPS_PER_DETENT) {
+            detent = 1;
+            g_quad_accum = 0;
+        } else if (g_quad_accum <= -INPUT_ENCODER_STEPS_PER_DETENT) {
+            detent = -1;
+            g_quad_accum = 0;
         }
-        g_prev_clk = cur_clk;
+
+        if (detent != 0) {
+            const TickType_t now = xTaskGetTickCountFromISR();
+            const TickType_t delay_ticks = pdMS_TO_TICKS(INPUT_ENCODER_DETENT_DEBOUNCE_MS);
+            if ((now - g_last_detent_tick) > delay_ticks) {
+                g_encoder_position = g_encoder_position + detent;
+                g_last_detent_tick = now;
+            }
+        }
     }
     portEXIT_CRITICAL_ISR(&g_input_mux);
 }
@@ -91,7 +124,7 @@ esp_err_t input_controls_init() {
     if (err != ESP_OK) {
         return err;
     }
-    err = configure_input_gpio(INPUT_ENCODER_DT_GPIO, GPIO_INTR_DISABLE);
+    err = configure_input_gpio(INPUT_ENCODER_DT_GPIO, GPIO_INTR_ANYEDGE);
     if (err != ESP_OK) {
         return err;
     }
@@ -109,9 +142,13 @@ esp_err_t input_controls_init() {
         return err;
     }
 
-    g_prev_clk = gpio_get_level(static_cast<gpio_num_t>(INPUT_ENCODER_CLK_GPIO));
+    g_prev_ab = read_ab_state();
 
     err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_ENCODER_CLK_GPIO), encoder_rotate_isr, nullptr);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = gpio_isr_handler_add(static_cast<gpio_num_t>(INPUT_ENCODER_DT_GPIO), encoder_rotate_isr, nullptr);
     if (err != ESP_OK) {
         return err;
     }

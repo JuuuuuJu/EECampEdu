@@ -1914,11 +1914,17 @@ function handleInputControl(line){
 }
 function handleShutterButton(line){
   const fields = parseInputControl(line);
+  if(fields.button2_level === "1") return;
   const count = Number(fields.button2);
   if(!Number.isFinite(count)) return;
-  if(!shutterLink.synced){ shutterLink.button2 = count; shutterLink.synced = true; return; }
-  if(count <= shutterLink.button2) return;
-  shutterLink.button2 = count;
+  if(!shutterLink.synced){
+    shutterLink.button2 = count;
+    shutterLink.synced = true;
+    if(count === 0) return;
+  } else {
+    if(count <= shutterLink.button2) return;
+    shutterLink.button2 = count;
+  }
   if(camUi === MODEL_CAMERA_UI){
     handleModelPhysicalShutter();
   } else if(camUi === FULL_CAMERA_UI){
@@ -1930,12 +1936,7 @@ function handleShutterButton(line){
 async function handleModelPhysicalShutter(){
   const className = selectedCaptureClass();
   if(!className){
-    try {
-      await serialSend(`wbtn${shutterLink.button2}\n`);
-      setMsg("captureMsg", "Physical shutter pressed: no class selected, so the frame was saved to ESP flash only. Send 'usb' / mount MSC once to view it on the PC.", "ok");
-    } catch(e){
-      setMsg("captureMsg", "Physical shutter pressed, but ESP flash save command failed: "+e.message, "bad");
-    }
+    setMsg("captureMsg", "Physical shutter pressed: no class selected, so the frame was saved to ESP flash only. Send 'usb' / mount MSC once to view it on the PC.", "ok");
     return;
   }
   if(!latestCameraFrame){
