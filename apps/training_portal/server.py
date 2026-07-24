@@ -63,6 +63,8 @@ RUNS_DIR = APP_DIR / "runs"                 # git-ignored runtime folder
 UPLOAD_DIR = RUNS_DIR / "uploads"
 JOBS_DIR = RUNS_DIR / "jobs"
 ML_RUNTIME_DIR = RUNS_DIR / "ml_runtime"
+USER_DATASETS_DIR = RUNS_DIR / "user_datasets"
+DATASET_EXPORTS_DIR = RUNS_DIR / "dataset_exports"
 # AI PC Drive: one AI PC serves one team, so this is that team's shared storage
 # (code / models / reports / build logs / general uploads — NOT the primary place
 # for captured photos, which live on the ESP32-S3). Login is still required.
@@ -70,7 +72,6 @@ DRIVE_ROOT = RUNS_DIR / "drive"
 DRIVE_FOLDERS = ["0_shared"] + [str(i) for i in range(1, 13)]  # 0_shared, 1 .. 12
 
 MODEL_FINETUNE_DIR = REPO_ROOT / "model_finetune"
-DATASET_DIR = MODEL_FINETUNE_DIR / "dataset"
 TF_MODELS_DIR = MODEL_FINETUNE_DIR / "models" / "tf"
 PYTORCH_MODELS_DIR = MODEL_FINETUNE_DIR / "models" / "pytorch"
 # ESP32-S3 main board firmware (ESP-IDF project). Firmware flashing reads the
@@ -117,7 +118,7 @@ ARTIFACT_REPORTS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "reports"
 
 # Fallback gesture class order when no dataset has been imported yet. Students may
 # upload their own six class folders with ARBITRARY names; the imported order is
-# recorded in model_finetune/dataset/class_mapping.json and used across the pipeline.
+# recorded in each browser session's dataset/class_mapping.json.
 CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 
 # Shared class-order / action-mapping helper (model_finetune/class_map.py).
@@ -127,7 +128,6 @@ try:
 except Exception:  # pragma: no cover - portal still runs without it
     class_map_lib = None
 
-CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 NUM_CLASSES = 6
 MODEL_PREDICT_CACHE = {}
 MODEL_INPUT_SIZE = (96, 96)
@@ -151,10 +151,17 @@ TEACHING_BLOCK_MAX_CHARS = 20000
 IDF_EXPORT_SH = os.environ.get("IDF_EXPORT_SH", "/opt/esp/idf/export.sh")
 
 
-def _current_class_order():
+def _class_map_path(dataset_dir):
+    return Path(dataset_dir) / "class_mapping.json"
+
+
+def _current_class_order(dataset_dir):
     """Saved class order if a dataset was imported, else the fallback default."""
     if class_map_lib is not None:
-        order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
+        order = class_map_lib.load_class_order(
+            default=None,
+            path=_class_map_path(dataset_dir),
+        )
         if order:
             return order
     return list(CLASS_NAMES)
@@ -205,11 +212,8 @@ QUANT_GRANULARITIES = ["per-channel", "per-tensor"]
 # job against an ESP32-S3 connected to THIS (AI PC) machine's serial port.
 BENCHMARK_SCRIPT = "firmware/pc/benchmark/run_benchmark_png.py"
 # Allowlisted benchmark dataset directories (only existing ones with images are offered).
-BENCHMARK_DATASET_DIRS = [
+BENCHMARK_SHARED_DATASET_DIRS = [
     ("test_tflite", REPO_ROOT / "firmware" / "pc" / "dataset" / "test" / "tflite"),
-    ("dataset_test", DATASET_DIR / "test"),
-    ("dataset_validation", DATASET_DIR / "validation"),
-    ("dataset_train", DATASET_DIR / "train"),
 ]
 SERIAL_PORT_RE = re.compile(r"^(/dev/[A-Za-z0-9._\-]+|COM[0-9]+)$")
 
@@ -531,6 +535,28 @@ def _artifact_owner_slug(owner_id):
     if not owner_id:
         raise ValueError("Temporary artifacts require an owner.")
     return hashlib.sha256(str(owner_id).encode("utf-8")).hexdigest()[:16]
+
+
+USER_DATASET_LOCKS = {}
+USER_DATASET_LOCKS_GUARD = threading.Lock()
+
+
+def _user_dataset_root(owner_id):
+    return USER_DATASETS_DIR / _artifact_owner_slug(owner_id)
+
+
+def _user_dataset_dir(owner_id):
+    return _user_dataset_root(owner_id) / "dataset"
+
+
+def _user_upload_dir(owner_id):
+    return _user_dataset_root(owner_id) / "uploads"
+
+
+def _user_dataset_lock(owner_id):
+    slug = _artifact_owner_slug(owner_id)
+    with USER_DATASET_LOCKS_GUARD:
+        return USER_DATASET_LOCKS.setdefault(slug, threading.RLock())
 
 
 def _artifact_token(job):
@@ -1016,8 +1042,8 @@ def _find_class_roots(base_dir):
     return candidates
 
 
-def _copy_class_images(class_root, target, class_names):
-    dest = DATASET_DIR / target
+def _copy_class_images(class_root, target, class_names, dataset_dir):
+    dest = Path(dataset_dir) / target
     dest.mkdir(parents=True, exist_ok=True)
     counts = {}
     for class_name in class_names:
@@ -1089,14 +1115,14 @@ def _save_processed_model_image_bytes(raw, dest_path, image_size=MODEL_INPUT_SIZ
         raise ValueError(f"Failed to preprocess captured frame: {exc}") from exc
 
 
-def _copy_class_images_autosplit(class_root, class_names, val_ratio):
+def _copy_class_images_autosplit(class_root, class_names, val_ratio, dataset_dir):
     """Copy six class folders into dataset/train + dataset/validation.
 
     Deterministic per-class split (~val_ratio to validation, evenly spaced, always
     leaving at least one training image). Used when the zip has no explicit split.
     """
-    train_dest = DATASET_DIR / "train"
-    val_dest = DATASET_DIR / "validation"
+    train_dest = Path(dataset_dir) / "train"
+    val_dest = Path(dataset_dir) / "validation"
     train_counts = {}
     val_counts = {}
     for class_name in class_names:
@@ -1128,13 +1154,14 @@ def _copy_class_images_autosplit(class_root, class_names, val_ratio):
     ]
 
 
-def _write_class_map(class_names):
+def _write_class_map(class_names, dataset_dir):
     """Persist the ACTIVE class order (<= NUM_CLASSES), preserving any prior
     per-class action for classes that remain active."""
     class_order = sorted(class_names)  # deterministic index assignment
+    class_map_path = _class_map_path(dataset_dir)
     actions = {}
     if class_map_lib is not None:
-        existing = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
+        existing = class_map_lib.load_class_map(default_order=None, path=class_map_path)
         if existing:
             # Carry over actions by NAME for any class still in the active set.
             actions = {
@@ -1142,7 +1169,7 @@ def _write_class_map(class_names):
                 for c in existing.get("classes", [])
                 if c.get("action") and c.get("name") in class_order
             }
-        return class_map_lib.save_class_map(class_order, actions=actions, path=CLASS_MAP_PATH)
+        return class_map_lib.save_class_map(class_order, actions=actions, path=class_map_path)
     # Fallback writer if the shared module is unavailable.
     payload = {
         "version": 1,
@@ -1150,12 +1177,12 @@ def _write_class_map(class_names):
         "num_classes": len(class_order),
         "classes": [{"index": i, "name": n, "action": None} for i, n in enumerate(class_order)],
     }
-    CLASS_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CLASS_MAP_PATH.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    class_map_path.parent.mkdir(parents=True, exist_ok=True)
+    class_map_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return payload
 
 
-def _import_dataset(zip_path):
+def _import_dataset(zip_path, dataset_dir, upload_dir):
     """Extract one uploaded dataset zip (no train/validation choice needed).
 
     Auto-detects the layout and requires exactly six class folders (arbitrary
@@ -1165,10 +1192,15 @@ def _import_dataset(zip_path):
       * Otherwise the six class folders are imported and AUTO-SPLIT into
         train/validation (VALIDATION_RATIO).
 
-    Writes model_finetune/dataset/class_mapping.json with the discovered class
-    order. Returns a summary dict.
+    Replaces only the owning browser session's active dataset after processing
+    succeeds. Returns a summary dict.
     """
-    staging = UPLOAD_DIR / f"stage-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    dataset_dir = Path(dataset_dir)
+    upload_dir = Path(upload_dir)
+    token = uuid.uuid4().hex
+    staging = upload_dir / f"stage-{token}"
+    imported_dataset = dataset_dir.parent / f".dataset-import-{token}"
+    previous_dataset = dataset_dir.parent / f".dataset-previous-{token}"
     staging.mkdir(parents=True, exist_ok=True)
     try:
         _extract_zip_safely(zip_path, staging)
@@ -1195,14 +1227,29 @@ def _import_dataset(zip_path):
                 raise ValueError("train and validation folders have different class names.")
             class_names = sorted(best_by_split["train"]["class_names"])
             imports = [
-                _copy_class_images(best_by_split["train"]["root"], "train", class_names),
-                _copy_class_images(best_by_split["validation"]["root"], "validation", class_names),
+                _copy_class_images(
+                    best_by_split["train"]["root"],
+                    "train",
+                    class_names,
+                    imported_dataset,
+                ),
+                _copy_class_images(
+                    best_by_split["validation"]["root"],
+                    "validation",
+                    class_names,
+                    imported_dataset,
+                ),
             ]
             mode = "provided-split"
         else:
             source = best_by_split.get("train") or candidates[0]
             class_names = sorted(source["class_names"])
-            imports = _copy_class_images_autosplit(source["root"], class_names, VALIDATION_RATIO)
+            imports = _copy_class_images_autosplit(
+                source["root"],
+                class_names,
+                VALIDATION_RATIO,
+                imported_dataset,
+            )
             mode = "auto-split"
 
         # The dataset may hold more than NUM_CLASSES classes; each training/
@@ -1210,14 +1257,14 @@ def _import_dataset(zip_path):
         # active set to the first NUM_CLASSES classes alphabetically; the student
         # can change it later on the Model finetune page.
         active_names = class_names[:NUM_CLASSES]
-        class_map_payload = _write_class_map(active_names)
+        class_map_payload = _write_class_map(active_names, imported_dataset)
 
         total = sum(item["total_images"] for item in imports)
         merged_counts = {class_name: 0 for class_name in class_names}
         for item in imports:
             for class_name, count in item["per_class"].items():
                 merged_counts[class_name] = merged_counts.get(class_name, 0) + count
-        return {
+        summary = {
             "mode": mode,
             "target": "+".join(item["target"] for item in imports),
             "total_images": total,
@@ -1228,8 +1275,23 @@ def _import_dataset(zip_path):
             "class_map": class_map_payload,
             "imports": imports,
         }
+        if dataset_dir.exists():
+            dataset_dir.replace(previous_dataset)
+        try:
+            imported_dataset.replace(dataset_dir)
+        except Exception:
+            if previous_dataset.exists() and not dataset_dir.exists():
+                previous_dataset.replace(dataset_dir)
+            raise
+        shutil.rmtree(previous_dataset, ignore_errors=True)
+        return summary
     finally:
         shutil.rmtree(staging, ignore_errors=True)
+        shutil.rmtree(imported_dataset, ignore_errors=True)
+        if previous_dataset.exists() and not dataset_dir.exists():
+            previous_dataset.replace(dataset_dir)
+        else:
+            shutil.rmtree(previous_dataset, ignore_errors=True)
 
 
 
@@ -1266,10 +1328,11 @@ def _decode_image_payload(image_data):
     return raw, mime, ext
 
 
-def _dataset_class_names():
+def _dataset_class_names(dataset_dir):
+    dataset_dir = Path(dataset_dir)
     names = set()
     for split in ("train", "validation"):
-        root = DATASET_DIR / split
+        root = dataset_dir / split
         if root.is_dir():
             for child in root.iterdir():
                 if child.is_dir() and _class_image_count(root, child.name) > 0:
@@ -1277,25 +1340,27 @@ def _dataset_class_names():
     # Do not use _current_class_order() here: it falls back to the default class
     # names when no dataset exists, which would block students from creating
     # their own six gesture names from scratch.
-    if class_map_lib is not None and CLASS_MAP_PATH.is_file():
-        saved = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
+    class_map_path = _class_map_path(dataset_dir)
+    if class_map_lib is not None and class_map_path.is_file():
+        saved = class_map_lib.load_class_order(default=None, path=class_map_path)
         if saved:
             names.update(saved)
     return sorted(names)
 
 
-def _dataset_counts():
-    names = _dataset_class_names()
+def _dataset_counts(dataset_dir):
+    dataset_dir = Path(dataset_dir)
+    names = _dataset_class_names(dataset_dir)
     return {
         name: {
-            "train": _class_image_count(DATASET_DIR / "train", name),
-            "validation": _class_image_count(DATASET_DIR / "validation", name),
+            "train": _class_image_count(dataset_dir / "train", name),
+            "validation": _class_image_count(dataset_dir / "validation", name),
         }
         for name in names
     }
 
 
-def _refresh_class_map_from_dataset(extra_class=None):
+def _refresh_class_map_from_dataset(dataset_dir, extra_class=None):
     """Keep the ACTIVE class set consistent after a capture.
 
     The dataset may hold many classes; the active set is capped at NUM_CLASSES.
@@ -1303,12 +1368,13 @@ def _refresh_class_map_from_dataset(extra_class=None):
     (< NUM_CLASSES); otherwise it is simply collected on disk and the student can
     activate it later by swapping the active set. Never raises on extra classes.
     """
-    available = _dataset_class_names()
+    available = _dataset_class_names(dataset_dir)
     if not available:
         return None
     order = []
+    class_map_path = _class_map_path(dataset_dir)
     if class_map_lib is not None:
-        order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH) or []
+        order = class_map_lib.load_class_order(default=None, path=class_map_path) or []
     # Drop any active class whose images are gone; keep the rest active.
     order = [c for c in order if c in available]
     if extra_class and extra_class in available and extra_class not in order and len(order) < NUM_CLASSES:
@@ -1318,7 +1384,40 @@ def _refresh_class_map_from_dataset(extra_class=None):
         order = sorted(available)[:NUM_CLASSES]
     if not order:
         return None
-    return _write_class_map(order)
+    return _write_class_map(order, dataset_dir)
+
+
+def _dataset_file_count(dataset_dir):
+    dataset_dir = Path(dataset_dir)
+    if not dataset_dir.is_dir():
+        return 0
+    return sum(
+        1
+        for path in dataset_dir.rglob("*")
+        if path.is_file() and not path.is_symlink()
+    )
+
+
+def _write_dataset_zip(dataset_dir, zip_path, mode="w"):
+    dataset_dir = Path(dataset_dir)
+    if _dataset_file_count(dataset_dir) == 0:
+        raise ValueError("The active dataset is empty.")
+    with zipfile.ZipFile(zip_path, mode=mode, compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(dataset_dir.rglob("*")):
+            if path.is_file() and not path.is_symlink():
+                archive.write(path, Path("dataset") / path.relative_to(dataset_dir))
+
+
+def _delete_export_later(path, delay=900):
+    def cleanup():
+        try:
+            Path(path).unlink()
+        except FileNotFoundError:
+            pass
+
+    timer = threading.Timer(delay, cleanup)
+    timer.daemon = True
+    timer.start()
 
 
 def _preprocess_image_bytes_for_keras(raw, image_size=MODEL_INPUT_SIZE):
@@ -1333,12 +1432,13 @@ def _preprocess_image_bytes_for_keras(raw, image_size=MODEL_INPUT_SIZE):
     return arr[None, ..., None]
 
 
-def _load_predict_model(model_id):
+def _load_predict_model(model_id, class_order):
     model_path = _resolve_keras_model_id(model_id)
     if model_path is None or not model_path.is_file():
         raise ValueError("Choose a valid .keras model first.")
     stat = model_path.stat()
-    key = (str(model_path.resolve()), stat.st_mtime_ns)
+    num_classes = len(class_order or CLASS_NAMES)
+    key = (str(model_path.resolve()), stat.st_mtime_ns, num_classes)
     cached = MODEL_PREDICT_CACHE.get(key)
     if cached is not None:
         return cached
@@ -1348,7 +1448,6 @@ def _load_predict_model(model_id):
         import tensorflow as tf
     except ImportError as exc:
         raise RuntimeError(f"TensorFlow/numpy missing on the AI PC environment: {exc}")
-    num_classes = len(_current_class_order() or CLASS_NAMES)
     try:
         model = tf.keras.models.load_model(model_path, compile=False)
     except Exception:
@@ -1369,17 +1468,21 @@ def _load_predict_model(model_id):
 # --------------------------------------------------------------------------- #
 # Command builders (allowlisted)
 # --------------------------------------------------------------------------- #
-def build_training_command(recipe_key, params):
+def build_training_command(recipe_key, params, dataset_dir):
     recipe = TRAINING_RECIPES.get(recipe_key)
     if recipe is None:
         raise ValueError(f"Unknown training recipe: {recipe_key}")
+    dataset_dir = Path(dataset_dir)
+    if len(_dataset_class_names(dataset_dir)) < 2:
+        raise ValueError("Import or capture at least two dataset classes before training.")
     runtime_root = ML_RUNTIME_DIR / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{recipe_key}-{time.time_ns()}"
     runtime_root.mkdir(parents=True, exist_ok=True)
     shutil.copytree(
         MODEL_FINETUNE_DIR,
         runtime_root / "model_finetune",
-        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "dataset"),
     )
+    shutil.copytree(dataset_dir, runtime_root / "model_finetune" / "dataset")
     script = (runtime_root / recipe["script"]).resolve()
     if not script.is_file():
         raise ValueError(f"Training script missing: {recipe['script']}")
@@ -1473,34 +1576,44 @@ def _list_serial_ports():
     ]
 
 
-def _benchmark_datasets():
+def _benchmark_dataset_entries(dataset_dir):
+    dataset_dir = Path(dataset_dir)
+    return [
+        *BENCHMARK_SHARED_DATASET_DIRS,
+        ("dataset_test", dataset_dir / "test"),
+        ("dataset_validation", dataset_dir / "validation"),
+        ("dataset_train", dataset_dir / "train"),
+    ]
+
+
+def _benchmark_datasets(dataset_dir):
     """Allowlisted benchmark dataset dirs that actually exist and contain images."""
     out = []
-    for key, d in BENCHMARK_DATASET_DIRS:
+    for key, d in _benchmark_dataset_entries(dataset_dir):
         if d.is_dir():
             count = sum(1 for p in d.rglob("*")
                         if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
             if count > 0:
-                out.append({"id": key, "path": str(d.resolve().relative_to(REPO_ROOT.resolve())), "count": count})
+                out.append({"id": key, "count": count})
     return out
 
 
-def _benchmark_dataset_dir(ds_id):
+def _benchmark_dataset_dir(ds_id, dataset_dir):
     """Resolve an allowlisted benchmark dataset id to its directory, or None."""
-    for key, d in BENCHMARK_DATASET_DIRS:
+    for key, d in _benchmark_dataset_entries(dataset_dir):
         if key == ds_id and d.is_dir():
             return d.resolve()
     return None
 
 
-def _benchmark_images(ds_id, limit=200):
+def _benchmark_images(ds_id, dataset_dir, limit=200):
     """List up to `limit` images under a benchmark dataset, round-robin across class
     folders so every class is represented. Each item: {name (rel), label, url}.
 
     Images are served to the BROWSER (which flashes/benchmarks the board on the
     student PC), so nothing here touches a serial port on the AI PC.
     """
-    root = _benchmark_dataset_dir(ds_id)
+    root = _benchmark_dataset_dir(ds_id, dataset_dir)
     if root is None:
         return []
     by_class = {}
@@ -1660,6 +1773,10 @@ def create_app():
             "owner_team": _logged_in_team(),
         }
 
+    def _request_dataset():
+        owner_id = _session_user_id()
+        return _user_dataset_dir(owner_id), _user_dataset_lock(owner_id)
+
     @app.before_request
     def _require_login():
         path = request.path
@@ -1795,7 +1912,7 @@ def create_app():
             "status": "ok",
             "team": _logged_in_team(),
             "repo_root": str(REPO_ROOT),
-            "class_names": _current_class_order(),
+            "class_names": list(CLASS_NAMES),
             "active_job": active.id if active else None,
             "max_parallel_ml_jobs": ML_MAX_PARALLEL_JOBS,
             "time": _now_iso(),
@@ -1968,21 +2085,27 @@ def create_app():
     @app.get("/api/class-map")
     def get_class_map():
         """Return the current class order + per-class output-action mapping."""
-        payload = None
-        if class_map_lib is not None:
-            payload = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
-        if payload is None:
-            payload = {
-                "version": 1,
-                "class_order": list(CLASS_NAMES),
-                "num_classes": len(CLASS_NAMES),
-                "classes": [{"index": i, "name": n, "action": None} for i, n in enumerate(CLASS_NAMES)],
-                "default": True,  # no dataset imported yet
-            }
-        payload["output_actions"] = OUTPUT_ACTIONS
-        payload["dataset_counts"] = _dataset_counts()
-        payload["available_classes"] = _dataset_class_names()
-        payload["max_active"] = NUM_CLASSES
+        dataset_dir, dataset_lock = _request_dataset()
+        with dataset_lock:
+            payload = None
+            class_map_path = _class_map_path(dataset_dir)
+            if class_map_lib is not None:
+                payload = class_map_lib.load_class_map(default_order=None, path=class_map_path)
+            if payload is None:
+                payload = {
+                    "version": 1,
+                    "class_order": list(CLASS_NAMES),
+                    "num_classes": len(CLASS_NAMES),
+                    "classes": [{"index": i, "name": n, "action": None} for i, n in enumerate(CLASS_NAMES)],
+                    "default": True,
+                }
+            file_count = _dataset_file_count(dataset_dir)
+            payload["output_actions"] = OUTPUT_ACTIONS
+            payload["dataset_counts"] = _dataset_counts(dataset_dir)
+            payload["available_classes"] = _dataset_class_names(dataset_dir)
+            payload["max_active"] = NUM_CLASSES
+            payload["has_dataset"] = file_count > 0
+            payload["dataset_file_count"] = file_count
         return jsonify(payload)
 
     @app.post("/api/class-map")
@@ -2001,54 +2124,58 @@ def create_app():
         if class_map_lib is None:
             abort(500, "class_map module unavailable on the server.")
         data = request.get_json(silent=True) or {}
-        available = set(_dataset_class_names())
-        active_in = data.get("active", None)
+        dataset_dir, dataset_lock = _request_dataset()
+        with dataset_lock:
+            class_map_path = _class_map_path(dataset_dir)
+            available = set(_dataset_class_names(dataset_dir))
+            active_in = data.get("active", None)
 
-        if active_in is not None:
-            if not isinstance(active_in, list) or not active_in:
-                abort(400, "'active' must be a non-empty list of class names.")
-            order = []
-            for raw_name in active_in:
-                name = str(raw_name)
-                if name not in available:
-                    abort(400, f"Class '{name}' is not in the dataset.")
-                if name not in order:
-                    order.append(name)
-            if len(order) > NUM_CLASSES:
-                abort(400, f"Select at most {NUM_CLASSES} active classes (got {len(order)}).")
-            order = sorted(order)   # deterministic class-index assignment
-        else:
-            order = class_map_lib.load_class_order(default=None, path=CLASS_MAP_PATH)
-            if not order:
-                abort(400, "No active classes yet — select up to six classes first.")
+            if active_in is not None:
+                if not isinstance(active_in, list) or not active_in:
+                    abort(400, "'active' must be a non-empty list of class names.")
+                order = []
+                for raw_name in active_in:
+                    name = str(raw_name)
+                    if name not in available:
+                        abort(400, f"Class '{name}' is not in the dataset.")
+                    if name not in order:
+                        order.append(name)
+                if len(order) > NUM_CLASSES:
+                    abort(400, f"Select at most {NUM_CLASSES} active classes (got {len(order)}).")
+                order = sorted(order)
+            else:
+                order = class_map_lib.load_class_order(default=None, path=class_map_path)
+                if not order:
+                    abort(400, "No active classes yet - select up to six classes first.")
 
-        active_set = set(order)
-        # Start from existing actions for classes that remain active, then apply edits.
-        actions = {}
-        existing = class_map_lib.load_class_map(default_order=None, path=CLASS_MAP_PATH)
-        if existing:
-            for c in existing.get("classes", []):
-                if c.get("action") and c.get("name") in active_set:
-                    actions[c["name"]] = c["action"]
-        actions_in = data.get("actions", {})
-        if actions_in:
-            if not isinstance(actions_in, dict):
-                abort(400, "'actions' must be an object of {class_name: action}.")
-            for name, action in actions_in.items():
-                if name not in active_set:
-                    abort(400, f"Class '{name}' is not in the active set.")
-                if action in (None, ""):
-                    actions.pop(name, None)
-                    continue
-                if action not in OUTPUT_ACTIONS:
-                    abort(400, f"action '{action}' must be one of {OUTPUT_ACTIONS}.")
-                actions[name] = action
+            active_set = set(order)
+            actions = {}
+            existing = class_map_lib.load_class_map(default_order=None, path=class_map_path)
+            if existing:
+                for item in existing.get("classes", []):
+                    if item.get("action") and item.get("name") in active_set:
+                        actions[item["name"]] = item["action"]
+            actions_in = data.get("actions", {})
+            if actions_in:
+                if not isinstance(actions_in, dict):
+                    abort(400, "'actions' must be an object of {class_name: action}.")
+                for name, action in actions_in.items():
+                    if name not in active_set:
+                        abort(400, f"Class '{name}' is not in the active set.")
+                    if action in (None, ""):
+                        actions.pop(name, None)
+                        continue
+                    if action not in OUTPUT_ACTIONS:
+                        abort(400, f"action '{action}' must be one of {OUTPUT_ACTIONS}.")
+                    actions[name] = action
 
-        payload = class_map_lib.save_class_map(order, actions=actions, path=CLASS_MAP_PATH)
-        payload["output_actions"] = OUTPUT_ACTIONS
-        payload["dataset_counts"] = _dataset_counts()
-        payload["available_classes"] = _dataset_class_names()
-        payload["max_active"] = NUM_CLASSES
+            payload = class_map_lib.save_class_map(order, actions=actions, path=class_map_path)
+            payload["output_actions"] = OUTPUT_ACTIONS
+            payload["dataset_counts"] = _dataset_counts(dataset_dir)
+            payload["available_classes"] = _dataset_class_names(dataset_dir)
+            payload["max_active"] = NUM_CLASSES
+            payload["has_dataset"] = True
+            payload["dataset_file_count"] = _dataset_file_count(dataset_dir)
         return jsonify({"ok": True, **payload})
 
     @app.get("/api/recipes")
@@ -2078,15 +2205,103 @@ def create_app():
             abort(400, "No file selected.")
         if not upload.filename.lower().endswith(".zip"):
             abort(400, "Dataset must be a .zip file.")
-        UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        upload_dir = _user_upload_dir(owner_id)
+        dataset_lock = _user_dataset_lock(owner_id)
+        upload_dir.mkdir(parents=True, exist_ok=True)
         safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", upload.filename)
-        saved_zip = UPLOAD_DIR / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{safe_name}"
+        saved_zip = upload_dir / f"{uuid.uuid4().hex}-{safe_name}"
         upload.save(str(saved_zip))
         try:
-            summary = _import_dataset(saved_zip)
+            with dataset_lock:
+                summary = _import_dataset(saved_zip, dataset_dir, upload_dir)
         except (ValueError, zipfile.BadZipFile) as exc:
             abort(400, str(exc))
-        return jsonify({"ok": True, "zip": saved_zip.name, **summary})
+        finally:
+            try:
+                saved_zip.unlink()
+            except FileNotFoundError:
+                pass
+        return jsonify({"ok": True, "zip": safe_name, **summary})
+
+    @app.get("/api/dataset/download")
+    def dataset_download():
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        dataset_lock = _user_dataset_lock(owner_id)
+        DATASET_EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+        export_path = DATASET_EXPORTS_DIR / f"{_artifact_owner_slug(owner_id)}-{uuid.uuid4().hex}.zip"
+        try:
+            with dataset_lock:
+                _write_dataset_zip(dataset_dir, export_path)
+        except ValueError as exc:
+            abort(404, str(exc))
+        response = send_file(
+            str(export_path),
+            as_attachment=True,
+            download_name="active-dataset.zip",
+        )
+        response.call_on_close(lambda: export_path.unlink(missing_ok=True))
+        _delete_export_later(export_path)
+        return response
+
+    @app.post("/api/dataset/save-to-drive")
+    def dataset_save_to_drive():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        folder = str(data.get("folder") or "0_shared")
+        requested_name = str(data.get("name") or "active-dataset.zip").strip()
+        if (
+            not requested_name
+            or len(requested_name) > 128
+            or requested_name in {".", ".."}
+            or "/" in requested_name
+            or "\\" in requested_name
+        ):
+            abort(400, "Invalid file name.")
+        suffix = Path(requested_name).suffix.lower()
+        if not suffix:
+            requested_name += ".zip"
+        elif suffix != ".zip":
+            abort(400, "Dataset file name must use the .zip extension.")
+        try:
+            destination = _drive_safe_file(folder, requested_name)
+        except ValueError as exc:
+            abort(400, str(exc))
+        if destination.exists():
+            abort(409, f"{destination.name} already exists in {folder}.")
+
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        dataset_lock = _user_dataset_lock(owner_id)
+        try:
+            with dataset_lock:
+                _write_dataset_zip(dataset_dir, destination, mode="x")
+        except FileExistsError:
+            abort(409, f"{destination.name} already exists in {folder}.")
+        except ValueError as exc:
+            abort(404, str(exc))
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+        return jsonify({
+            "ok": True,
+            "folder": folder,
+            "name": destination.name,
+            "size": destination.stat().st_size,
+        })
+
+    @app.post("/api/dataset/delete")
+    def dataset_delete():
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        upload_dir = _user_upload_dir(owner_id)
+        dataset_lock = _user_dataset_lock(owner_id)
+        with dataset_lock:
+            deleted_files = _dataset_file_count(dataset_dir)
+            shutil.rmtree(dataset_dir, ignore_errors=True)
+            shutil.rmtree(upload_dir, ignore_errors=True)
+        return jsonify({"ok": True, "deleted_files": deleted_files})
 
     @app.post("/api/models/upload")
     def model_upload():
@@ -2109,11 +2324,19 @@ def create_app():
     def train():
         data = request.get_json(silent=True) or request.form.to_dict()
         recipe_key = data.get("recipe")
+        owner_extra = _ml_job_owner_extra()
+        dataset_dir = _user_dataset_dir(owner_extra["owner_id"])
+        dataset_lock = _user_dataset_lock(owner_extra["owner_id"])
         try:
-            recipe, cmd, cwd, extra = build_training_command(recipe_key, data)
+            with dataset_lock:
+                recipe, cmd, cwd, extra = build_training_command(
+                    recipe_key,
+                    data,
+                    dataset_dir,
+                )
         except ValueError as exc:
             abort(400, str(exc))
-        extra.update(_ml_job_owner_extra())
+        extra.update(owner_extra)
         extra["artifact_token"] = uuid.uuid4().hex
         try:
             job = jobs.start("train", f"train:{recipe_key}", cmd, cwd=cwd, extra=extra)
@@ -2161,24 +2384,31 @@ def create_app():
             raw, _mime, _ext = _decode_image_payload(data.get("image_data"))
         except ValueError as exc:
             abort(400, str(exc))
-        target_dir = DATASET_DIR / split / class_name
-        target_dir.mkdir(parents=True, exist_ok=True)
+        dataset_dir, dataset_lock = _request_dataset()
         filename = f"{prefix}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
-        target = target_dir / filename
         try:
-            _save_processed_model_image_bytes(raw, target)
+            with dataset_lock:
+                target_dir = dataset_dir / split / class_name
+                target_dir.mkdir(parents=True, exist_ok=True)
+                target = target_dir / filename
+                _save_processed_model_image_bytes(raw, target)
+                class_map_payload = _refresh_class_map_from_dataset(
+                    dataset_dir,
+                    class_name,
+                )
+                counts = _dataset_counts(dataset_dir).get(class_name, {})
+                target_size = target.stat().st_size
         except ValueError as exc:
             abort(400, str(exc))
-        class_map_payload = _refresh_class_map_from_dataset(class_name)
         return jsonify({
             "ok": True,
             "class_name": class_name,
             "split": split,
             "filename": filename,
-            "path": str(target.relative_to(REPO_ROOT)),
-            "size_bytes": target.stat().st_size,
+            "path": str(Path("dataset") / split / class_name / filename),
+            "size_bytes": target_size,
             "preprocess": "grayscale_96x96_png",
-            "counts": _dataset_counts().get(class_name, {}),
+            "counts": counts,
             "class_map": class_map_payload,
         })
 
@@ -2190,11 +2420,13 @@ def create_app():
             model_id = str(data.get("model_name") or "").strip()
             raw, _mime, _ext = _decode_image_payload(data.get("image_data"))
             x = _preprocess_image_bytes_for_keras(raw)
-            model, np = _load_predict_model(model_id)
+            dataset_dir, dataset_lock = _request_dataset()
+            with dataset_lock:
+                order = _current_class_order(dataset_dir) or CLASS_NAMES
+            model, np = _load_predict_model(model_id, order)
             y = model.predict(x, verbose=0)
             scores = np.asarray(y)[0].astype(float).tolist()
             pred = int(np.argmax(scores)) if scores else -1
-            order = _current_class_order() or CLASS_NAMES
             class_name = order[pred] if 0 <= pred < len(order) else f"class_{pred}"
             raw_pred = pred
             raw_class_name = class_name
@@ -2243,7 +2475,10 @@ def create_app():
         board on the student PC — the AI PC only serves the dataset images, so no
         AI-PC serial port is involved.
         """
-        return jsonify({"datasets": _benchmark_datasets()})
+        dataset_dir, dataset_lock = _request_dataset()
+        with dataset_lock:
+            datasets = _benchmark_datasets(dataset_dir)
+        return jsonify({"datasets": datasets})
 
     @app.get("/api/benchmark/images")
     def benchmark_images():
@@ -2253,29 +2488,34 @@ def create_app():
             limit = max(1, min(2000, int(request.args.get("limit", "120"))))
         except ValueError:
             limit = 120
-        if _benchmark_dataset_dir(ds_id) is None:
-            abort(404, "Unknown or empty benchmark dataset.")
-        images = _benchmark_images(ds_id, limit=limit)
+        dataset_dir, dataset_lock = _request_dataset()
+        with dataset_lock:
+            if _benchmark_dataset_dir(ds_id, dataset_dir) is None:
+                abort(404, "Unknown or empty benchmark dataset.")
+            images = _benchmark_images(ds_id, dataset_dir, limit=limit)
         return jsonify({"dataset": ds_id, "count": len(images), "images": images})
 
     @app.get("/api/benchmark/image")
     def benchmark_image():
         """Serve one dataset image (allowlisted to the dataset dir, image types only)."""
         ds_id = request.args.get("dataset", "")
-        root = _benchmark_dataset_dir(ds_id)
-        if root is None:
-            abort(404, "Unknown benchmark dataset.")
+        dataset_dir, dataset_lock = _request_dataset()
         rel = request.args.get("name", "")
         if not rel:
             abort(400, "Missing 'name'.")
-        candidate = (root / rel).resolve()
-        try:
-            candidate.relative_to(root)
-        except ValueError:
-            abort(403, "Path outside dataset directory.")
-        if not candidate.is_file() or candidate.suffix.lower() not in IMAGE_EXTENSIONS:
-            abort(404, "Image not found.")
-        return send_file(str(candidate))
+        with dataset_lock:
+            root = _benchmark_dataset_dir(ds_id, dataset_dir)
+            if root is None:
+                abort(404, "Unknown benchmark dataset.")
+            candidate = (root / rel).resolve()
+            try:
+                candidate.relative_to(root)
+            except ValueError:
+                abort(403, "Path outside dataset directory.")
+            if not candidate.is_file() or candidate.suffix.lower() not in IMAGE_EXTENSIONS:
+                abort(404, "Image not found.")
+            data = candidate.read_bytes()
+        return send_file(io.BytesIO(data), download_name=candidate.name)
 
     @app.get("/api/jobs")
     def list_jobs():
