@@ -7,6 +7,7 @@
 
 #include "esp_camera.h"
 #include "esp_err.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_partition.h"
 #include "esp_system.h"
@@ -19,13 +20,23 @@
 #include "model_config.hpp"
 #include "photo_storage.hpp"
 #include "usb_composite.hpp"
+#include "usb_descriptors.h"
 
 static const char *TAG = "MODEL_FINETUNE_FW";
 
 static SemaphoreHandle_t g_camera_mutex = nullptr;
-static bool g_streaming = false;
-static int g_format_code = CAMERA_USB_DEFAULT_PIXEL_FORMAT;
-static int g_size_code = CAMERA_USB_DEFAULT_FRAME_SIZE;
+
+// Video is delivered to the PC as a real UVC (webcam) MJPEG stream, so the
+// camera runs in JPEG at the UVC-advertised size. The CDC channel carries only
+// control (commands, RESULT/INPUT lines). f/s commands can still retune the
+// sensor, but leaving JPEG + QVGA keeps the UVC stream valid.
+static int g_format_code = 3;  // JPEG (see model_config.hpp command mapping)
+static int g_size_code = 2;    // QVGA 320x240 -> matches UVC_FRAME_WIDTH/HEIGHT
+
+// JPEG staging buffer for the UVC endpoint. Must stay valid until the frame has
+// finished transmitting, so we only refill it while uvc_video_can_send() is true.
+static uint8_t *g_uvc_buf = nullptr;
+static size_t g_uvc_buf_cap = 0;
 
 static pixformat_t format_from_code(int code) {
     switch (code) {
@@ -49,16 +60,6 @@ static framesize_t size_from_code(int code) {
     }
 }
 
-static int protocol_format(const CameraFrame &frame) {
-    switch (frame.format) {
-        case CameraFrameFormat::kRgb565: return 0;
-        case CameraFrameFormat::kYuv422: return 1;
-        case CameraFrameFormat::kGrayscale: return 3;
-        case CameraFrameFormat::kJpeg: return 4;
-        default: return 4;
-    }
-}
-
 static void cdc_printf(const char *fmt, ...) {
     char buffer[256];
     va_list args;
@@ -68,13 +69,6 @@ static void cdc_printf(const char *fmt, ...) {
     printf("%s", buffer);
     fflush(stdout);
     usb_cdc_printf("%s", buffer);
-}
-
-static void send_frame_to_pc(const CameraFrame &frame) {
-    cdc_printf("---START_IMAGE:%d:%d:%d:%d---\n",
-               protocol_format(frame), frame.width, frame.height, (int)frame.size);
-    usb_cdc_write_base64(frame.data, frame.size);
-    cdc_printf("---END_IMAGE---\n");
 }
 
 static esp_err_t apply_camera_config_locked() {
@@ -89,8 +83,8 @@ static esp_err_t apply_camera_config_with_fallback_locked(const char *reason) {
     };
     const Candidate candidates[] = {
         {g_format_code, g_size_code, "requested"},
+        {3, 2, "fallback jpeg qvga"},
         {3, 1, "fallback jpeg qqvga"},
-        {0, 1, "fallback grayscale qqvga"},
         {0, 0, "fallback grayscale 96x96"},
     };
 
@@ -118,61 +112,47 @@ static esp_err_t apply_camera_config_with_fallback_locked(const char *reason) {
     return last_err;
 }
 
-static void set_streaming(bool enabled) {
-    esp_err_t err = ESP_OK;
-    if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
-        if (enabled) {
-            err = apply_camera_config_with_fallback_locked("stream start");
-        }
-        g_streaming = enabled && (err == ESP_OK);
-        xSemaphoreGive(g_camera_mutex);
-    } else {
-        err = ESP_ERR_TIMEOUT;
-    }
-    if (err == ESP_OK) {
-        cdc_printf("[ModelFinetune] Streaming: %s\n", enabled ? "ENABLED" : "DISABLED");
-    } else {
-        cdc_printf("ERROR,camera_stream_unavailable,%s\n", esp_err_to_name(err));
-    }
-}
-
-static void camera_stream_task(void *pv) {
+// UVC streaming task: whenever a host has the stream open and the previous
+// frame has drained, grab a JPEG frame, stage it, and hand it to the UVC EP.
+static void uvc_stream_task(void *pv) {
     (void)pv;
+    const TickType_t frame_period = pdMS_TO_TICKS(1000 / UVC_FRAME_RATE);
     while (true) {
-        bool do_stream = false;
+        if (!uvc_video_can_send()) {
+            vTaskDelay(pdMS_TO_TICKS(uvc_video_ready() ? 2 : 50));
+            continue;
+        }
+        size_t staged = 0;
         if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
-            do_stream = g_streaming;
-            if (do_stream) {
-                CameraFrame frame = {};
-                esp_err_t err = camera_capture_frame(&frame);
-                if (err == ESP_OK) {
-                    send_frame_to_pc(frame);
-                    camera_capture_release(&frame);
-                } else {
-                    cdc_printf("ERROR,camera_capture,%s\n", esp_err_to_name(err));
+            CameraFrame frame = {};
+            esp_err_t err = camera_capture_frame(&frame);
+            if (err == ESP_OK) {
+                if (frame.format == CameraFrameFormat::kJpeg &&
+                    frame.size > 0 && frame.size <= g_uvc_buf_cap) {
+                    memcpy(g_uvc_buf, frame.data, frame.size);
+                    staged = frame.size;
                 }
+                camera_capture_release(&frame);
+            } else {
+                cdc_printf("ERROR,camera_capture,%s\n", esp_err_to_name(err));
             }
             xSemaphoreGive(g_camera_mutex);
         }
-        vTaskDelay(pdMS_TO_TICKS(do_stream ? CAMERA_USB_CAPTURE_INTERVAL_MS : 50));
+        if (staged > 0) {
+            uvc_video_submit_frame(g_uvc_buf, staged);
+        }
+        vTaskDelay(frame_period);
     }
 }
 
-static esp_err_t capture_once(bool send_to_pc, bool save_to_storage) {
-    esp_err_t err = ESP_OK;
-    bool was_streaming = false;
+// Capture the current frame and save it to on-device flash storage (/usb).
+// With MSC removed, the app side always owns the filesystem, so this is a plain
+// write; students later pull photos over the portal (or a future CDC download).
+static esp_err_t capture_and_save() {
+    esp_err_t err;
     if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
         cdc_printf("ERROR,camera_busy\n");
         return ESP_ERR_TIMEOUT;
-    }
-    was_streaming = g_streaming;
-    g_streaming = false;
-    err = apply_camera_config_with_fallback_locked("capture");
-    if (err != ESP_OK) {
-        g_streaming = was_streaming;
-        xSemaphoreGive(g_camera_mutex);
-        cdc_printf("ERROR,camera_config_for_capture,%s\n", esp_err_to_name(err));
-        return err;
     }
     CameraFrame frame = {};
     err = camera_capture_frame(&frame);
@@ -184,53 +164,30 @@ static esp_err_t capture_once(bool send_to_pc, bool save_to_storage) {
         }
     }
     if (err == ESP_OK) {
-        if (send_to_pc) send_frame_to_pc(frame);
-        if (save_to_storage) {
-            err = usb_msc_mount_to_app();
-            if (err != ESP_OK) {
-                cdc_printf("ERROR,storage_mount_app,%s\n", esp_err_to_name(err));
-            } else {
-                cdc_printf("[ModelFinetune] Storage switched to ESP app side. Saving capture...\n");
-                vTaskDelay(pdMS_TO_TICKS(700));
-                err = photo_storage_write_capture(frame, "model_finetune");
-                if (err == ESP_OK) {
-                    cdc_printf("[ModelFinetune] Saved capture frame to ESP storage.\n");
-                } else {
-                    cdc_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(err), photo_storage_last_error());
-                }
-            }
-            cdc_printf("[ModelFinetune] Capture stored on ESP flash. Send 'usb' once when you want to view files on the PC.\n");
+        err = photo_storage_write_capture(frame, "model_finetune");
+        if (err == ESP_OK) {
+            cdc_printf("[ModelFinetune] Saved capture frame to ESP flash.\n");
+        } else {
+            cdc_printf("ERROR,photo_storage_write,%s,%s\n", esp_err_to_name(err), photo_storage_last_error());
         }
         camera_capture_release(&frame);
     } else {
         cdc_printf("ERROR,camera_capture,%s\n", esp_err_to_name(err));
     }
-    g_streaming = was_streaming;
     xSemaphoreGive(g_camera_mutex);
     return err;
 }
 
 static void reconfigure_camera() {
-    bool was_streaming = false;
     if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
         cdc_printf("ERROR,camera_busy\n");
         return;
     }
-    was_streaming = g_streaming;
-    g_streaming = false;
     esp_err_t err = apply_camera_config_with_fallback_locked("manual config");
-    g_streaming = was_streaming && (err == ESP_OK);
     xSemaphoreGive(g_camera_mutex);
     if (err != ESP_OK) {
         cdc_printf("ERROR,camera_config,%s\n", esp_err_to_name(err));
     }
-}
-
-static void list_storage_files() {
-    usb_msc_mount_to_app();
-    vTaskDelay(pdMS_TO_TICKS(100));
-    cdc_printf("[ModelFinetune] Storage list is available through MSC on the PC.\n");
-    usb_msc_mount_to_pc();
 }
 
 static void handle_command(char *cmd) {
@@ -242,7 +199,7 @@ static void handle_command(char *cmd) {
     if (!*cmd) return;
 
     if (strcasecmp(cmd, "h") == 0 || strcasecmp(cmd, "help") == 0) {
-        cdc_printf("Commands: d1/d0 stream, c capture-to-PC, w save numbered photo, usb expose MSC, input status, f0..f3 format, s0..s5 size, reboot\n");
+        cdc_printf("Commands: c/w capture-to-flash, input status, f0..f3 format, s0..s5 size, format erase-storage, reboot. Live video is the UVC webcam.\n");
         return;
     }
     if (strcasecmp(cmd, "input") == 0) {
@@ -263,15 +220,7 @@ static void handle_command(char *cmd) {
         esp_restart();
         return;
     }
-    if (strcasecmp(cmd, "usb") == 0) {
-        set_streaming(false);
-        usb_msc_mount_to_pc();
-        cdc_printf("[ModelFinetune] USB MSC exposed to PC.\n");
-        return;
-    }
     if (strcasecmp(cmd, "format") == 0) {
-        set_streaming(false);
-        usb_msc_mount_to_app();
         const esp_partition_t *part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_FAT, NULL);
         if (part && esp_partition_erase_range(part, 0, part->size) == ESP_OK) {
             cdc_printf("[ModelFinetune] Storage erased. Rebooting to rebuild FAT.\n");
@@ -285,10 +234,8 @@ static void handle_command(char *cmd) {
     char action = (char)tolower((unsigned char)cmd[0]);
     int value = atoi(cmd + 1);
     switch (action) {
-        case 'd': set_streaming(value != 0); break;
-        case 'c': capture_once(true, false); break;
-        case 'w': capture_once(false, true); break;
-        case 'l': list_storage_files(); break;
+        case 'c': capture_and_save(); break;
+        case 'w': capture_and_save(); break;
         case 'e': {
             sensor_t *sensor = esp_camera_sensor_get();
             if (sensor) {
@@ -314,6 +261,10 @@ static void handle_command(char *cmd) {
             if (value < 0 || value > 5) { cdc_printf("ERROR,bad_size\n"); break; }
             g_size_code = value;
             reconfigure_camera();
+            break;
+        case 'd':
+            // Legacy stream toggle: video is now the host-controlled UVC stream.
+            cdc_printf("[ModelFinetune] Live video is the UVC webcam; open it from the app.\n");
             break;
         default:
             cdc_printf("ERROR,unknown_command,%s\n", cmd);
@@ -389,14 +340,28 @@ static void input_controls_monitor_task(void *pv) {
 }
 
 extern "C" void app_main(void) {
-    ESP_LOGI(TAG, "Runtime: model finetune camera-only firmware.");
+    ESP_LOGI(TAG, "Runtime: model finetune camera firmware (UVC video + CDC control).");
     g_camera_mutex = xSemaphoreCreateMutex();
     if (!g_camera_mutex) {
         ESP_LOGE(TAG, "Failed to create camera mutex.");
         return;
     }
+
+    // Staging buffer for one JPEG frame handed to the UVC endpoint. QVGA MJPEG
+    // frames are a few KB; size the buffer to the descriptor's max frame size.
+    g_uvc_buf_cap = UVC_FRAME_WIDTH * UVC_FRAME_HEIGHT * 2;
+    g_uvc_buf = (uint8_t *)heap_caps_malloc(g_uvc_buf_cap, MALLOC_CAP_SPIRAM);
+    if (!g_uvc_buf) {
+        g_uvc_buf = (uint8_t *)heap_caps_malloc(g_uvc_buf_cap, MALLOC_CAP_DEFAULT);
+    }
+    if (!g_uvc_buf) {
+        ESP_LOGE(TAG, "Failed to allocate UVC JPEG buffer (%u bytes).", (unsigned)g_uvc_buf_cap);
+        return;
+    }
+
     usb_composite_init();
     photo_storage_init();
+
     esp_err_t err = ESP_OK;
     if (xSemaphoreTake(g_camera_mutex, pdMS_TO_TICKS(2000)) == pdTRUE) {
         err = apply_camera_config_with_fallback_locked("boot");
@@ -407,6 +372,7 @@ extern "C" void app_main(void) {
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "OV2640 init failed after fallback: %s", esp_err_to_name(err));
     }
+
     if (ENABLE_INPUT_CONTROLS) {
         esp_err_t in_err = input_controls_init();
         if (in_err != ESP_OK) {
@@ -415,7 +381,9 @@ extern "C" void app_main(void) {
             xTaskCreatePinnedToCore(input_controls_monitor_task, "input_monitor", 4096, NULL, 3, NULL, 0);
         }
     }
-    cdc_printf("READY,MODEL_FINETUNE_CAMERA,f%d,s%d\n", g_format_code, g_size_code);
-    xTaskCreatePinnedToCore(camera_stream_task, "camera_stream_task", 8192, NULL, 4, NULL, 1);
+
+    cdc_printf("READY,MODEL_FINETUNE_CAMERA,f%d,s%d,uvc=%dx%d\n",
+               g_format_code, g_size_code, UVC_FRAME_WIDTH, UVC_FRAME_HEIGHT);
+    xTaskCreatePinnedToCore(uvc_stream_task, "uvc_stream_task", 8192, NULL, 4, NULL, 1);
     xTaskCreatePinnedToCore(usb_command_task, "usb_command_task", 8192, NULL, 5, NULL, 0);
 }

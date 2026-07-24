@@ -115,6 +115,7 @@ static esp_err_t next_capture_paths(const char *prefix, const char *ext, char *r
         if (access(bmp_path, F_OK) == 0) continue;
         return ESP_OK;
     }
+    set_last_error("no available capture file name in %s (all 99999 slots used)", folder);
     return ESP_ERR_NO_MEM;
 }
 esp_err_t photo_storage_init() {
@@ -237,7 +238,8 @@ esp_err_t photo_storage_write_capture(const CameraFrame &frame, const char *pref
     char bmp_path[128];
     esp_err_t err = next_capture_paths(prefix, ext, raw_path, sizeof(raw_path), bmp_path, sizeof(bmp_path));
     if (err != ESP_OK) {
-        set_last_error("no available capture file name");
+        // next_capture_paths()/ensure_directory() already recorded the specific
+        // cause (mkdir failure or no free 8.3 slot) via set_last_error().
         return err;
     }
 

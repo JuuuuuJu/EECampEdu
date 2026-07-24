@@ -227,11 +227,11 @@ static void led_delay_ms(int ms) {
 // >>> TEACHING_BLOCK_START <<<
 static void student_pattern(void) {
     led_set_rgb(255, 0, 0);   // red
-    led_delay_ms(300);
+    led_delay_ms(1000);
     led_set_rgb(0, 255, 0);   // green
-    led_delay_ms(300);
+    led_delay_ms(1000);
     led_set_rgb(0, 0, 255);   // blue
-    led_delay_ms(300);
+    led_delay_ms(1000);
     led_set_rgb(0, 0, 0);     // off
 }
 // >>> TEACHING_BLOCK_END <<<
