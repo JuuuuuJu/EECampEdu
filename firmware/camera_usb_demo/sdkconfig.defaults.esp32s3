@@ -45,3 +45,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 CONFIG_PARTITION_TABLE_OFFSET=0x8000
 CONFIG_PARTITION_TABLE_MD5=y
+
+# Long filenames: capture writes to "/usb/camera_usb" (>8.3), which needs
+# LFN support or mkdir() silently fails.
+CONFIG_FATFS_LFN_HEAP=y
