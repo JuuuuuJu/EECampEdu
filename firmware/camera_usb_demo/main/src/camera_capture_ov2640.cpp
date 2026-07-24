@@ -33,7 +33,7 @@ static constexpr int PCLK_GPIO_NUM = 13;
 static constexpr int kXclkFrequencyHz = 10000000;
 static constexpr int kJpegQuality = 12;
 
-int g_hmirror = 0;
+int g_hmirror = 1;
 int g_vflip = 0;
 
 static bool g_camera_initialized = false;
