@@ -99,8 +99,6 @@
     min-height:46px; min-width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; }
   button.secondary { background:var(--panel2); color:var(--text); }
   button:disabled { opacity:.48; cursor:not-allowed; }
-  .spinner { display:inline-block; width:15px; height:15px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; margin-right:8px; animation:spin .8s linear infinite; }
-  @keyframes spin { to { transform:rotate(360deg); } }
   pre.log { background:var(--logbg); color:var(--logtext); padding:13px; border-radius:7px; height:220px;
             overflow:auto; font:13px/1.55 Consolas, 'Courier New', monospace; white-space:pre-wrap; word-break:break-word; margin:0; }
   pre.log.tall { height:300px; }
@@ -110,7 +108,6 @@
   .status { display:inline-block; padding:3px 9px; border-radius:99px; font-size:12px; font-weight:700; }
   .s-running { background:#0c4a6e; color:#7dd3fc; } .s-succeeded { background:#14532d; color:#86efac; }
   .s-failed { background:#7f1d1d; color:#fca5a5; } .s-starting { background:#3f3f46; color:#e4e4e7; }
-  .s-queued { background:#422006; color:#fde68a; }
   .msg { font-size:14px; margin-top:9px; min-height:18px; }
   .msg.ok { color:var(--ok); } .msg.bad { color:var(--bad); } .msg.warn { color:var(--warn); }
   .note { font-size:13px; color:var(--muted); margin-top:7px; }
@@ -149,14 +146,6 @@
   .thumb .cap { font-size:12px; padding:5px 7px; color:var(--muted); word-break:break-all; }
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.82); display:none; align-items:center; justify-content:center; z-index:50; padding:20px; }
   .modal.open { display:flex; } .modal img { max-width:95vw; max-height:90vh; object-fit:contain; }
-  .save-modal { position:fixed; inset:0; z-index:70; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(2,6,23,.72); }
-  .save-modal.open { display:flex; }
-  .save-dialog { width:min(460px, 94vw); padding:20px; border:1px solid var(--border); border-radius:8px; background:var(--panel); box-shadow:0 18px 50px rgba(0,0,0,.45); }
-  .save-dialog h3 { margin:0 0 12px; font-size:19px; }
-  .save-dialog .row { margin-top:14px; }
-  .save-dialog .row button { margin-top:0; }
-  .artifact-actions { display:flex; align-items:center; gap:10px; white-space:nowrap; }
-  .artifact-actions button { min-width:0; min-height:34px; margin:0; padding:6px 10px; }
   @media (max-width:760px){
     .topbar { gap:10px; padding:11px 12px; }
     .topbar .right { width:100%; justify-content:flex-start; flex-wrap:wrap; }
@@ -232,7 +221,6 @@
     <div class="card">
       <h2><span class="step">2.</span>Flash output demo firmware</h2>
       <p class="note">Enabled after a successful build. Flashes your compiled <code>firmware/teaching_output_demo</code>.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
       <div id="outFwImages" class="imglist"><div class="note">Build first to enable flashing.</div></div>
       <div class="row">
         <div><button id="outFwFlashBtn" disabled>Connect &amp; flash output firmware</button></div>
@@ -246,7 +234,6 @@
     <div class="card">
       <h2><span class="step">3.</span>Control the LED</h2>
       <p class="note">After flashing, connect to the board's serial port to drive the LED live.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect for live control.</p>
       <button class="secondary" id="ctrlConnectBtn">Connect for control</button>
       <div class="row" style="margin-top:10px">
         <div><button id="ledPatternBtn" disabled>Run pattern</button></div>
@@ -274,7 +261,6 @@
     <div class="card">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
       <p class="note">Use this for the model class OV2640 preview/capture workflow. It is built from <code>firmware/model_finetune</code>, a camera-only firmware separate from full integration and deploy benchmark firmware.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
       <div id="modelFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="modelFwFlashBtn" disabled>Connect &amp; flash model firmware</button></div>
@@ -282,7 +268,7 @@
       </div>
       <div class="msg" id="modelFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="modelFwLog">Flash this before the ESP32-S3 shows up as a camera for model class.</pre>
+      <pre class="log" id="modelFwLog">Flash this before using OV2640 preview for model class.</pre>
     </div>
 
     <div class="card">
@@ -302,8 +288,10 @@
       <div id="classMapRows" style="margin-top:6px"><div class="note">Select active classes above to map them to robot actions.</div></div>
       <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
       <div class="msg" id="classMapMsg"></div>
-      <label style="margin-top:12px">Model recipe</label>
-      <select id="recipe"></select>
+      <div class="row" style="margin-top:12px">
+        <div><label>Framework</label><select id="framework"><option value="tensorflow">TensorFlow</option><option value="pytorch">PyTorch</option></select></div>
+        <div><label>Model recipe</label><select id="recipe"></select></div>
+      </div>
       <div class="note" id="recipeDesc"></div>
       <div class="row" id="tuning">
         <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
@@ -317,18 +305,17 @@
 
     <div class="card">
       <h2><span class="step">C.</span>Model class — capture → train → preview</h2>
-      <p class="note">Training and prediction run on the AI PC. The preview uses this browser's camera picker — once the model finetune firmware is flashed, the ESP32-S3 shows up as a webcam (UVC) alongside any built-in camera.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port so it appears in the camera list below.</p>
+      <p class="note">Training runs on the AI PC. OV2640 preview uses the browser to borrow the ESP32-S3 serial port, the same idea as browser flashing.</p>
       <div class="row compact">
-        <div><label>Camera</label><select id="cameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
-        <div><button id="localWebcamBtn">Start camera preview</button></div>
+        <div><button id="modelPreviewBtn">Start AI-PC webcam preview</button></div>
+        <div><button class="secondary" id="cameraConnectBtn">Connect OV2640 preview</button></div>
+        <div><button class="secondary" id="cameraStopBtn" disabled>Stop preview</button></div>
       </div>
       <div class="msg" id="modelMsg"></div>
-      <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p>
+      <p class="note">OV2640 preview opens the board through Web Serial, sends <code>f3</code> JPEG, <code>s1</code> QQVGA, then <code>d1</code> stream, and renders incoming <code>---START_IMAGE---</code> JPEG frames. Students do not run Python.</p>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
-        <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none"></video>
-        <canvas id="localWebcamCanvas" hidden></canvas>
-        <div class="note" id="cameraPlaceholder">No camera frame yet.</div>
+        <img id="cameraPreview" alt="OV2640 preview" style="max-width:100%;max-height:420px;object-fit:contain;display:none" />
+        <div class="note" id="cameraPlaceholder">No OV2640 frame yet.</div>
       </div>
       <div class="row compact" style="margin-top:12px">
         <div><label>Gesture class</label><select id="captureClass"></select></div>
@@ -345,9 +332,9 @@
       <div class="msg" id="captureMsg"></div>
       <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
       <label style="margin-top:12px">Camera / model messages</label>
-      <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera, or flash the model finetune firmware first so the ESP32-S3 appears in the list.</pre>
+      <pre class="log" id="cameraLog">Connect OV2640 preview after the model finetune camera firmware is flashed.</pre>
       <label style="margin-top:12px">Model file (ONNX) for preview</label>
-      <div id="modelOnnx" class="note">Looking for a TensorFlow training export in ONNX format…</div>
+      <div id="modelOnnx" class="note">Looking for a trained ONNX model…</div>
     </div>
   </section>
 
@@ -362,7 +349,6 @@
     <div class="card">
       <h2><span class="step">A.</span>Flash deploy benchmark firmware</h2>
       <p class="note">Uses <code>RuntimeMode::kTestUartFrame</code> so the benchmark script can send frames over UART/CDC and collect latency/results. This is separate from model finetune camera firmware.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
       <div id="benchFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="benchFwFlashBtn" disabled>Connect &amp; flash benchmark firmware</button></div>
@@ -399,7 +385,6 @@
       <h2><span class="step">C.</span>Flash model partition (.tflite)</h2>
       <p class="note">Flashes only the model into its partition — the main board firmware is untouched.
          Chrome/Edge; the browser asks you to pick the serial port. No offsets shown.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to flash the model partition.</p>
       <label>TFLite model</label>
       <select id="flashArtifact"></select>
       <div class="row">
@@ -432,7 +417,6 @@
          into <b>your PC</b> — no install, no AI-PC serial port. Flash the <b>deploy benchmark firmware</b>
          and your model first, then run this. Use <b>Chrome or Edge</b>. The AI PC only serves the
          dataset images.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to run the benchmark stream.</p>
       <div class="row compact">
         <div><label>Dataset</label><select id="benchDataset"></select></div>
         <div><label>Images to test</label><input type="number" id="benchLimit" min="1" max="2000" value="60" /></div>
@@ -455,7 +439,6 @@
       <p class="note">Flashes the <b>full ESP32-S3 main board firmware</b> (camera + USB + TFLite Micro).
          Separate from flashing a model. Offsets come from the ESP-IDF build (<code>flasher_args.json</code>)
          and are hidden unless developer mode is on.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing firmware.</p>
       <div id="mainFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
       <div class="row">
         <div><button id="mainFwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
@@ -482,7 +465,6 @@
     <div class="card">
       <h2>Flash model partition (.tflite)</h2>
       <p class="note">Same as Deploy: flashes only the model into the ESP32-S3 model partition. Use this after flashing main board firmware when you want to update the model only.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to flash the model partition.</p>
       <label>TFLite model</label>
       <select id="mainFlashArtifact"></select>
       <div class="row">
@@ -496,11 +478,15 @@
 
     <div class="card">
       <h2>Full firmware live preview + inference</h2>
-      <p class="note">After flashing the full main board firmware, connect the ESP32-S3 USB / OTG port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect camera stream &amp; inference.</p>
+      <p class="note">After flashing the full main board firmware, connect the same ESP32-S3 serial port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
       <div class="row compact">
         <div><button class="secondary" id="fullCameraConnectBtn">Connect camera stream</button></div>
         <div><button class="secondary" id="fullCameraStopBtn" disabled>Stop stream</button></div>
+      </div>
+      <div class="msg" id="fullCameraMsg"></div>
+      <div class="row compact" style="margin-top:10px">
+        <div><button class="secondary" id="fullControlConnectBtn">Connect control board</button></div>
+        <div><button class="secondary" id="fullControlIdleBtn" disabled>Send idle</button></div>
       </div>
       <div class="row compact" style="margin-top:10px">
         <div><button class="secondary" id="fullControlUpBtn">Up</button></div>
@@ -508,13 +494,7 @@
         <div><button class="secondary" id="fullControlLeftBtn">Left</button></div>
         <div><button class="secondary" id="fullControlRightBtn">Right</button></div>
         <div><button class="secondary" id="fullControlClampBtn">Clamp</button></div>
-        <div><button class="secondary" id="fullControlReleaseBtn">Release</button></div>
-        <div><button class="secondary" id="fullControlNullBtn">Null</button></div>
-      </div>
-      <div class="msg" id="fullCameraMsg"></div>
-      <div class="row compact" style="margin-top:10px">
-        <div><button class="secondary" id="fullControlConnectBtn">Connect control board</button></div>
-        <div><button class="secondary" id="fullControlIdleBtn" disabled>Send idle</button></div>
+        <div><button class="secondary" id="fullControlReleaseBtn"ss>Release</button></div>
       </div>
       <div class="msg" id="fullControlStatus">Connect control board to forward prediction actions to servo.</div>
       <label style="margin-top:10px">Control board messages</label>
@@ -555,21 +535,34 @@
       <pre class="log" id="usbFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
     </div>
 
-    <!-- Step 2: Configure camera before opening its UVC stream -->
+    <!-- Step 2: Camera Preview and settings -->
     <div class="card">
-      <h2><span class="step">2.</span>Camera settings</h2>
-      <p class="note">Connect the board’s CDC control port, choose a JPEG preview resolution and requested frame rate, then apply them before starting Live Camera. Higher requested rates may drop frames; the delivered rate is shown during preview.</p>
+      <h2><span class="step">2.</span>Connect camera &amp; preview</h2>
+      <p class="note">After flashing, connect the camera stream to test parameters and capture frames.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect the camera stream and storage.</p>
       <div class="row compact">
-        <div style="display:flex;align-items:flex-end"><button id="usbCamControlConnectBtn">Connect camera controls</button></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamControlDisconnectBtn" disabled>Disconnect controls</button></div>
+        <div><button id="usbCamConnectBtn">Connect camera</button></div>
+        <div><button class="secondary" id="usbCamStopBtn" disabled>Disconnect</button></div>
       </div>
-      <div class="msg" id="usbCamControlMsg"></div>
+      <div class="msg" id="usbCamMsg"></div>
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <img id="usbCamPreview" alt="OV2640 camera+USB preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none" />
+        <div class="note" id="usbCamPlaceholder">No camera frame yet.</div>
+      </div>
+    </div>
+
+
+    <div class="card">
+      <h2>Camera settings</h2>
+      <p class="note">Changes stream live to the sensor (same single-letter commands as the CLI tool).</p>
       <div class="row compact">
-        <div><label>Preview resolution</label><select id="usbCamResolution"><option value="0">96 × 96</option><option value="1">160 × 120</option><option value="2" selected>320 × 240</option><option value="3">640 × 480</option><option value="4">800 × 600</option><option value="5">1600 × 1200</option></select></div>
-        <div><label>Frame rate</label><div class="note" style="margin-top:8px">Automatically requests the maximum 30 fps. Delivered FPS and drops are shown during preview.</div></div>
-        <div style="display:flex;align-items:flex-end"><button id="usbCamApplyBtn" disabled>Apply camera settings</button></div>
+        <div><label>Pixel format</label>
+          <select id="usbCamFormat"><option value="0">Grayscale (f0)</option><option value="1">RGB565 (f1)</option><option value="2">YUV422 (f2)</option><option value="3" selected>JPEG (f3)</option></select></div>
+        <div><label>Resolution</label>
+          <select id="usbCamSize"><option value="0">96x96 (s0)</option><option value="1" selected>QQVGA 160x120 (s1)</option><option value="2">QVGA 320x240 (s2)</option><option value="3">VGA 640x480 (s3)</option><option value="4">SVGA 800x600 (s4)</option><option value="5">UXGA 1600x1200 (s5)</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamStreamOn">Start stream</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamStreamOff">Stop stream</button></div>
       </div>
-      <div class="msg" id="usbCamSettingsMsg">Connect camera controls, then apply settings before starting Live Camera.</div>
       <div class="row compact">
         <div><label>Brightness (-2…2): <span id="usbBriVal">0</span></label><input type="range" id="usbCamBrightness" min="-2" max="2" value="0" /></div>
         <div><label>Contrast (-2…2): <span id="usbConVal">0</span></label><input type="range" id="usbCamContrast" min="-2" max="2" value="0" /></div>
@@ -589,48 +582,26 @@
     </div>
 
     <div class="card">
-      <h2><span class="step">3.</span>Live camera</h2>
-      <p class="note">Plug the board into your PC’s USB / OTG port. After applying Camera Settings, open the EECamp UVC webcam here. The board also exposes the CDC control port and <b>EECamp</b> removable drive.</p>
+      <h2>Board photo storage (flash)</h2>
+      <p class="note"><b>Two separate paths, one flash.</b> The <b>live preview</b> above streams frames over <b>USB CDC</b> (Web Serial) and does <b>not</b> save anything. Photos you <b>capture are stored on the ESP32-S3 flash</b> — retrieve them either by <b>downloading over CDC</b> here, or by <b>mounting the flash as a <span id="aiPcDriveEgg" style="cursor:pointer;text-decoration:underline dotted">USB drive (MSC)</span></b> on your PC. Capture saves a <b>96×96</b> model-input image (plus the full-resolution frame).</p>
       <div class="row compact">
-        <div><label>Webcam</label><select id="usbCamDevice" disabled><option value="">Start preview to choose a webcam</option></select></div>
-        <div style="display:flex;align-items:flex-end"><button id="usbCamPreviewStartBtn" disabled>Start webcam preview</button></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamPreviewStopBtn" disabled>Stop preview</button></div>
-      </div>
-      <div class="msg" id="usbCamMsg">Apply Camera Settings before starting the preview.</div>
-      <div class="note" id="usbCamMetrics" style="margin-top:8px">Delivered camera rate will appear after preview starts.</div>
-      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
-        <video id="usbCamVideo" autoplay muted playsinline aria-label="EECamp OV2640 webcam preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none"></video>
-        <div class="note" id="usbCamPlaceholder">Apply settings, then start the webcam preview to see the OV2640 stream.</div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>EECamp storage</h2>
-      <p class="note">The <b>EECamp</b> drive starts owned by your PC. To save a camera frame, safely eject <b>EECamp</b> in your file explorer, then confirm below. Return it to your PC after capture to browse files normally.</p>
-      <div class="row compact">
-        <div><label>Storage owner</label><div id="usbStorageState" class="note">Connect camera controls to check storage.</div></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbStorageEjectConfirmBtn" disabled>I ejected EECamp</button></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbStorageReturnBtn" disabled>Return EECamp to PC</button></div>
-      </div>
-      <div class="row compact">
-        <div><button id="usbCamCaptureBtn" disabled>Save 96×96 grayscale JPEG</button></div>
-        <div><button class="secondary" id="usbCamListBtn" disabled>List saved files</button></div>
+        <div><button class="secondary" id="usbCamCaptureBtn">Capture photo to flash (96×96)</button></div>
+        <div><button class="secondary" id="usbCamListBtn">List saved photos</button></div>
+        <div><button class="secondary" id="usbCamMountBtn">Mount flash as USB drive (MSC)</button></div>
       </div>
       <div class="msg" id="usbCamCmdMsg"></div>
-      <label style="margin-top:12px">Saved files while camera owns storage</label>
-      <div id="usbPhotoList"><div class="note">Safely eject EECamp in your OS, confirm it here, then capture or list files.</div></div>
+      <label style="margin-top:12px">Saved photos on the board</label>
+      <div id="usbPhotoList"><div class="note">Click “List saved photos”. <b>Download (CDC)</b> pulls a photo over Web Serial; <b>Mount as USB drive</b> pauses preview and shows the files to your PC as a removable drive.</div></div>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:120px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <img id="usbPhotoPreview" alt="downloaded photo" style="max-width:100%;max-height:280px;image-rendering:pixelated;display:none" />
-        <div class="note" id="usbPhotoPlaceholder">Downloaded file preview.</div>
+        <div class="note" id="usbPhotoPlaceholder">Downloaded photo preview (96×96 shown enlarged).</div>
       </div>
-      <details style="margin-top:12px"><summary>Developer commands</summary>
-        <div class="row compact" style="margin-top:8px">
-          <div style="flex:2; min-width:240px"><label>CDC command</label><input id="usbCamRaw" placeholder="storage status" /></div>
-          <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
-        </div>
-      </details>
+      <div class="row compact" style="margin-top:12px">
+        <div style="flex:2; min-width:240px"><label>Advanced: raw camera command</label><input id="usbCamRaw" placeholder="e.g. s2 · format · l · r 0" /></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
+      </div>
       <label style="margin-top:12px">Camera / USB messages</label>
-      <pre class="log tall" id="usbCamLog">Connect camera controls to begin.</pre>
+      <pre class="log tall" id="usbCamLog">Connect the camera to begin.</pre>
     </div>
 
     <!-- Step 3: Maze Challenge -->
@@ -700,16 +671,16 @@
   <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div id="sharedJobPanels">
     <div class="card">
-      <h2><span id="jobLogHeading">Live job log</span> <span class="pill" id="jobPill"></span></h2>
-      <pre class="log tall" id="log">No job selected.</pre>
+      <h2>Live job log <span class="pill" id="jobPill"></span></h2>
+      <pre class="log tall" id="log">No job selected. Start a training or quantization job (Deploy tab).</pre>
     </div>
     <div class="card">
-      <h2><span id="artifactsHeading">Generated artifacts</span> <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
+      <h2>Generated artifacts <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
       <table><thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
         <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody></table>
     </div>
     <div class="card">
-      <h2 id="jobsHeading">Job history</h2>
+      <h2>Job history</h2>
       <table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
         <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
     </div>
@@ -738,20 +709,6 @@
   </div>
 </div>
 <div class="modal" id="imgModal"><img id="imgModalImg" alt="preview" /></div>
-<div class="save-modal" id="artifactSaveModal" role="dialog" aria-modal="true" aria-labelledby="artifactSaveTitle">
-  <div class="save-dialog">
-    <h3 id="artifactSaveTitle">Save to AI PC Drive</h3>
-    <label for="artifactSaveFolder">Folder</label>
-    <select id="artifactSaveFolder"></select>
-    <label for="artifactSaveName">File name</label>
-    <input type="text" id="artifactSaveName" maxlength="128" autocomplete="off" />
-    <div class="msg" id="artifactSaveMsg"></div>
-    <div class="row compact">
-      <div><button type="button" class="secondary" id="artifactSaveCancel">Cancel</button></div>
-      <div><button type="button" id="artifactSaveConfirm">Save</button></div>
-    </div>
-  </div>
-</div>
 
 <script>
 const ORIGIN = window.location.origin;
@@ -761,8 +718,6 @@ let RECIPES = [], KERAS_MODELS = [], currentJobId = null, logOffset = 0, logTime
 let OUTPUT_ACTIONS = ["up","down","left","right","clamp","release"];
 let CLASS_LABELS = [];            // ACTIVE class names (model output order)
 let CLASS_ACTION_BY_NAME = {};
-let artifactSaveTarget = null;
-let artifactSaveTrigger = null;
 let DATASET_COUNTS = {};
 let AVAILABLE_CLASSES = [];        // all gesture classes present in the dataset
 let ACTIVE_CLASSES = [];           // the <= MAX_ACTIVE classes used for train/infer
@@ -773,9 +728,6 @@ let predictBusy = false;
 let lastPredictMs = 0;
 let fpsStart = 0, frameCount = 0, currentFps = 0;
 let previousFormat = "3";
-let localWebcamStream = null;
-let localWebcamTimer = null;
-let localWebcamFrameCount = 0;
 
 function $(id){ return document.getElementById(id); }
 const EGGS = {
@@ -865,48 +817,8 @@ function initPasswordForm(){
 // ---------- topic routes ----------
 const TOPIC_BY_PATH = {"/":"home", "/home":"home", "/model_finetune":"model", "/deploy":"deploy", "/output":"output", "/firmware":"mainfw", "/camera_usb":"camerausb", "/drive":"drive", "/account":"account"};
 const PATH_BY_TOPIC = {home:"/home", model:"/model_finetune", deploy:"/deploy", output:"/output", mainfw:"/firmware", camerausb:"/camera_usb", drive:"/drive", account:"/account"};
-const WORKFLOWS = {
-  model: {
-    kind: "train",
-    logHeading: "Training log",
-    artifactsHeading: "Result Model",
-    jobsHeading: "Training job history",
-    emptyArtifacts: "No generated training artifacts yet.",
-    emptyJobs: "No training jobs yet.",
-  },
-  deploy: {
-    kind: "quantize",
-    logHeading: "Quantization log",
-    artifactsHeading: "Result Quantized Model",
-    jobsHeading: "Quantization job history",
-    emptyArtifacts: "No generated deploy artifacts yet.",
-    emptyJobs: "No quantization jobs yet.",
-  },
-};
-function workflowForTopic(topic){ return WORKFLOWS[topic] || null; }
-function activeWorkflow(){
-  const topic = document.querySelector("#tabs button.active")?.dataset.topic;
-  return workflowForTopic(topic);
-}
-function artifactMatchesWorkflow(artifact, workflow){
-  const marker = `/runs/temporary/`;
-  return artifact.path.includes(marker) && artifact.path.includes(`/${workflow.kind}/`);
-}
-function updateSharedJobPanels(topic){
-  const workflow = workflowForTopic(topic);
-  const panels = $("sharedJobPanels");
-  if(!panels) return;
-  panels.style.display = workflow ? "block" : "none";
-  if(!workflow) return;
-  setText("jobLogHeading", workflow.logHeading);
-  setText("artifactsHeading", workflow.artifactsHeading);
-  setText("jobsHeading", workflow.jobsHeading);
-  refreshArtifacts();
-  refreshJobs();
-}
 function activateTopic(topic, push){
   topic = topic || "home";
-  if(topic!=="model" && localWebcamStream) stopLocalWebcam({message:false});
   document.querySelectorAll('#tabs button').forEach(b=>b.classList.toggle('active', b.dataset.topic===topic));
   document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
   const pane=$("pane-"+topic); if(pane) pane.classList.add('active');
@@ -918,7 +830,8 @@ function activateTopic(topic, push){
   if(topic==="deploy"){ loadFirmware("deploy_benchmark", BENCHFW); refreshReports(); loadBenchOptions(); }
   if(topic==="drive") loadDrive();
 
-  updateSharedJobPanels(topic);
+  const panels = $("sharedJobPanels");
+  if(panels) panels.style.display = (topic === "home" || topic === "camerausb" || topic === "drive" || topic === "account") ? "none" : "block";
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -1063,8 +976,8 @@ function selectedCaptureClass(){
 }
 async function refreshModelList(){ const r=await api("/api/recipes"); RECIPES=r.recipes; KERAS_MODELS=r.available_keras_models||[]; populateQuantModels(); populateModelPredictModels(); }
 function populateRecipes(){
-  const sel=$("recipe"); sel.innerHTML="";
-  RECIPES.filter(r=>r.framework==="tensorflow").forEach(r=>{ const o=document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o); });
+  const fw=$("framework").value, sel=$("recipe"); sel.innerHTML="";
+  RECIPES.filter(r=>r.framework===fw).forEach(r=>{ const o=document.createElement("option"); o.value=r.key; o.textContent=r.label; sel.appendChild(o); });
   onRecipeChange();
 }
 function onRecipeChange(){
@@ -1085,10 +998,10 @@ $("uploadBtn").onclick = async () => {
     setMsg($("uploadMsg"),`Imported ${r.total_images} images — ${detail}. Classes: ${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap();
   } catch(e){ setMsg($("uploadMsg"),"Upload failed: "+e.message,"bad"); } $("uploadBtn").disabled=false;
 };
-$("recipe").onchange = onRecipeChange;
+$("framework").onchange = populateRecipes; $("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
   await startJob("/api/train",{ recipe:$("recipe").value, epochs:$("epochs").value||undefined,
-    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked }, $("trainMsg"), "training", $("trainBtn"));
+    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked }, $("trainMsg"), "training");
 };
 $("refreshModelsBtn").onclick = async () => { setMsg($("quantMsg"),"Refreshing…","warn");
   try { await refreshModelList(); setMsg($("quantMsg"),`Found ${KERAS_MODELS.length} model(s).`,"ok"); } catch(e){ setMsg($("quantMsg"),"Refresh failed: "+e.message,"bad"); } };
@@ -1102,44 +1015,13 @@ $("uploadModelBtn").onclick = async () => {
 $("quantBtn").onclick = async () => {
   if(!$("quantModel").value){ setMsg($("quantMsg"),"No .keras model — train/upload first.","bad"); return; }
   await startJob("/api/quantize",{ model_name:$("quantModel").value, quant_format:$("quantFormat").value,
-    quant_granularity:$("quantGranularity").value, skip_source_validation:$("skipValidation").checked }, $("quantMsg"), "quantization", $("quantBtn"));
+    quant_granularity:$("quantGranularity").value, skip_source_validation:$("skipValidation").checked }, $("quantMsg"), "quantization");
 };
-let activeJobButton = null;
-let activeJobButtonLabel = "";
-let activeJobButtonJobId = "";
-function setJobButtonLoading(btn, kind){
-  if(!btn) return;
-  activeJobButton = btn;
-  activeJobButtonLabel = btn.dataset.idleText || btn.textContent;
-  btn.dataset.idleText = activeJobButtonLabel;
-  btn.disabled = true;
-  btn.innerHTML = `<span class="spinner" aria-hidden="true"></span>${kind} running`;
-}
-function setJobButtonFinished(jobId, status){
-  if(!activeJobButton) return;
-  if(activeJobButtonJobId && jobId !== activeJobButtonJobId) return;
-  const btn = activeJobButton;
-  const idle = btn.dataset.idleText || activeJobButtonLabel || "Start";
-  btn.innerHTML = status==="succeeded" ? "Finished" : "Failed";
-  setTimeout(() => {
-    btn.textContent = idle;
-    btn.disabled = false;
-    if(activeJobButton === btn){ activeJobButton = null; activeJobButtonLabel = ""; activeJobButtonJobId = ""; }
-  }, 2500);
-}
-function resetJobButton(btn){
-  if(!btn) return;
-  btn.textContent = btn.dataset.idleText || activeJobButtonLabel || btn.textContent;
-  btn.disabled = false;
-  if(activeJobButton === btn){ activeJobButton = null; activeJobButtonLabel = ""; activeJobButtonJobId = ""; }
-}
-async function startJob(path, body, msgEl, kind, btn){
+async function startJob(path, body, msgEl, kind){
   setMsg(msgEl,"Starting "+kind+"…","warn");
-  setJobButtonLoading(btn, kind);
   try { const job=await api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
-    activeJobButtonJobId = job.id;
-    setMsg(msgEl,(job.status==="queued"?"Queued job ":"Started job ")+job.id,"ok"); attachLog(job.id); refreshJobs();
-  } catch(e){ resetJobButton(btn); setMsg(msgEl,"Could not start: "+e.message+" (a job may be running)","bad"); }
+    setMsg(msgEl,"Started job "+job.id,"ok"); attachLog(job.id); refreshJobs();
+  } catch(e){ setMsg(msgEl,"Could not start: "+e.message+" (a job may be running)","bad"); }
 }
 
 // ---------- job log / artifacts / jobs ----------
@@ -1149,94 +1031,14 @@ async function pollLog(){
   try { const r=await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
     if(r.data){ $("log").textContent+=r.data; $("log").scrollTop=$("log").scrollHeight; } logOffset=r.offset;
     $("jobPill").textContent=`${currentJobId} — ${r.status}`+(r.returncode!==null?` (rc=${r.returncode})`:"");
-    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; setJobButtonFinished(currentJobId, r.status); refreshArtifacts(); refreshJobs(); refreshReports(); }
+    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; refreshArtifacts(); refreshJobs(); refreshReports(); }
   } catch(e){}
 }
-function closeArtifactSaveDialog(){
-  const modal=$("artifactSaveModal");
-  if(modal) modal.classList.remove("open");
-  artifactSaveTarget=null;
-  artifactSaveTrigger=null;
-}
-async function openArtifactSaveDialog(artifact, trigger){
-  artifactSaveTarget=artifact;
-  artifactSaveTrigger=trigger;
-  const modal=$("artifactSaveModal"), folder=$("artifactSaveFolder"), name=$("artifactSaveName");
-  modal.classList.add("open");
-  name.value=artifact.name;
-  setMsg($("artifactSaveMsg"), "Loading AI PC Drive folders...", "warn");
-  try {
-    const r=await api("/api/drive/folders");
-    const folders=r.folders||["0_shared"];
-    const preferred=$("driveFolder")?.value || "0_shared";
-    folder.innerHTML="";
-    folders.forEach(value=>{
-      const option=document.createElement("option");
-      option.value=value;
-      option.textContent=value==="0_shared" ? "0_shared (team-wide)" : value;
-      folder.appendChild(option);
-    });
-    folder.value=folders.includes(preferred) ? preferred : "0_shared";
-    setMsg($("artifactSaveMsg"), "", "");
-    name.focus();
-    const suffix=artifact.name.lastIndexOf(".");
-    name.setSelectionRange(0, suffix>0 ? suffix : artifact.name.length);
-  } catch(e){
-    setMsg($("artifactSaveMsg"), "Could not load folders: "+e.message, "bad");
-  }
-}
-async function confirmArtifactSave(){
-  if(!artifactSaveTarget) return;
-  const button=$("artifactSaveConfirm");
-  button.disabled=true;
-  setMsg($("artifactSaveMsg"), "Saving...", "warn");
-  try {
-    const result=await api("/api/artifacts/save-to-drive", {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        path:artifactSaveTarget.path,
-        folder:$("artifactSaveFolder").value,
-        name:$("artifactSaveName").value,
-      }),
-    });
-    setMsg($("artifactSaveMsg"), `Saved ${result.name} to ${result.folder}.`, "ok");
-    if(artifactSaveTrigger){
-      const trigger=artifactSaveTrigger;
-      const original=trigger.textContent;
-      trigger.textContent="Saved";
-      setTimeout(()=>{ trigger.textContent=original; }, 1800);
-    }
-    if(document.querySelector("#tabs button.active")?.dataset.topic==="drive") refreshDrive();
-    setTimeout(closeArtifactSaveDialog, 900);
-  } catch(e){
-    setMsg($("artifactSaveMsg"), "Save failed: "+e.message, "bad");
-  } finally {
-    button.disabled=false;
-  }
-}
 async function refreshArtifacts(){
-  try { const r=await api("/api/artifacts"); const workflow=activeWorkflow(); const tb=$("artifactsBody");
-    if(workflow && tb){
-      const visible=r.artifacts.filter(a=>artifactMatchesWorkflow(a, workflow));
-      tb.innerHTML="";
-      if(!visible.length) tb.innerHTML=`<tr><td colspan="5" class="note">${workflow.emptyArtifacts}</td></tr>`;
-      visible.forEach(a=>{
-        const tr=document.createElement("tr");
-        const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
-        tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td>`;
-        const actions=document.createElement("td");
-        actions.className="artifact-actions";
-        const download=document.createElement("a");
-        download.href=dl; download.textContent="download";
-        const save=document.createElement("button");
-        save.type="button"; save.className="secondary"; save.textContent="Save to Drive";
-        save.onclick=()=>openArtifactSaveDialog(a, save);
-        actions.append(download, save);
-        tr.appendChild(actions);
-        tb.appendChild(tr);
-      });
-    }
+  try { const r=await api("/api/artifacts"); const tb=$("artifactsBody"); tb.innerHTML="";
+    if(!r.artifacts.length) tb.innerHTML='<tr><td colspan="5" class="note">No artifacts yet.</td></tr>';
+    r.artifacts.forEach(a=>{ const tr=document.createElement("tr"); const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
+      tr.innerHTML=`<td><span class="tag">${a.category}</span></td><td>${a.name}</td><td>${fmtSize(a.size)}</td><td>${a.modified}</td><td><a href="${dl}">download</a></td>`; tb.appendChild(tr); });
     fillFlashArtifacts(r.artifacts); fillModelOnnx(r.artifacts);
   } catch(e){}
 }
@@ -1267,11 +1069,9 @@ function fillFlashArtifacts(list){
   if(list) fill(list); else api("/api/artifacts").then(r=>fill(r.artifacts)).catch(()=>{});
 }
 async function refreshJobs(){
-  const workflow=activeWorkflow();
-  if(!workflow) return;
-  try { const r=await api("/api/jobs"); const tb=$("jobsBody"); const visible=r.jobs.filter(j=>j.kind===workflow.kind); tb.innerHTML="";
-    if(!visible.length){ tb.innerHTML=`<tr><td colspan="5" class="note">${workflow.emptyJobs}</td></tr>`; return; }
-    visible.forEach(j=>{ const tr=document.createElement("tr"); tr.style.cursor="pointer"; tr.onclick=()=>attachLog(j.id);
+  try { const r=await api("/api/jobs"); const tb=$("jobsBody"); tb.innerHTML="";
+    if(!r.jobs.length){ tb.innerHTML='<tr><td colspan="5" class="note">No jobs yet.</td></tr>'; return; }
+    r.jobs.forEach(j=>{ const tr=document.createElement("tr"); tr.style.cursor="pointer"; tr.onclick=()=>attachLog(j.id);
       tr.innerHTML=`<td>${j.id}</td><td>${j.kind}</td><td><span class="status s-${j.status}">${j.status}</span></td><td>${j.returncode===null?"":j.returncode}</td><td>${j.created_at}</td>`; tb.appendChild(tr); });
   } catch(e){}
 }
@@ -1410,131 +1210,12 @@ $("benchRunBtn").onclick = async () => {
   }
   $("benchRunBtn").disabled = false;
 };
-function captureLocalWebcamFrame(){
-  const video=$("localWebcamPreview"), canvas=$("localWebcamCanvas");
-  if(!localWebcamStream || !video || !canvas || video.readyState < 2 || !video.videoWidth) return;
-  const width=Math.min(640, video.videoWidth);
-  const height=Math.max(1, Math.round(video.videoHeight * width / video.videoWidth));
-  canvas.width=width; canvas.height=height;
-  canvas.getContext("2d").drawImage(video, 0, 0, width, height);
-  const dataUrl=canvas.toDataURL("image/jpeg", 0.85);
-  const base64=dataUrl.split(",", 2)[1] || "";
-  latestCameraFrame={
-    source:"local_webcam",
-    base64,
-    meta:{format:3, width, height, size:Math.floor(base64.length * 0.75)},
-    mime:"image/jpeg",
-    bytes:Math.floor(base64.length * 0.75),
-    dataUrl,
-  };
-  if($("saveFrameBtn")) $("saveFrameBtn").disabled=false;
-  if($("predictFrameBtn")) $("predictFrameBtn").disabled=!($("predictModel") && $("predictModel").value);
-  localWebcamFrameCount++;
-  if(localWebcamFrameCount % 5 === 0) setMsg($("modelMsg"), `Camera preview ${width}x${height}`, "ok");
-  maybeLivePredict();
-}
-async function stopLocalWebcam(options={}){
-  const preserveFrame=options.preserveFrame !== false;
-  if(localWebcamTimer){ clearInterval(localWebcamTimer); localWebcamTimer=null; }
-  if(localWebcamStream){ localWebcamStream.getTracks().forEach(track=>track.stop()); localWebcamStream=null; }
-  const video=$("localWebcamPreview"), ph=$("cameraPlaceholder");
-  if(video){ video.srcObject=null; video.style.display="none"; }
-  if(!preserveFrame){
-    latestCameraFrame=null;
-    if(ph) ph.style.display="";
-    if($("saveFrameBtn")) $("saveFrameBtn").disabled=true;
-    if($("predictFrameBtn")) $("predictFrameBtn").disabled=true;
-  }
-  if($("cameraDeviceSelect")) $("cameraDeviceSelect").value="";
-  if($("localWebcamBtn")){
-    $("localWebcamBtn").disabled=false;
-    $("localWebcamBtn").textContent="Start camera preview";
-  }
-  if(options.message !== false) setMsg($("modelMsg"), "Camera preview stopped.", "ok");
-}
-// Rebuild the camera dropdown from scratch and reset the selection, so every
-// "Start camera preview" click makes the student explicitly pick a camera
-// again instead of silently reusing whatever was chosen last time.
-async function populateCameraDeviceSelect(){
-  const select=$("cameraDeviceSelect");
-  if(!select) return;
-  if(!navigator.mediaDevices?.enumerateDevices){
-    setMsg($("modelMsg"), "This browser cannot list cameras. Use Chrome or Edge over HTTPS.", "bad");
-    return;
-  }
-  let devices=[];
-  try {
-    devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
-  } catch(_){ /* enumerateDevices itself rarely throws; devices stays [] */ }
-  // Labels (and sometimes the device list itself) stay empty/blank until this
-  // origin has been granted camera permission at least once. Request it with a
-  // throwaway stream whenever we don't already have a labeled device, not just
-  // when the (possibly empty) list looks unlabeled.
-  if(!devices.some(d=>d.label)){
-    try {
-      const probe=await navigator.mediaDevices.getUserMedia({video:true, audio:false});
-      probe.getTracks().forEach(track=>track.stop());
-      devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
-    } catch(e){
-      const denied=e?.name==="NotAllowedError" ? "Camera permission was denied." :
-        e?.name==="NotFoundError" ? "No camera was found on this PC." :
-        "Could not access the camera: "+(e.message||e);
-      setMsg($("modelMsg"), denied, "bad");
-    }
-  }
-  select.innerHTML="";
-  const placeholder=document.createElement("option");
-  placeholder.value=""; placeholder.textContent = devices.length ? "Choose a camera…" : "No camera found";
-  select.appendChild(placeholder);
-  devices.forEach((d, i) => {
-    const opt=document.createElement("option");
-    opt.value=d.deviceId; opt.textContent=d.label || `Camera ${i+1}`;
-    select.appendChild(opt);
-  });
-  select.value="";
-  if(devices.length) setMsg($("modelMsg"), "Choose a camera from the list above.", "warn");
-}
-async function startSelectedCamera(deviceId){
-  if(!deviceId) return;
-  await stopLocalWebcam({message:false, preserveFrame:false});
-  try {
-    setMsg($("modelMsg"), "Opening camera...", "warn");
-    const stream=await navigator.mediaDevices.getUserMedia({
-      video:{deviceId:{exact:deviceId}, width:{ideal:640}, height:{ideal:480}},
-      audio:false,
-    });
-    localWebcamStream=stream;
-    const video=$("localWebcamPreview"), ph=$("cameraPlaceholder");
-    if(ph) ph.style.display="none";
-    video.srcObject=stream; video.style.display="block";
-    await video.play();
-    localWebcamFrameCount=0;
-    captureLocalWebcamFrame();
-    localWebcamTimer=setInterval(captureLocalWebcamFrame, 200);
-    $("localWebcamBtn").textContent="Stop camera preview";
-    setMsg($("modelMsg"), "Camera preview connected.", "ok");
-  } catch(e){
-    await stopLocalWebcam({message:false, preserveFrame:false});
-    const denied=e?.name==="NotAllowedError" ? "Camera permission was denied." :
-      e?.name==="NotFoundError" ? "That camera is no longer available." :
-      "Camera preview failed: "+(e.message||e);
-    setMsg($("modelMsg"), denied, "bad");
-  }
-}
-async function startLocalWebcam(){
-  if(!navigator.mediaDevices?.getUserMedia){
-    setMsg($("modelMsg"), "Camera preview is unavailable. Use Chrome or Edge over HTTPS.", "bad");
-    return;
-  }
-  setMsg($("modelMsg"), "Looking for cameras...", "warn");
-  await populateCameraDeviceSelect();
-  if($("cameraDeviceSelect")) $("cameraDeviceSelect").focus();
-}
-$("localWebcamBtn").onclick = () => localWebcamStream ? stopLocalWebcam() : startLocalWebcam();
-$("cameraDeviceSelect").onchange = (e) => startSelectedCamera(e.target.value);
-window.addEventListener("beforeunload", () => {
-  if(localWebcamStream) localWebcamStream.getTracks().forEach(track=>track.stop());
-});
+$("modelPreviewBtn").onclick = async () => {
+  setMsg($("modelMsg"), "Starting AI-PC webcam preview job...", "warn");
+  try { const job = await api("/api/model/preview", {method:"POST"}); currentJobId = job.id; attachLog(job.id); refreshJobs(); setMsg($("modelMsg"), "Preview job started on the AI PC. Watch Live job log.", "ok"); }
+  catch(e){ setMsg($("modelMsg"), "Preview failed: "+e.message, "bad"); }
+};
+$("cameraConnectBtn").onclick = async () => connectCameraPreview(MODEL_CAMERA_UI);
 $("saveFrameBtn").onclick = saveCurrentFrameToDataset;
 $("clearCaptureClassBtn").onclick = () => {
   if($("captureClass")) $("captureClass").value = "";
@@ -1543,6 +1224,7 @@ $("clearCaptureClassBtn").onclick = () => {
 };
 $("predictFrameBtn").onclick = predictCurrentFrame;
 $("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn").disabled = !(latestCameraFrame && $("predictModel").value); };
+$("cameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("cameraLog"); setMsg($("modelMsg"), "OV2640 preview stopped.", "ok"); };
 $("fullCameraConnectBtn").onclick = async () => connectCameraPreview(FULL_CAMERA_UI);
 $("fullCameraStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("fullCameraLog"); setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok"); };
 function actionForControlBoard(action){
@@ -1610,200 +1292,66 @@ async function sendFullControlAction(eff, force=false){
 }
 $("fullControlConnectBtn").onclick = connectFullControlBoard;
 $("fullControlIdleBtn").onclick = () => sendFullControlAction({action:"none"}, true);
-if($("fullControlUpBtn")) $("fullControlUpBtn").onclick = () => sendFullControlAction({action:"up"}, true);
-if($("fullControlDownBtn")) $("fullControlDownBtn").onclick = () => sendFullControlAction({action:"down"}, true);
-if($("fullControlLeftBtn")) $("fullControlLeftBtn").onclick = () => sendFullControlAction({action:"left"}, true);
-if($("fullControlRightBtn")) $("fullControlRightBtn").onclick = () => sendFullControlAction({action:"right"}, true);
-if($("fullControlClampBtn")) $("fullControlClampBtn").onclick = () => sendFullControlAction({action:"clamp"}, true);
-if($("fullControlReleaseBtn")) $("fullControlReleaseBtn").onclick = () => sendFullControlAction({action:"release"}, true);
-if($("fullControlNullBtn")) $("fullControlNullBtn").onclick = () => sendFullControlAction({action:"none"}, true);
-// ---------- CAMERA + USB DEMO (UVC webcam + independent CDC controls) ----------
-const UsbCam = { stream:null, controls:false, storageOwner:"unknown", configured:false, applying:false,
-  config:{mode:2, width:320, height:240, fps:30} };
-const USB_CAM_MODES = [
-  {width:96,height:96}, {width:160,height:120}, {width:320,height:240},
-  {width:640,height:480}, {width:800,height:600}, {width:1600,height:1200},
-];
-const USB_CAM_CONTROL_IDS = ["usbCamResolution", "usbCamApplyBtn", "usbCamBrightness", "usbCamContrast", "usbCamSaturation", "usbCamAec", "usbCamAgc", "usbCamAwb", "usbCamMirror", "usbCamFlip", "usbCamExposure", "usbCamGain", "usbCamRaw", "usbCamRawBtn"];
-
-function usbCamControlsReady(){ return UsbCam.controls && Serial.mode === "raw" && !!Serial.writer; }
-function usbCamSelectedConfig(){
-  const mode=Math.max(0, Math.min(USB_CAM_MODES.length-1, Number($("usbCamResolution")?.value || 2)));
-  return {mode, ...USB_CAM_MODES[mode], fps:30};
-}
-function usbCamMarkSettingsChanged(){
-  if(UsbCam.stream || UsbCam.applying) return;
-  UsbCam.configured=false;
-  setMsg("usbCamSettingsMsg", "Settings changed. Apply them before starting Live Camera.", "warn");
-  usbCamSyncUi();
-}
-function usbCamSyncUi(){
-  const controls = usbCamControlsReady();
-  USB_CAM_CONTROL_IDS.forEach(id=>{ const el=$(id); if(el) el.disabled=!controls; });
-  if($("usbCamApplyBtn")) $("usbCamApplyBtn").disabled = !controls || !!UsbCam.stream || UsbCam.applying;
-  if($("usbCamExposure")) $("usbCamExposure").disabled = !controls || $("usbCamAec").value === "1";
-  if($("usbCamGain")) $("usbCamGain").disabled = !controls || $("usbCamAgc").value === "1";
-  if($("usbCamControlConnectBtn")) $("usbCamControlConnectBtn").disabled = !webSerialSupport().ok || controls;
-  if($("usbCamControlDisconnectBtn")) $("usbCamControlDisconnectBtn").disabled = !controls;
-  if($("usbCamPreviewStartBtn")) $("usbCamPreviewStartBtn").disabled = !!UsbCam.stream || !controls || !UsbCam.configured;
-  if($("usbCamPreviewStopBtn")) $("usbCamPreviewStopBtn").disabled = !UsbCam.stream;
-  const appOwns = controls && UsbCam.storageOwner === "app";
-  if($("usbStorageEjectConfirmBtn")) $("usbStorageEjectConfirmBtn").disabled = !controls || UsbCam.storageOwner === "app";
-  if($("usbStorageReturnBtn")) $("usbStorageReturnBtn").disabled = !appOwns;
-  if($("usbCamCaptureBtn")) $("usbCamCaptureBtn").disabled = !appOwns;
-  if($("usbCamListBtn")) $("usbCamListBtn").disabled = !appOwns;
-}
-function usbCamSetStorageOwner(owner){
-  UsbCam.storageOwner = owner === "app" || owner === "pc" ? owner : "unknown";
-  const state=$("usbStorageState");
-  if(state){
-    if(UsbCam.storageOwner === "app") state.textContent="Camera owns storage. Capture and CDC file actions are ready.";
-    else if(UsbCam.storageOwner === "pc") state.textContent="PC owns EECamp. Browse it in your file explorer, or safely eject it to capture.";
-    else state.textContent="Waiting for storage status from the camera.";
-  }
-  usbCamSyncUi();
-}
-function usbCamResetControlState(){
-  UsbCam.controls=false;
-  UsbCam.configured=false;
-  UsbCam.applying=false;
-  usbCamSetStorageOwner("unknown");
-  setMsg("usbCamSettingsMsg", "Connect camera controls, then apply settings before starting Live Camera.", "warn");
-  usbCamSyncUi();
-}
-async function usbCamRefreshDevices(selectedId=""){
-  const select=$("usbCamDevice");
-  if(!select || !navigator.mediaDevices?.enumerateDevices) return;
-  const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind === "videoinput");
-  select.innerHTML="";
-  if(!devices.length){ select.innerHTML='<option value="">No webcam found</option>'; select.disabled=true; return; }
-  devices.forEach((device, index)=>{
-    const option=document.createElement("option");
-    option.value=device.deviceId;
-    option.textContent=device.label || `Camera ${index+1}`;
-    if(device.deviceId === selectedId) option.selected=true;
-    select.appendChild(option);
-  });
-  select.disabled=false;
-}
-async function usbCamStopPreview(){
-  if(UsbCam.stream){ UsbCam.stream.getTracks().forEach(track=>track.stop()); UsbCam.stream=null; }
-  const video=$("usbCamVideo"), placeholder=$("usbCamPlaceholder");
-  if(video){ video.srcObject=null; video.style.display="none"; }
-  if(placeholder) placeholder.style.display="block";
-  usbCamSyncUi();
-}
-async function usbCamStartPreview(deviceId=""){
-  if(!UsbCam.configured){ setMsg($("usbCamMsg"), "Apply Camera Settings before starting Live Camera.", "warn"); return; }
-  if(!navigator.mediaDevices?.getUserMedia){ setMsg($("usbCamMsg"), "Webcam access needs Chrome or Edge over HTTPS.", "bad"); return; }
-  deviceId=typeof deviceId === "string" ? deviceId : "";
-  setMsg($("usbCamMsg"), "Requesting webcam access...", "warn");
-  try{
-    await usbCamStopPreview();
-    const cfg=UsbCam.config;
-    const video={ width:{ exact:cfg.width }, height:{ exact:cfg.height }, frameRate:{ ideal:cfg.fps, max:cfg.fps } };
-    if(deviceId) video.deviceId={ exact:deviceId };
-    UsbCam.stream=await navigator.mediaDevices.getUserMedia({ video, audio:false });
-    const preview=$("usbCamVideo"), placeholder=$("usbCamPlaceholder");
-    preview.srcObject=UsbCam.stream;
-    await preview.play();
-    preview.style.display="block";
-    if(placeholder) placeholder.style.display="none";
-    const activeId=UsbCam.stream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId;
-    await usbCamRefreshDevices(activeId);
-    usbCamSyncUi();
-    setMsg($("usbCamMsg"), `Webcam preview connected at ${cfg.width}×${cfg.height}; requested ${cfg.fps} fps.`, "ok");
-  }catch(e){
-    if(deviceId && e?.name === "OverconstrainedError"){
-      setMsg($("usbCamMsg"), "That camera is no longer available. Opening the default webcam instead...", "warn");
-      setMsg($("usbCamMsg"), "The selected webcam is unavailable. Choose the EECamp UVC camera and try again.", "bad");
-      return;
-    }
-    setMsg($("usbCamMsg"), "Could not start webcam preview: "+(e.message||e), "bad");
-    await usbCamStopPreview();
-  }
-}
-async function usbCamConnectControls(){
-  const sup=webSerialSupport();
-  if(!sup.ok){ setMsg($("usbCamControlMsg"), "Camera controls need Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
-  if(Serial.acquiring){ setMsg($("usbCamControlMsg"), "A serial connection is opening - please wait.", "warn"); return; }
-  camUi=USBCAM_UI;
-  $("usbCamLog").textContent="";
-  setMsg($("usbCamControlMsg"), "Choose the EECamp Control serial port...", "warn");
-  try{
-    photoListCapture=false; photoListBuf=[];
-    fileAsm={receiving:false, lines:[], size:0, path:""};
-    encLink={synced:false, pos:0, aecEnabled:true, aecValue:300};
-    shutterLink={synced:false, button2:0};
-    await serialOpenRaw({ logId:"usbCamLog", baudRate:115200, bufferSize:65536, onLine:cameraOnLine });
-    UsbCam.controls=true;
-    usbCamSetStorageOwner("unknown");
-    setMsg($("usbCamControlMsg"), "Camera controls connected. Checking storage ownership...", "ok");
-    await cameraWrite("storage status");
-  }catch(e){
-    usbCamResetControlState();
-    setMsg($("usbCamControlMsg"), "Could not connect camera controls: "+(e.message||e), "bad");
-    await releaseSerial("usbCamLog");
-  }
-}
-async function usbCamApplySettings(){
-  if(!usbCamControlsReady()){ setMsg("usbCamSettingsMsg", "Connect camera controls first.", "bad"); return; }
-  if(UsbCam.stream){ setMsg("usbCamSettingsMsg", "Stop Live Camera before applying new settings.", "warn"); return; }
-  const cfg=usbCamSelectedConfig();
-  UsbCam.configured=false;
-  UsbCam.applying=true;
-  usbCamSyncUi();
-  setMsg("usbCamSettingsMsg", `Applying JPEG ${cfg.width}×${cfg.height} at ${cfg.fps} fps...`, "warn");
-  try{
-    await cameraWrite("f3");
-    await cameraWrite("s"+cfg.mode);
-    await cameraWrite("n"+cfg.fps);
-  }catch(e){
-    UsbCam.applying=false;
-    usbCamSyncUi();
-    setMsg("usbCamSettingsMsg", "Could not apply settings: "+(e.message||e), "bad");
-  }
-}
-
-async function usbCamDisconnectControls(){
-  await releaseSerial("usbCamLog");
-  usbCamResetControlState();
-  setMsg($("usbCamControlMsg"), "Camera controls disconnected. Webcam preview can remain open.", "ok");
-}
+$("fullControlUpBtn").onclick = () => sendFullControlAction({action:"up"}, true);^M
+$("fullControlDownBtn").onclick = () => sendFullControlAction({action:"down"}, true);^M
+$("fullControlLeftBtn").onclick = () => sendFullControlAction({action:"left"}, true);^M
+$("fullControlRightBtn").onclick = () => sendFullControlAction({action:"right"}, true);^M
+$("fullControlClampBtn").onclick = () => sendFullControlAction({action:"clamp"}, true);^M
+$("fullControlReleaseBtn").onclick = () => sendFullControlAction({action:"release"}, true);^M
+// ---------- CAMERA + USB DEMO (full OV2640 control over the unified raw serial) ----------
 function usbCamCmd(cmd, label){
-  if(!usbCamControlsReady()){ setMsg($("usbCamCmdMsg"), "Connect camera controls first.", "bad"); return Promise.reject(new Error("camera controls are not connected")); }
-  return cameraWrite(cmd)
-    .then(()=>{ if(label) setMsg($("usbCamCmdMsg"), label, "ok"); })
-    .catch(e=>{ setMsg($("usbCamCmdMsg"), "Send failed: "+(e.message||e), "bad"); throw e; });
+  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }
+  cameraWrite(cmd)
+    .then(()=>setMsg($("usbCamCmdMsg"), (label||cmd)+" sent.", "ok"))
+    .catch(e=>setMsg($("usbCamCmdMsg"), "Send failed: "+(e.message||e), "bad"));
 }
-$("usbCamPreviewStartBtn").onclick = () => usbCamStartPreview($("usbCamDevice").value);
-$("usbCamPreviewStopBtn").onclick = () => usbCamStopPreview();
-$("usbCamDevice").onchange = (e) => usbCamStartPreview(e.target.value);
-$("usbCamControlConnectBtn").onclick = usbCamConnectControls;
-$("usbCamControlDisconnectBtn").onclick = usbCamDisconnectControls;
-$("usbCamApplyBtn").onclick = usbCamApplySettings;
-$("usbCamResolution").onchange = usbCamMarkSettingsChanged;
+$("usbCamConnectBtn").onclick = async () => connectCameraPreview(USBCAM_UI);
+$("usbCamStopBtn").onclick = async () => { try{ await serialSend("d0\n"); }catch(_){} await releaseSerial("usbCamLog"); setMsg($("usbCamMsg"), "Camera disconnected.", "ok"); };
+$("usbCamFormat").onchange = async (e) => {
+  const fmt = e.target.value; // "0"=Gray, "1"=RGB, "2"=YUV, "3"=JPEG
+  const sizeSelect = $("usbCamSize");
+  if (fmt === "3") { // JPEG
+    sizeSelect.value = "1"; // default to QQVGA
+    for (let opt of sizeSelect.options) {
+      opt.disabled = (opt.value === "0"); // disable 96x96
+    }
+    usbCamCmd("f3", "pixel format");
+    await sleep(400);
+    usbCamCmd("s1", "resolution");
+  } else { // Raw formats
+    sizeSelect.value = "1"; // reset to QQVGA (s1) first safely
+    for (let opt of sizeSelect.options) {
+      const val = parseInt(opt.value, 10);
+      opt.disabled = (val >= 3); // limit max resolution to QVGA (disable >= VGA)
+    }
+    // Safety lock: decrease resolution first, wait, then switch format second
+    usbCamCmd("s1", "resolution");
+    await sleep(400);
+    usbCamCmd("f" + fmt, "pixel format");
+  }
+};
+$("usbCamSize").onchange = (e) => usbCamCmd("s"+e.target.value, "resolution");
+$("usbCamStreamOn").onclick  = () => usbCamCmd("d1", "stream on");
+$("usbCamStreamOff").onclick = () => usbCamCmd("d0", "stream off");
 $("usbCamBrightness").oninput  = (e) => setText("usbBriVal", e.target.value);
-$("usbCamBrightness").onchange = (e) => usbCamCmd("b"+e.target.value, "Brightness updated.");
+$("usbCamBrightness").onchange = (e) => usbCamCmd("b"+e.target.value, "brightness");
 $("usbCamContrast").oninput    = (e) => setText("usbConVal", e.target.value);
-$("usbCamContrast").onchange   = (e) => usbCamCmd("t"+e.target.value, "Contrast updated.");
+$("usbCamContrast").onchange   = (e) => usbCamCmd("t"+e.target.value, "contrast");
 $("usbCamSaturation").oninput  = (e) => setText("usbSatVal", e.target.value);
-$("usbCamSaturation").onchange = (e) => usbCamCmd("x"+e.target.value, "Saturation updated.");
-$("usbCamAec").onchange = (e) => { $("usbCamExposure").disabled=(e.target.value === "1"); usbCamCmd("e"+e.target.value, "Exposure mode updated."); };
-$("usbCamAgc").onchange = (e) => { $("usbCamGain").disabled=(e.target.value === "1"); usbCamCmd("g"+e.target.value, "Gain mode updated."); };
+$("usbCamSaturation").onchange = (e) => usbCamCmd("x"+e.target.value, "saturation");
+$("usbCamAec").onchange    = (e) => { usbCamCmd("e"+e.target.value, "AEC"); $("usbCamExposure").disabled = (e.target.value === "1"); };
+$("usbCamAgc").onchange    = (e) => { usbCamCmd("g"+e.target.value, "AGC"); $("usbCamGain").disabled = (e.target.value === "1"); };
 $("usbCamExposure").oninput  = (e) => setText("usbAecVal", e.target.value);
-$("usbCamExposure").onchange = (e) => usbCamCmd("v"+e.target.value, "Exposure updated.");
+$("usbCamExposure").onchange = (e) => usbCamCmd("v"+e.target.value, "exposure value");
 $("usbCamGain").oninput      = (e) => setText("usbAgcVal", e.target.value);
-$("usbCamGain").onchange     = (e) => usbCamCmd("a"+e.target.value, "Gain updated.");
-$("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "White balance updated.");
-$("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "Mirror updated.");
-$("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "Flip updated.");
-$("usbStorageEjectConfirmBtn").onclick = () => usbCamCmd("storage status", "Checking whether the camera owns storage...");
-$("usbStorageReturnBtn").onclick = () => usbCamCmd("storage pc", "Returning EECamp storage to the PC...");
-$("usbCamCaptureBtn").onclick = () => { const ts=new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "Saving the current camera frame..."); };
-$("usbCamListBtn").onclick = () => { photoListBuf=[]; photoListCapture=true; usbCamCmd("l", "Listing saved files..."); };
-$("usbCamRawBtn").onclick = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, "Command sent."); };
-usbCamSyncUi();
+$("usbCamGain").onchange     = (e) => usbCamCmd("a"+e.target.value, "gain value");
+$("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "AWB");
+$("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "mirror");
+$("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "flip");
+$("usbCamCaptureBtn").onclick = () => { const ts = new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "capture 96×96 photo to flash"); };
+$("usbCamListBtn").onclick = () => { photoListBuf = []; photoListCapture = true; usbCamCmd("l", "list saved photos"); };
+$("usbCamMountBtn").onclick = () => { usbCamCmd("usb", "mount flash as USB drive"); setMsg($("usbCamCmdMsg"), "Flash mounted as a USB drive on your PC — live preview is paused. Open your file explorer to see the ESP32-S3 photos.", "ok"); };
+$("usbCamRawBtn").onclick  = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, c); };
 $("mazeFlagInput").oninput = (e) => {
   const flag = e.target.value.trim();
   const btn = $("mazePrizeBtn");
@@ -1828,7 +1376,7 @@ function copyText(text, msgEl, okMsg){
 function fillModelOnnx(list){
   const host=$("modelOnnx"); if(!host) return;
   const onnx=(list||[]).filter(a=>a.name.toLowerCase().endsWith(".onnx"));
-  if(!onnx.length){ host.innerHTML='No ONNX model yet. Enable Export ONNX for a supported TensorFlow recipe, then train first.'; return; }
+  if(!onnx.length){ host.innerHTML='No ONNX model yet. Train a PyTorch recipe (or export ONNX) first; then it appears here.'; return; }
   host.innerHTML = onnx.map(a=>{ const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
     return `<a href="${dl}">${a.name}</a> (${fmtSize(a.size)})`; }).join("<br>");
 }
@@ -1912,9 +1460,9 @@ let shutterLink = { synced:false, button2:0 };
 let fileAsm = { receiving:false, lines:[], size:0, path:"" };
 let photoListCapture = false, photoListBuf = [];
 let usbPhotoUrl = null;
-const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:null };
+const MODEL_CAMERA_UI = { msgId:"modelMsg", logId:"cameraLog", imgId:"cameraPreview", placeholderId:"cameraPlaceholder", resultId:"modelGestureResult", connectBtn:"cameraConnectBtn", stopBtn:"cameraStopBtn" };
 const FULL_CAMERA_UI  = { msgId:"fullCameraMsg", logId:"fullCameraLog", imgId:"fullCameraPreview", placeholderId:"fullCameraPlaceholder", resultId:"fullGestureResult", connectBtn:"fullCameraConnectBtn", stopBtn:"fullCameraStopBtn" };
-const USBCAM_UI       = { msgId:"usbCamControlMsg", logId:"usbCamLog", imgId:"usbCamVideo", placeholderId:"usbCamPlaceholder", resultId:"usbCamResult", connectBtn:null, stopBtn:null };
+const USBCAM_UI       = { msgId:"usbCamMsg", logId:"usbCamLog", imgId:"usbCamPreview", placeholderId:"usbCamPlaceholder", resultId:"usbCamResult", connectBtn:"usbCamConnectBtn", stopBtn:"usbCamStopBtn" };
 let camUi = MODEL_CAMERA_UI;
 const ControlBoard = { port:null, reader:null, writer:null, reading:false, connected:false, lastAction:null };
 
@@ -2054,14 +1602,14 @@ function syncFlashButtons(){
   if($("usbFwFlashBtn")) $("usbFwFlashBtn").disabled = !(sup && USBFW.meta && USBFW.meta.available);
   ["ledOnBtn","ledOffBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
+  if($("cameraConnectBtn")) $("cameraConnectBtn").disabled = !sup;
+  if($("cameraStopBtn")) $("cameraStopBtn").disabled = !rawConnected;
   if($("fullCameraConnectBtn")) $("fullCameraConnectBtn").disabled = !sup;
   if($("fullCameraStopBtn")) $("fullCameraStopBtn").disabled = !rawConnected;
   if($("fullControlConnectBtn")) $("fullControlConnectBtn").disabled = !sup;
   if($("fullControlIdleBtn")) $("fullControlIdleBtn").disabled = !ControlBoard.connected;
-  if($("usbCamPreviewStartBtn")) $("usbCamPreviewStartBtn").disabled = !!UsbCam.stream;
-  if($("usbCamPreviewStopBtn")) $("usbCamPreviewStopBtn").disabled = !UsbCam.stream;
-  if(UsbCam.controls && !rawConnected) usbCamResetControlState();
-  else usbCamSyncUi();
+  if($("usbCamConnectBtn")) $("usbCamConnectBtn").disabled = !sup;
+  if($("usbCamStopBtn")) $("usbCamStopBtn").disabled = !rawConnected;
   if($("benchRunBtn")) $("benchRunBtn").disabled = false;
 }
 
@@ -2232,7 +1780,7 @@ function renderCameraFrame(base64Data, meta){
       dataUrl = canvas.toDataURL("image/jpeg");
     }
 
-    latestCameraFrame = { source:"ov2640", base64: clean, meta, mime, bytes: bytes.length, dataUrl: dataUrl.startsWith("data:") ? dataUrl : `data:image/jpeg;base64,${clean}` };
+    latestCameraFrame = { base64: clean, meta, mime, bytes: bytes.length, dataUrl: dataUrl.startsWith("data:") ? dataUrl : `data:image/jpeg;base64,${clean}` };
     img.src = dataUrl;
     img.style.display="block";
     if(ph) ph.style.display="none";
@@ -2284,41 +1832,12 @@ function cameraOnLine(rawLine){
     fileAsm={receiving:false, lines:[], size:0, path:""};
   } else if(fileAsm.receiving){
     fileAsm.lines.push(line);
-  } else if(camUi === USBCAM_UI && /^UVC,settings=fps,mode=(\d+),width=(\d+),height=(\d+),requested_fps=(\d+)$/.test(line)){
-    const m=/^UVC,settings=fps,mode=(\d+),width=(\d+),height=(\d+),requested_fps=(\d+)$/.exec(line);
-    UsbCam.config={mode:Number(m[1]), width:Number(m[2]), height:Number(m[3]), fps:Number(m[4])};
-    UsbCam.configured=true; UsbCam.applying=false; usbCamSyncUi();
-    setMsg("usbCamSettingsMsg", `Applied JPEG ${UsbCam.config.width}×${UsbCam.config.height} at ${UsbCam.config.fps} fps. You can start Live Camera.`, "ok");
-    appendLog(camUi.logId, line + "\n");
-  } else if(camUi === USBCAM_UI && /^UVC,mode=\d+,width=\d+,height=\d+,requested_fps=\d+,delivered_fps=\d+,dropped=\d+$/.test(line)){
-    const m=/^UVC,mode=(\d+),width=(\d+),height=(\d+),requested_fps=(\d+),delivered_fps=(\d+),dropped=(\d+)$/.exec(line);
-    setText("usbCamMetrics", `Camera: ${m[2]}×${m[3]}, requested ${m[4]} fps; delivered ${m[5]} fps; dropped ${m[6]} frame(s) in the last second.`);
-  } else if(camUi === USBCAM_UI && /^UVC,settings=resolution,/.test(line)){
-    appendLog(camUi.logId, line + "\n");
-  } else if(camUi === USBCAM_UI && /^STORAGE,owner=(app|pc),capture=(ready|blocked)$/.test(line)){
-    const storage=/^STORAGE,owner=(app|pc),capture=(ready|blocked)$/.exec(line);
-    usbCamSetStorageOwner(storage[1]);
-    setMsg($("usbCamCmdMsg"), storage[1] === "app"
-      ? "Camera owns storage. You can save or list files."
-      : "PC owns EECamp. Use your file explorer, or safely eject it before capture. Reconnect the cable if the drive does not reappear.", "ok");
-    appendLog(camUi.logId, line + "\n");
-  } else if(camUi === USBCAM_UI && line === "ERROR,storage_owned_by_pc,eject_usb_drive_first"){
-    usbCamSetStorageOwner("pc");
-    setMsg($("usbCamCmdMsg"), "EECamp is still owned by the PC. Safely eject it in your file explorer, then click I ejected EECamp.", "warn");
-    appendLog(camUi.logId, line + "\n");
-  } else if(camUi === USBCAM_UI && /^\[System\] Image saved to flash! File:/.test(line)){
-    setMsg($("usbCamCmdMsg"), line.replace(/^\[System\] /, ""), "ok");
-    appendLog(camUi.logId, line + "\n");
-  } else if(photoListCapture && /^FILE,path=(\/usb\/.+),size=(\d+)$/.test(line)){
-    const lm=/^FILE,path=\/usb\/(.+),size=(\d+)$/.exec(line);
+  } else if(photoListCapture && /\/usb\//.test(line) && /\(\d+\s*bytes\)/.test(line)){
+    const lm=/\/usb\/(\S+)\s+\((\d+)/.exec(line);
     if(lm) photoListBuf.push({name:lm[1], size:Number(lm[2])});
-  } else if(photoListCapture && /^FILE_LIST_END,count=\d+,total=\d+$/.test(line)){
-    photoListCapture=false; renderPhotoList(photoListBuf);
-    setMsg($("usbCamCmdMsg"), `Listed ${photoListBuf.length} saved file(s).`, "ok");
     appendLog(camUi.logId, line + "\n");
-  } else if(photoListCapture && /^ERROR/.test(line)){
-    photoListCapture=false;
-    setMsg($("usbCamCmdMsg"), "Could not list files: "+line.replace(/^ERROR[:,]?\s*/, ""), "bad");
+  } else if(photoListCapture && /^Total:/.test(line)){
+    photoListCapture=false; renderPhotoList(photoListBuf);
     appendLog(camUi.logId, line + "\n");
   } else if(line.startsWith("RESULT,")){
     appendLog(camUi.logId, line + "\n");
@@ -2354,7 +1873,7 @@ function finishPhotoDownload(b64, path){
 }
 function renderPhotoList(list){
   const host=$("usbPhotoList"); if(!host) return;
-  if(!list.length){ host.innerHTML='<div class="note">No saved images on EECamp yet.</div>'; return; }
+  if(!list.length){ host.innerHTML='<div class="note">No photos on the board yet. Click “Capture photo to flash”.</div>'; return; }
   host.innerHTML="";
   list.forEach(f=>{
     const row=document.createElement("div"); row.style.display="flex"; row.style.justifyContent="space-between"; row.style.gap="10px"; row.style.padding="4px 0"; row.style.borderBottom="1px solid var(--border)";
@@ -2365,8 +1884,7 @@ function renderPhotoList(list){
   });
 }
 function downloadPhoto(name){
-  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera controls first.","bad"); return; }
-  if(UsbCam.storageOwner !== "app"){ setMsg($("usbCamCmdMsg"),"CDC download needs camera-owned storage. Safely eject EECamp, then click I ejected EECamp.","warn"); return; }
+  if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }
   setMsg($("usbCamCmdMsg"), "Downloading "+name+" over CDC…", "warn");
   cameraWrite("r "+name);
 }
@@ -2394,7 +1912,7 @@ function handleShutterButton(line){
   } else if(camUi === FULL_CAMERA_UI){
     setMsg("fullCameraMsg", "Physical shutter pressed: ESP saved the photo to flash. Mount MSC once when you want to view it on the PC.", "ok");
   } else if(camUi === USBCAM_UI){
-    setMsg("usbCamCmdMsg", "Physical shutter requested a capture. Waiting for the camera storage result...", "warn");
+    setMsg("usbCamCmdMsg", "Physical shutter pressed: ESP saved the photo to flash. Mount MSC once when you want to view it on the PC.", "ok");
   }
 }
 async function handleModelPhysicalShutter(){
@@ -2442,7 +1960,7 @@ function handleEncoderExposure(line){
   else if(camUi === FULL_CAMERA_UI) setMsg("fullCameraMsg", "Encoder exposure: " + next, "ok");
   else if(camUi === USBCAM_UI) setMsg("usbCamCmdMsg", "Encoder exposure: " + next, "ok");
 }
-async function connectCameraPreview(ui){
+async function connectCameraPreview(ui=MODEL_CAMERA_UI){
   camUi = ui;
   const sup=webSerialSupport();
   if(!sup.ok){ setMsg($(camUi.msgId), "OV2640 preview needs Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
@@ -2462,6 +1980,13 @@ async function connectCameraPreview(ui){
     await serialOpenRaw({ logId:camUi.logId, baudRate:115200, bufferSize:1048576, onLine:cameraOnLine });
     if($(camUi.connectBtn)) $(camUi.connectBtn).disabled=true;
     if($(camUi.stopBtn)) $(camUi.stopBtn).disabled=false;
+    if(ui === USBCAM_UI){
+      $("usbCamFormat").value = "3";
+      $("usbCamSize").value = "1";
+      for(let opt of $("usbCamSize").options){
+        opt.disabled = (opt.value === "0");
+      }
+    }
     await sleep(400);
     await cameraWrite("f3"); await sleep(250);
     await cameraWrite("s1"); await sleep(250);
@@ -2481,13 +2006,13 @@ async function connectCameraPreview(ui){
 }
 
 async function saveCurrentFrameToDataset(options={}){
-  if(!latestCameraFrame){ setMsg($("captureMsg"), "No camera frame yet.", "bad"); return; }
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
   const className = selectedCaptureClass();
   if(!className){ setMsg($("captureMsg"), "Choose or type a gesture class first.", "bad"); return; }
   const fromPhysical = options.source === "physical_shutter";
   setMsg($("captureMsg"), fromPhysical ? "Physical shutter pressed: saving current frame to dataset..." : "Saving captured frame...", "warn");
   try {
-    const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, source:latestCameraFrame.source||"camera", image_data:latestCameraFrame.dataUrl})});
+    const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, image_data:latestCameraFrame.dataUrl})});
     const prefix = fromPhysical ? "Physical shutter: " : "";
     setMsg($("captureMsg"), `${prefix}Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
     $("newClassName").value="";
@@ -2495,7 +2020,7 @@ async function saveCurrentFrameToDataset(options={}){
   } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
 }
 async function predictCurrentFrame(){
-  if(!latestCameraFrame){ setMsg($("captureMsg"), "No camera frame yet.", "bad"); return; }
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "No OV2640 frame yet.", "bad"); return; }
   const model = $("predictModel")?.value || "";
   if(!model){ setMsg($("captureMsg"), "Choose a .keras model first.", "bad"); return; }
   if(predictBusy) return;
@@ -2710,17 +2235,6 @@ $("pwmSlider").oninput  = (e) => { setText("pwmVal", e.target.value); };
 $("pwmSlider").onchange = (e) => ctrlSend("PWM,"+e.target.value);
 
 $("refreshArtifacts").onclick = refreshArtifacts;
-$("artifactSaveCancel").onclick = closeArtifactSaveDialog;
-$("artifactSaveConfirm").onclick = confirmArtifactSave;
-$("artifactSaveName").onkeydown = event => {
-  if(event.key==="Enter"){ event.preventDefault(); confirmArtifactSave(); }
-};
-$("artifactSaveModal").onclick = event => {
-  if(event.target===$("artifactSaveModal")) closeArtifactSaveDialog();
-};
-document.addEventListener("keydown", event => {
-  if(event.key==="Escape" && $("artifactSaveModal").classList.contains("open")) closeArtifactSaveDialog();
-});
 
 // ---------- AI PC Drive ----------
 let DRIVE_FOLDERS = [];
