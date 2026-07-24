@@ -493,6 +493,15 @@
         <div><button class="secondary" id="fullCameraConnectBtn">Connect camera stream</button></div>
         <div><button class="secondary" id="fullCameraStopBtn" disabled>Stop stream</button></div>
       </div>
+      <div class="row compact" style="margin-top:10px">
+        <div><button class="secondary" id="fullControlUpBtn">Up</button></div>
+        <div><button class="secondary" id="fullControlDownBtn">Down</button></div>
+        <div><button class="secondary" id="fullControlLeftBtn">Left</button></div>
+        <div><button class="secondary" id="fullControlRightBtn">Right</button></div>
+        <div><button class="secondary" id="fullControlClampBtn">Clamp</button></div>
+        <div><button class="secondary" id="fullControlReleaseBtn">Release</button></div>
+        <div><button class="secondary" id="fullControlNullBtn">Null</button></div>
+      </div>
       <div class="msg" id="fullCameraMsg"></div>
       <div class="row compact" style="margin-top:10px">
         <div><button class="secondary" id="fullControlConnectBtn">Connect control board</button></div>
@@ -1294,7 +1303,13 @@ async function sendFullControlAction(eff, force=false){
 }
 $("fullControlConnectBtn").onclick = connectFullControlBoard;
 $("fullControlIdleBtn").onclick = () => sendFullControlAction({action:"none"}, true);
-
+if($("fullControlUpBtn")) $("fullControlUpBtn").onclick = () => sendFullControlAction({action:"up"}, true);
+if($("fullControlDownBtn")) $("fullControlDownBtn").onclick = () => sendFullControlAction({action:"down"}, true);
+if($("fullControlLeftBtn")) $("fullControlLeftBtn").onclick = () => sendFullControlAction({action:"left"}, true);
+if($("fullControlRightBtn")) $("fullControlRightBtn").onclick = () => sendFullControlAction({action:"right"}, true);
+if($("fullControlClampBtn")) $("fullControlClampBtn").onclick = () => sendFullControlAction({action:"clamp"}, true);
+if($("fullControlReleaseBtn")) $("fullControlReleaseBtn").onclick = () => sendFullControlAction({action:"release"}, true);
+if($("fullControlNullBtn")) $("fullControlNullBtn").onclick = () => sendFullControlAction({action:"none"}, true);
 // ---------- CAMERA + USB DEMO (full OV2640 control over the unified raw serial) ----------
 function usbCamCmd(cmd, label){
   if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera first.","bad"); return; }

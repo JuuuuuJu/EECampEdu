@@ -33,10 +33,10 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define ARM_MAX_DEG 180
 #define PITCH_MIN_DEG 30
 #define PITCH_MAX_DEG 125
-#define CLAW_MIN_DEG 0
+#define CLAW_MIN_DEG 10
 #define CLAW_MAX_DEG 90
-#define CLAW_CLAMP_DEG 0
-#define CLAW_RELEASE_DEG 80
+#define CLAW_CLAMP_DEG 10
+#define CLAW_RELEASE_DEG 60
 #define HEIGHT_COEFFICIENT 0.25
 #define SERVO_UPDATE_MS 100
 
