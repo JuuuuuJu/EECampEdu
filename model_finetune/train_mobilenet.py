@@ -34,6 +34,7 @@ def parse_args():
     parser.add_argument("--alpha", type=float, default=0.35, help="MobileNetV2 width multiplier. Default: 0.35.")
     parser.add_argument("--weights", default="imagenet", choices=["imagenet", "none"], help="MobileNetV2 source weights. Default: imagenet.")
     parser.add_argument("--export-onnx", action="store_true", help="Optionally export ONNX if tf2onnx is installed.")
+    parser.add_argument("--augment-flip", action="store_true", help="Apply horizontal flip in data augmentation.")
     return parser.parse_args()
 
 
@@ -151,13 +152,42 @@ def main():
         tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=5, mode="max", restore_best_weights=True),
     ]
 
-    print("\n=== Step 3: Training classification head ===")
+    has_direction_classes = any(name.lower() in {"left", "right"} for name in CLASS_NAMES)
+    if has_direction_classes:
+        print("[WARN] Class names contain 'left' or 'right'. Horizontal flip augmentation may cause label contradiction!")
+
+    # Robust Data Augmentation
+    augment_layers = []
+    if args.augment_flip:
+        print("Horizontal flip augmentation enabled.")
+        augment_layers.append(tf.keras.layers.RandomFlip("horizontal"))
+    else:
+        print("Horizontal flip augmentation disabled.")
+    augment_layers.extend([
+        tf.keras.layers.RandomRotation(factor=0.08, fill_mode="reflect"),
+        tf.keras.layers.RandomTranslation(height_factor=0.15, width_factor=0.15, fill_mode="reflect"),
+        tf.keras.layers.RandomZoom(height_factor=0.15, width_factor=0.15, fill_mode="reflect"),
+        tf.keras.layers.RandomBrightness(factor=0.2, value_range=(0.0, 1.0)),
+        tf.keras.layers.RandomContrast(factor=0.2)
+    ])
+    data_augmentation = tf.keras.Sequential(augment_layers)
+
+    train_ds = tf.data.Dataset.from_tensor_slices((x_train, y_train))
+    train_ds = train_ds.shuffle(buffer_size=len(x_train))
+    train_ds = train_ds.map(
+        lambda x, y: (tf.clip_by_value(data_augmentation(x, training=True), 0.0, 1.0), y),
+        num_parallel_calls=tf.data.AUTOTUNE
+    )
+    train_ds = train_ds.batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
+
+    val_ds = tf.data.Dataset.from_tensor_slices((x_val, y_val))
+    val_ds = val_ds.batch(args.batch_size).prefetch(tf.data.AUTOTUNE)
+
+    print("\n=== Step 3: Training classification head with Data Augmentation ===")
     history = model.fit(
-        x_train,
-        y_train,
-        validation_data=(x_val, y_val),
+        train_ds,
+        validation_data=val_ds,
         epochs=args.epochs,
-        batch_size=args.batch_size,
         callbacks=callbacks,
         verbose=1,
     )

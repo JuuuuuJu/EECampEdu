@@ -578,11 +578,23 @@ def main():
     else:
         print("  Test:  0 samples (new_test_data not found)")
 
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--augment-flip", action="store_true", help="Apply horizontal flip in data augmentation.")
+    args, _ = parser.parse_known_args()
+
     # Data Augmentation & Preprocessing
-    data_augmentation = transforms.Compose([
+    aug_list = []
+    if args.augment_flip:
+        print("Horizontal flip augmentation enabled.")
+        aug_list.append(transforms.RandomHorizontalFlip())
+    else:
+        print("Horizontal flip augmentation disabled.")
+    aug_list.extend([
         transforms.RandomAffine(degrees=(-29, 29), translate=(0.15, 0.15), scale=(0.85, 1.15)),
         transforms.ColorJitter(brightness=0.2, contrast=0.2),
     ])
+    data_augmentation = transforms.Compose(aug_list)
 
     local_train_ds = LocalDataset(x_local_train, y_local_train, transform=data_augmentation)
     local_val_ds = LocalDataset(x_local_val, y_local_val)

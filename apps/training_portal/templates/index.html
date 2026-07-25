@@ -276,7 +276,7 @@
       <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: flash model camera firmware → collect OV2640 images → train or fine-tune a model → preview prediction before deploy.</p>
     </div>
 
-    <div class="card">
+    <div class="card" style="display:none">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
       <p class="note">Use this for the model class OV2640 preview/capture workflow. It is built from <code>firmware/model_finetune</code>, a camera-only firmware separate from full integration and deploy benchmark firmware.</p>
       <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
@@ -288,6 +288,44 @@
       <div class="msg" id="modelFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
       <pre class="log" id="modelFwLog">Flash this before the ESP32-S3 shows up as a camera for model class.</pre>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">0.</span>Create gesture classes</h2>
+      <p class="note">Create empty folders for your gesture classes first, so that you can select them from the dropdown list when capturing photos.</p>
+      <div class="row compact">
+        <div><label>New class name</label><input id="step0ClassName" placeholder="e.g. wave_hand, double_click" /></div>
+        <div><button id="step0CreateBtn">Create class</button></div>
+      </div>
+      <div class="msg" id="step0Msg"></div>
+    </div>
+
+    <div class="card">
+      <h2><span class="step">A.</span>Photo capture (Dataset Collection)</h2>
+      <p class="note">Start your camera preview to capture images for your dataset. Captured frames are preprocessed and saved under the selected gesture class directory.</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port so it appears in the camera list below.</p>
+      <div class="row compact">
+        <div><label>Camera</label><select id="cameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
+        <div><button id="localWebcamBtn">Start camera preview</button></div>
+      </div>
+      <div class="msg" id="modelMsg"></div>
+      <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p>
+      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+        <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none"></video>
+        <canvas id="localWebcamCanvas" hidden></canvas>
+        <div class="note" id="cameraPlaceholder">No camera frame yet.</div>
+      </div>
+      <div class="row compact" style="margin-top:12px">
+        <div><label>Gesture class</label><select id="captureClass"></select></div>
+        <div style="display:none"><label>Dataset split</label><select id="captureSplit"><option value="train" selected>train</option></select></div>
+      </div>
+      <div class="row compact">
+        <div><button id="saveFrameBtn" disabled>Save current frame to dataset</button></div>
+        <div><button class="secondary" id="autoSplitBtn">Auto-split Train/Val (4:1)</button></div>
+      </div>
+      <div class="msg" id="captureMsg"></div>
+      <label style="margin-top:12px">Camera messages</label>
+      <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera.</pre>
     </div>
 
     <div class="card">
@@ -327,41 +365,20 @@
         <div><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
       </div>
       <label><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
+      <label><input type="checkbox" id="augmentFlip" style="width:auto" checked /> Horizontal flip (data augmentation)</label>
       <button id="trainBtn">Start training</button>
       <div class="msg" id="trainMsg"></div>
     </div>
 
     <div class="card">
-      <h2><span class="step">C.</span>Model class — capture → train → preview</h2>
-      <p class="note">Training and prediction run on the AI PC. The preview uses this browser's camera picker — once the model finetune firmware is flashed, the ESP32-S3 shows up as a webcam (UVC) alongside any built-in camera.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port so it appears in the camera list below.</p>
+      <h2><span class="step">C.</span>Model prediction preview</h2>
+      <p class="note">Test your trained <code>.keras</code> models. It runs inference locally on the AI PC using the latest frame from the camera preview card above.</p>
       <div class="row compact">
-        <div><label>Camera</label><select id="cameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
-        <div><button id="localWebcamBtn">Start camera preview</button></div>
-      </div>
-      <div class="msg" id="modelMsg"></div>
-      <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p>
-      <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
-        <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none"></video>
-        <canvas id="localWebcamCanvas" hidden></canvas>
-        <div class="note" id="cameraPlaceholder">No camera frame yet.</div>
-      </div>
-      <div class="row compact" style="margin-top:12px">
-        <div><label>Gesture class</label><select id="captureClass"></select></div>
-        <div><label>New class</label><input id="newClassName" placeholder="e.g. thumbs_up" /></div>
-        <div><label>Dataset split</label><select id="captureSplit"><option value="train">train</option><option value="validation">validation</option></select></div>
-      </div>
-      <div class="row compact">
-        <div><button id="saveFrameBtn" disabled>Save current frame to dataset</button></div>
-        <div><button class="secondary" id="clearCaptureClassBtn">Clear class selection</button></div>
         <div><label>.keras model</label><select id="predictModel"></select></div>
         <div><button class="secondary" id="predictFrameBtn" disabled>Predict current frame</button></div>
         <div><label><input type="checkbox" id="livePredictToggle" /> Live .keras prediction</label></div>
       </div>
-      <div class="msg" id="captureMsg"></div>
       <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
-      <label style="margin-top:12px">Camera / model messages</label>
-      <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera, or flash the model finetune firmware first so the ESP32-S3 appears in the list.</pre>
       <label style="margin-top:12px">Model file (ONNX) for preview</label>
       <div id="modelOnnx" class="note">Looking for a TensorFlow training export in ONNX format…</div>
     </div>
@@ -1131,6 +1148,7 @@ function onRecipeChange(){
   $("batchSize").parentElement.style.display=s.includes("batch_size")?"":"none";
   $("alpha").parentElement.style.display=s.includes("alpha")?"":"none";
   $("exportOnnx").parentElement.style.display=s.includes("export_onnx")?"":"none";
+  $("augmentFlip").parentElement.style.display=s.includes("augment_flip")?"":"none";
 }
 
 // ---------- dataset / train / quantize ----------
@@ -1145,7 +1163,42 @@ $("uploadBtn").onclick = async () => {
 $("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
   await startJob("/api/train",{ recipe:$("recipe").value, epochs:$("epochs").value||undefined,
-    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked }, $("trainMsg"), "training", $("trainBtn"));
+    batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked, augment_flip:$("augmentFlip").checked }, $("trainMsg"), "training", $("trainBtn"));
+};
+$("autoSplitBtn").onclick = async () => {
+  setMsg($("captureMsg"), "Auto-splitting dataset (4:1 train/val)...", "warn");
+  $("autoSplitBtn").disabled = true;
+  try {
+    const r = await api("/api/dataset/auto-split", { method: "POST" });
+    let details = [];
+    for (let c in r.counts) {
+      details.push(`${c}: ${r.counts[c].train} train / ${r.counts[c].validation} val`);
+    }
+    setMsg($("captureMsg"), `Dataset split successfully! Details: ${details.join(", ")}`, "ok");
+    refreshClassMap();
+  } catch(e) {
+    setMsg($("captureMsg"), "Split failed: " + e.message, "bad");
+  }
+  $("autoSplitBtn").disabled = false;
+};
+$("step0CreateBtn").onclick = async () => {
+  const val = ($("step0ClassName").value || "").trim();
+  if (!val) { setMsg($("step0Msg"), "Class name cannot be empty.", "bad"); return; }
+  setMsg($("step0Msg"), "Creating class...", "warn");
+  $("step0CreateBtn").disabled = true;
+  try {
+    const r = await api("/api/dataset/create-class", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ class_name: val })
+    });
+    setMsg($("step0Msg"), `Class "${r.class_name}" created successfully!`, "ok");
+    $("step0ClassName").value = "";
+    refreshClassMap();
+  } catch(e) {
+    setMsg($("step0Msg"), "Failed to create class: " + e.message, "bad");
+  }
+  $("step0CreateBtn").disabled = false;
 };
 $("refreshModelsBtn").onclick = async () => { setMsg($("quantMsg"),"Refreshing…","warn");
   try { await refreshModelList(); setMsg($("quantMsg"),`Found ${KERAS_MODELS.length} model(s).`,"ok"); } catch(e){ setMsg($("quantMsg"),"Refresh failed: "+e.message,"bad"); } };
@@ -1593,11 +1646,13 @@ window.addEventListener("beforeunload", () => {
   if(localWebcamStream) localWebcamStream.getTracks().forEach(track=>track.stop());
 });
 $("saveFrameBtn").onclick = saveCurrentFrameToDataset;
-$("clearCaptureClassBtn").onclick = () => {
-  if($("captureClass")) $("captureClass").value = "";
-  if($("newClassName")) $("newClassName").value = "";
-  setMsg($("captureMsg"), "Class selection cleared.", "ok");
-};
+if($("clearCaptureClassBtn")) {
+  $("clearCaptureClassBtn").onclick = () => {
+    if($("captureClass")) $("captureClass").value = "";
+    if($("newClassName")) $("newClassName").value = "";
+    setMsg($("captureMsg"), "Class selection cleared.", "ok");
+  };
+}
 $("predictFrameBtn").onclick = predictCurrentFrame;
 $("predictModel").onchange = () => { if($("predictFrameBtn")) $("predictFrameBtn").disabled = !(latestCameraFrame && $("predictModel").value); };
 $("fullCameraToggleBtn").onclick = async () => {
@@ -2567,7 +2622,7 @@ async function saveCurrentFrameToDataset(options={}){
     const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, source:latestCameraFrame.source||"camera", image_data:latestCameraFrame.dataUrl})});
     const prefix = fromPhysical ? "Physical shutter: " : "";
     setMsg($("captureMsg"), `${prefix}Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
-    $("newClassName").value="";
+    if($("newClassName")) $("newClassName").value="";
     await refreshClassMap();
   } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
 }

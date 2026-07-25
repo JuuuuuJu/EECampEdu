@@ -179,7 +179,7 @@ TRAINING_RECIPES = {
         "label": "MobileNetV2 (TensorFlow, recommended)",
         "script": "model_finetune/train_mobilenet.py",
         "keras_model_name": "MobileNetV2_finetuned",
-        "supports": ["epochs", "batch_size", "alpha", "export_onnx"],
+        "supports": ["epochs", "batch_size", "alpha", "export_onnx", "augment_flip"],
         "description": "Transfer-learned MobileNetV2, best accuracy/speed on the ESP32-S3.",
     },
     "tf_mini_resnet": {
@@ -187,7 +187,7 @@ TRAINING_RECIPES = {
         "label": "Mini ResNet (TensorFlow)",
         "script": "model_finetune/train_mini_resnet.py",
         "keras_model_name": "Mini_ResNet_finetuned",
-        "supports": [],  # module-level script, no CLI arguments
+        "supports": ["augment_flip"],  # module-level script, supports CLI arguments
         "description": "Lightweight Keras Mini ResNet. Runs with default settings.",
     },
 }
@@ -256,7 +256,11 @@ def _team_from_hostname():
     override = os.environ.get("EECAMP_PORTAL_TEAM", "").strip()
     if override in TEAM_PASSWORDS:
         return override
-    hostname = os.uname().nodename.lower()
+    try:
+        hostname = os.uname().nodename.lower()
+    except AttributeError:
+        import socket
+        hostname = socket.gethostname().lower()
     for suffix in reversed(re.findall(r"\d+", hostname)):
         team = f"team{int(suffix):02d}"
         if team in TEAM_PASSWORDS:
@@ -1335,7 +1339,7 @@ def _dataset_class_names(dataset_dir):
         root = dataset_dir / split
         if root.is_dir():
             for child in root.iterdir():
-                if child.is_dir() and _class_image_count(root, child.name) > 0:
+                if child.is_dir():
                     names.add(child.name)
     # Do not use _current_class_order() here: it falls back to the default class
     # names when no dataset exists, which would block students from creating
@@ -1497,6 +1501,8 @@ def build_training_command(recipe_key, params, dataset_dir):
         cmd += ["--alpha", str(_safe_float(params["alpha"], "alpha", 0.1, 2.0))]
     if "export_onnx" in supports and params.get("export_onnx"):
         cmd += ["--export-onnx"]
+    if "augment_flip" in supports and params.get("augment_flip"):
+        cmd += ["--augment-flip"]
     extra = {
         "runtime_root": str(runtime_root),
         "artifact_cutoff_mtime": time.time(),
@@ -2456,6 +2462,107 @@ def create_app():
             "preprocess": "grayscale_96x96_png",
             "counts": counts,
             "class_map": class_map_payload,
+        })
+
+    @app.post("/api/dataset/create-class")
+    def dataset_create_class():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        try:
+            class_name = _sanitize_class_name(data.get("class_name"))
+        except ValueError as exc:
+            abort(400, str(exc))
+        dataset_dir, dataset_lock = _request_dataset()
+        try:
+            with dataset_lock:
+                (dataset_dir / "train" / class_name).mkdir(parents=True, exist_ok=True)
+                (dataset_dir / "validation" / class_name).mkdir(parents=True, exist_ok=True)
+                class_map_payload = _refresh_class_map_from_dataset(dataset_dir, class_name)
+        except Exception as exc:
+            abort(500, f"Failed to create class: {str(exc)}")
+        return jsonify({
+            "ok": True,
+            "class_name": class_name,
+            "class_map": class_map_payload
+        })
+
+    @app.post("/api/dataset/auto-split")
+    def dataset_auto_split():
+        owner_extra = _ml_job_owner_extra()
+        dataset_dir, dataset_lock = _request_dataset()
+        
+        try:
+            with dataset_lock:
+                classes = set()
+                train_dir = dataset_dir / "train"
+                val_dir = dataset_dir / "validation"
+                if train_dir.is_dir():
+                    classes.update(p.name for p in train_dir.iterdir() if p.is_dir())
+                if val_dir.is_dir():
+                    classes.update(p.name for p in val_dir.iterdir() if p.is_dir())
+                
+                all_counts = {}
+                for class_name in classes:
+                    class_train = train_dir / class_name
+                    class_val = val_dir / class_name
+                    
+                    images = []
+                    if class_train.is_dir():
+                        images.extend(class_train.glob("*"))
+                    if class_val.is_dir():
+                        images.extend(class_val.glob("*"))
+                    
+                    images = [img for img in images if img.is_file() and img.suffix.lower() in IMAGE_EXTENSIONS]
+                    total = len(images)
+                    if total == 0:
+                        continue
+                    
+                    import random
+                    random.seed(42)
+                    random.shuffle(images)
+                    
+                    val_count = total // 5
+                    if val_count == 0 and total >= 2:
+                        val_count = 1
+                    
+                    val_images = set(images[:val_count])
+                    
+                    temp_dir = dataset_dir / "temp_split" / class_name
+                    temp_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    for img in images:
+                        shutil.move(str(img), str(temp_dir / img.name))
+                    
+                    shutil.rmtree(str(class_train), ignore_errors=True)
+                    shutil.rmtree(str(class_val), ignore_errors=True)
+                    
+                    class_train.mkdir(parents=True, exist_ok=True)
+                    class_val.mkdir(parents=True, exist_ok=True)
+                    
+                    for img_path in temp_dir.iterdir():
+                        if img_path.is_file():
+                            is_val = any(v_img.name == img_path.name for v_img in val_images)
+                            dest_dir = class_val if is_val else class_train
+                            shutil.move(str(img_path), str(dest_dir / img_path.name))
+                    
+                    shutil.rmtree(str(temp_dir), ignore_errors=True)
+                
+                shutil.rmtree(str(dataset_dir / "temp_split"), ignore_errors=True)
+                
+                counts_all = _dataset_counts(dataset_dir)
+                for class_name in classes:
+                    all_counts[class_name] = counts_all.get(class_name, {"train": 0, "validation": 0})
+                
+                class_map_payload = {}
+                if classes:
+                    class_map_payload = _refresh_class_map_from_dataset(dataset_dir, list(classes)[0])
+                
+        except Exception as exc:
+            abort(500, f"Split failed: {str(exc)}")
+            
+        return jsonify({
+            "ok": True,
+            "counts": all_counts,
+            "class_map": class_map_payload
         })
 
     @app.post("/api/model/keras/predict")

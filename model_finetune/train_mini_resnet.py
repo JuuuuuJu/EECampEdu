@@ -108,14 +108,26 @@ def preprocess_mnist_image(image, label):
     image = tf.image.resize(image, IMG_SIZE)
     return image, label
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--augment-flip", action="store_true", help="Apply horizontal flip in data augmentation.")
+args, _ = parser.parse_known_args()
+
 # Robust Data Augmentation with brightness and contrast variations
-data_augmentation = tf.keras.Sequential([
+augment_layers = []
+if args.augment_flip:
+    print("Horizontal flip augmentation enabled.")
+    augment_layers.append(tf.keras.layers.RandomFlip("horizontal"))
+else:
+    print("Horizontal flip augmentation disabled.")
+augment_layers.extend([
     tf.keras.layers.RandomRotation(factor=0.08, fill_mode="reflect"),
     tf.keras.layers.RandomTranslation(height_factor=0.15, width_factor=0.15, fill_mode="reflect"),
     tf.keras.layers.RandomZoom(height_factor=0.15, width_factor=0.15, fill_mode="reflect"),
     tf.keras.layers.RandomBrightness(factor=0.2, value_range=(0.0, 1.0)),
     tf.keras.layers.RandomContrast(factor=0.2)
 ])
+data_augmentation = tf.keras.Sequential(augment_layers)
 
 # ==========================================
 # 3. MODEL ARCHITECTURE (MINI RESNET BASE)
