@@ -1308,7 +1308,7 @@ async function pollLog(){
   try { const r=await api(`/api/jobs/${currentJobId}/log?offset=${logOffset}`);
     if(r.data){ $("log").textContent+=r.data; $("log").scrollTop=$("log").scrollHeight; } logOffset=r.offset;
     $("jobPill").textContent=`${currentJobId} — ${r.status}`+(r.returncode!==null?` (rc=${r.returncode})`:"");
-    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; setJobButtonFinished(currentJobId, r.status); refreshArtifacts(); refreshJobs(); refreshReports(); }
+    if(r.status==="succeeded"||r.status==="failed"){ clearInterval(logTimer); logTimer=null; setJobButtonFinished(currentJobId, r.status); refreshArtifacts(); refreshJobs(); refreshReports(); if(r.status==="succeeded") refreshModelList(); }
   } catch(e){}
 }
 function closeArtifactSaveDialog(){
