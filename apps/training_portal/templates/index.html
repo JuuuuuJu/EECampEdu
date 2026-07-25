@@ -339,6 +339,19 @@
         <div style="flex: 1 1 120px;"><button id="uploadBtn" style="margin-top:0; width:100%">Upload &amp; import</button></div>
       </div>
       <div class="msg" id="uploadMsg"></div>
+      <hr style="margin: 20px 0; border: none; border-top: 1px dashed var(--border);" />
+
+      <label style="margin-top:14px">Export dataset</label>
+      <p class="note">Downloads or saves a zip of the <b>whole</b> dataset on disk (all classes).</p>
+      <div class="row compact">
+        <div style="flex:1 1 220px"><label>File name</label><input type="text" id="datasetExportName" value="active-dataset.zip" /></div>
+        <div><label>Save to Drive folder</label><select id="datasetExportFolder"></select></div>
+      </div>
+      <div class="row compact" style="margin-top:6px">
+        <div><button class="secondary" id="datasetDownloadBtn">Download zip</button></div>
+        <div><button class="secondary" id="datasetSaveToDriveBtn">Save to Drive</button></div>
+      </div>
+      <div class="msg" id="datasetExportMsg"></div>
       <div style="display:none">
         <label style="margin-top:12px">Camera messages</label>
         <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera.</pre>
@@ -354,17 +367,6 @@
       <div id="activeClassRows"><div class="note">Import a dataset or capture frames to add gesture classes.</div></div>
       <button class="secondary" id="saveActiveClassesBtn">Save active classes</button>
       <div class="msg" id="activeClassMsg"></div>
-      <label style="margin-top:14px">Export active dataset</label>
-      <p class="note">Downloads or saves a zip of the <b>whole</b> dataset on disk (all classes, not just the active set above).</p>
-      <div class="row compact">
-        <div style="flex:1 1 220px"><label>File name</label><input type="text" id="datasetExportName" value="active-dataset.zip" /></div>
-        <div><label>Save to Drive folder</label><select id="datasetExportFolder"></select></div>
-      </div>
-      <div class="row compact" style="margin-top:6px">
-        <div><button class="secondary" id="datasetDownloadBtn">Download zip</button></div>
-        <div><button class="secondary" id="datasetSaveToDriveBtn">Save to Drive</button></div>
-      </div>
-      <div class="msg" id="datasetExportMsg"></div>
       <label style="margin-top:14px">Map active classes → robot actions</label>
       <div id="classMapRows" style="margin-top:6px"><div class="note">Select active classes above to map them to robot actions.</div></div>
       <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
