@@ -1538,6 +1538,12 @@ def build_quantize_command(params, owner_extra):
         "--quant-format", quant_format,
         "--quant-granularity", granularity,
     ]
+    if owner_extra.get("dataset_dir"):
+        ds_dir = Path(owner_extra["dataset_dir"])
+        cal_dir = ds_dir / "train"
+        val_dir = ds_dir / "validation"
+        if cal_dir.is_dir(): cmd += ["--calibration-dir", str(cal_dir)]
+        if val_dir.is_dir(): cmd += ["--validation-dir", str(val_dir)]
     result_dir = _temporary_artifact_dir(
         ARTIFACT_MODELS_DIR,
         owner_extra.get("owner_id"),
@@ -2395,6 +2401,8 @@ def create_app():
     def quantize():
         data = request.get_json(silent=True) or request.form.to_dict()
         extra = _ml_job_owner_extra()
+        dataset_dir, _ = _request_dataset()
+        extra["dataset_dir"] = str(dataset_dir)
         extra["artifact_token"] = uuid.uuid4().hex
         try:
             cmd = build_quantize_command(data, extra)
