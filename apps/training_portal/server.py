@@ -128,7 +128,7 @@ try:
 except Exception:  # pragma: no cover - portal still runs without it
     class_map_lib = None
 
-NUM_CLASSES = 6
+NUM_CLASSES = 7
 MODEL_PREDICT_CACHE = {}
 MODEL_INPUT_SIZE = (96, 96)
 MAX_CAPTURE_IMAGE_BYTES = 8 * 1024 * 1024

@@ -41,7 +41,7 @@ DATASET_DIR = MODEL_FINETUNE_DIR / "dataset"
 CLASS_MAP_PATH = DATASET_DIR / "class_mapping.json"
 
 # Exactly six gesture classes are expected for this project.
-NUM_CLASSES = 6
+NUM_CLASSES = 7
 
 # Robot-arm output actions a class may be mapped to. Order/index here matches the
 # control board output firmware apply_action() table so the student PC control app can send
