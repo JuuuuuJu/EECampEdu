@@ -40,9 +40,9 @@ struct CameraMode {
 
 // Must stay in the same order as the UVC frame descriptors (frame index = mode + 1).
 static constexpr CameraMode kCameraModes[UVC_MODE_COUNT] = {
-    { FRAMESIZE_96X96, 96, 96 }, { FRAMESIZE_QQVGA, 160, 120 },
-    { FRAMESIZE_QVGA, 320, 240 }, { FRAMESIZE_VGA, 640, 480 },
-    { FRAMESIZE_SVGA, 800, 600 }, { FRAMESIZE_UXGA, 1600, 1200 },
+    { FRAMESIZE_QQVGA, 160, 120 }, { FRAMESIZE_QVGA, 320, 240 },
+    { FRAMESIZE_VGA, 640, 480 }, { FRAMESIZE_SVGA, 800, 600 },
+    { FRAMESIZE_UXGA, 1600, 1200 },
 };
 
 static pixformat_t g_current_format = PIXFORMAT_JPEG;

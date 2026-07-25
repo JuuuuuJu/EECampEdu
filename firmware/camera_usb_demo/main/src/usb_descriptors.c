@@ -212,7 +212,7 @@ static const composite_cfg_desc_t s_fs_config = {
             .bFormatIndex         = 1,
             .bNumFrameDescriptors = UVC_MODE_COUNT,
             .bmFlags              = 0,
-            .bDefaultFrameIndex   = 1,
+            .bDefaultFrameIndex   = UVC_DEFAULT_MODE + 1,
             .bAspectRatioX        = 0,
             .bAspectRatioY        = 0,
             .bmInterlaceFlags     = 0,
@@ -230,18 +230,23 @@ static const composite_cfg_desc_t s_fs_config = {
             .dwMaxVideoFrameBufferSize = (width) * (height) * 2, \
             .dwDefaultFrameInterval = 10000000 / UVC_DEFAULT_FPS, \
             .bFrameIntervalType = UVC_MAX_FPS, \
+            /* Discrete intervals MUST be listed in strictly ascending interval  \
+             * order, i.e. highest fps first (UVC 1.5 sec. 3.9.2.6). Windows'    \
+             * usbvideo.sys enforces interval[i] > interval[i-1] and fails the    \
+             * entire configuration with Code 10 otherwise; Linux's uvcvideo does \
+             * not check, so a descending list appears to work there. Keep 30 fps \
+             * first and 1 fps last. */ \
             .dwFrameInterval = { \
-              10000000/1,10000000/2,10000000/3,10000000/4,10000000/5,10000000/6, \
-              10000000/7,10000000/8,10000000/9,10000000/10,10000000/11,10000000/12, \
-              10000000/13,10000000/14,10000000/15,10000000/16,10000000/17,10000000/18, \
-              10000000/19,10000000/20,10000000/21,10000000/22,10000000/23,10000000/24, \
-              10000000/25,10000000/26,10000000/27,10000000/28,10000000/29,10000000/30 } }
-            MJPEG_FRAME(1, 96, 96),
-            MJPEG_FRAME(2, 160, 120),
-            MJPEG_FRAME(3, 320, 240),
-            MJPEG_FRAME(4, 640, 480),
-            MJPEG_FRAME(5, 800, 600),
-            MJPEG_FRAME(6, 1600, 1200),
+              10000000/30,10000000/29,10000000/28,10000000/27,10000000/26,10000000/25, \
+              10000000/24,10000000/23,10000000/22,10000000/21,10000000/20,10000000/19, \
+              10000000/18,10000000/17,10000000/16,10000000/15,10000000/14,10000000/13, \
+              10000000/12,10000000/11,10000000/10,10000000/9,10000000/8,10000000/7, \
+              10000000/6,10000000/5,10000000/4,10000000/3,10000000/2,10000000/1 } }
+            MJPEG_FRAME(1, 160, 120),
+            MJPEG_FRAME(2, 320, 240),
+            MJPEG_FRAME(3, 640, 480),
+            MJPEG_FRAME(4, 800, 600),
+            MJPEG_FRAME(5, 1600, 1200),
 #undef MJPEG_FRAME
         },
         .color = {

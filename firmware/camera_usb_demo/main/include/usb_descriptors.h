@@ -6,11 +6,15 @@
 extern "C" {
 #endif
 
-// The six MJPEG modes exposed to the browser UVC driver. The host may request
+// The five MJPEG modes exposed to the browser UVC driver. The host may request
 // 1..30 fps for every mode; actual throughput is reported by the firmware.
-#define UVC_MODE_COUNT 6
+// 96x96 is intentionally absent: the sensor's live preview at that crop does not
+// work. The 96x96 grayscale capture path for model inputs is separate and still
+// reconfigures the sensor to FRAMESIZE_96X96 on demand.
+// Keep these in sync with USB_CAM_MODES in apps/training_portal/templates/index.html.
+#define UVC_MODE_COUNT 5
 #define UVC_MAX_FPS 30
-#define UVC_DEFAULT_MODE 2
+#define UVC_DEFAULT_MODE 1
 #define UVC_DEFAULT_FPS 15
 #define UVC_MAX_FRAME_BYTES (1600 * 1200 * 2)
 

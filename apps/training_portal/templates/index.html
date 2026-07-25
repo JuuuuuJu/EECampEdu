@@ -565,7 +565,7 @@
       </div>
       <div class="msg" id="usbCamControlMsg"></div>
       <div class="row compact">
-        <div><label>Preview resolution</label><select id="usbCamResolution"><option value="0">96 × 96</option><option value="1">160 × 120</option><option value="2" selected>320 × 240</option><option value="3">640 × 480</option><option value="4">800 × 600</option><option value="5">1600 × 1200</option></select></div>
+        <div><label>Preview resolution</label><select id="usbCamResolution"><option value="0">160 × 120</option><option value="1" selected>320 × 240</option><option value="2">640 × 480</option><option value="3">800 × 600</option><option value="4">1600 × 1200</option></select></div>
         <div><label>Frame rate</label><div class="note" style="margin-top:8px">Automatically requests the maximum 30 fps. Delivered FPS and drops are shown during preview.</div></div>
         <div style="display:flex;align-items:flex-end"><button id="usbCamApplyBtn" disabled>Apply camera settings</button></div>
       </div>
@@ -1619,16 +1619,22 @@ if($("fullControlReleaseBtn")) $("fullControlReleaseBtn").onclick = () => sendFu
 if($("fullControlNullBtn")) $("fullControlNullBtn").onclick = () => sendFullControlAction({action:"none"}, true);
 // ---------- CAMERA + USB DEMO (UVC webcam + independent CDC controls) ----------
 const UsbCam = { stream:null, controls:false, storageOwner:"unknown", configured:false, applying:false,
-  config:{mode:2, width:320, height:240, fps:30} };
+  config:{mode:1, width:320, height:240, fps:30} };
+// Index MUST match kCameraModes[] in firmware/camera_usb_demo/main/src/app_main.cpp:
+// the CDC "s<n>" command indexes that array directly, and the firmware rejects
+// n >= UVC_MODE_COUNT (5) by silently falling back to UVC_DEFAULT_MODE. 96x96 is
+// deliberately absent here because the firmware dropped it (the sensor's live
+// preview at that crop does not work); listing it shifted every mode by one.
 const USB_CAM_MODES = [
-  {width:96,height:96}, {width:160,height:120}, {width:320,height:240},
-  {width:640,height:480}, {width:800,height:600}, {width:1600,height:1200},
+  {width:160,height:120}, {width:320,height:240}, {width:640,height:480},
+  {width:800,height:600}, {width:1600,height:1200},
 ];
+const USB_CAM_DEFAULT_MODE = 1;   // 320x240, matches firmware UVC_DEFAULT_MODE
 const USB_CAM_CONTROL_IDS = ["usbCamResolution", "usbCamApplyBtn", "usbCamBrightness", "usbCamContrast", "usbCamSaturation", "usbCamAec", "usbCamAgc", "usbCamAwb", "usbCamMirror", "usbCamFlip", "usbCamExposure", "usbCamGain", "usbCamRaw", "usbCamRawBtn"];
 
 function usbCamControlsReady(){ return UsbCam.controls && Serial.mode === "raw" && !!Serial.writer; }
 function usbCamSelectedConfig(){
-  const mode=Math.max(0, Math.min(USB_CAM_MODES.length-1, Number($("usbCamResolution")?.value || 2)));
+  const mode=Math.max(0, Math.min(USB_CAM_MODES.length-1, Number($("usbCamResolution")?.value || USB_CAM_DEFAULT_MODE)));
   return {mode, ...USB_CAM_MODES[mode], fps:30};
 }
 function usbCamMarkSettingsChanged(){
