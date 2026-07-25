@@ -560,9 +560,17 @@ def load_source_model(tf, model_path, image_size):
             ) from fallback_exc
 
 
-def class_names_for_output(output_shape):
+def class_names_for_output(output_shape, model_path=None):
     classes = int(output_shape[-1]) if output_shape else len(CLASS_NAMES)
-    # Dynamically reload class order so newly saved active classes are always used
+    if model_path:
+        mp = Path(model_path)
+        for parent in [mp.parent, mp.parent.parent, mp.parent.parent.parent]:
+            cm_file = parent / "class_mapping.json"
+            if cm_file.is_file():
+                order = _class_map.load_class_order(default=None, path=cm_file)
+                if order and len(order) == classes:
+                    return list(order)
+    # Dynamically reload class order from default dataset dir so newly saved active classes are always used
     saved_order = _class_map.load_class_order(default=None)
     if saved_order and len(saved_order) == classes:
         return list(saved_order)
@@ -655,7 +663,7 @@ def main():
     print(f"Preprocess          : {args.preprocess_mode}, {image_size[0]}x{image_size[1]}, grayscale / 255.0")
 
     model = load_source_model(tf, model_path, image_size)
-    class_order = class_names_for_output(model.output_shape)
+    class_order = class_names_for_output(model.output_shape, model_path=model_path)
     needs_calibration = args.quant_format in ("int8", "int16")
     image_paths = []
     calibration_counts = {name: 0 for name in class_order}

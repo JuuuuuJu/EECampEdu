@@ -1538,6 +1538,13 @@ def build_quantize_command(params, owner_extra):
         "--quant-format", quant_format,
         "--quant-granularity", granularity,
     ]
+    dataset_dir = owner_extra.get("dataset_dir") or (REPO_ROOT / "model_finetune" / "dataset")
+    cal_dir = dataset_dir / "train"
+    val_dir = dataset_dir / "validation"
+    if cal_dir.is_dir():
+        cmd += ["--calibration-dir", str(cal_dir)]
+    if val_dir.is_dir():
+        cmd += ["--validation-dir", str(val_dir)]
     result_dir = _temporary_artifact_dir(
         ARTIFACT_MODELS_DIR,
         owner_extra.get("owner_id"),
