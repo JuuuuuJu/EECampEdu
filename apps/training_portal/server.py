@@ -687,7 +687,7 @@ def _artifact_cleanup_loop():
             pass
 
 
-def _copy_recent_artifacts(source_root, dest_root, cutoff_mtime, extensions):
+def _copy_recent_artifacts(source_root, dest_root, cutoff_mtime, extensions, rename_stem=None):
     copied = []
     if not source_root.is_dir():
         return copied
@@ -701,7 +701,10 @@ def _copy_recent_artifacts(source_root, dest_root, cutoff_mtime, extensions):
         except OSError:
             continue
         rel = path.relative_to(source_root)
-        target = dest_root / rel
+        if rename_stem:
+            target = dest_root / rel.parent / f"{rename_stem}{path.suffix}"
+        else:
+            target = dest_root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(path, target)
         copied.append(target)
@@ -716,18 +719,21 @@ def _finalize_job_artifacts(job):
         return
     runtime_root = Path(runtime_root)
     cutoff = float(job.extra.get("artifact_cutoff_mtime", 0))
+    model_name = job.extra.get("model_name")
     copied = []
     copied += _copy_recent_artifacts(
         runtime_root / "model_finetune" / "models" / "tf",
         _artifact_run_dir(TF_MODELS_DIR, job),
         cutoff,
         {".keras", ".h5", ".onnx"},
+        rename_stem=model_name,
     )
     copied += _copy_recent_artifacts(
         runtime_root / "model_finetune" / "models" / "pytorch",
         _artifact_run_dir(PYTORCH_MODELS_DIR, job),
         cutoff,
         {".keras", ".h5", ".pth", ".onnx"},
+        rename_stem=model_name,
     )
     if copied:
         try:
@@ -1491,6 +1497,24 @@ def build_training_command(recipe_key, params, dataset_dir):
     dataset_dir = Path(dataset_dir)
     if len(_dataset_class_names(dataset_dir)) < 2:
         raise ValueError("Import or capture at least two dataset classes before training.")
+
+    model_name = str(params.get("model_name") or "").strip()
+    model_name = re.sub(r"[^A-Za-z0-9_-]", "_", model_name)
+    if not model_name:
+        framework = recipe.get("framework", "tf")
+        target_dir = PYTORCH_MODELS_DIR if framework == "pytorch" else TF_MODELS_DIR
+        max_num = 0
+        if target_dir.is_dir():
+            pattern = re.compile(r"^model_(\d+)\.(keras|h5)$", re.IGNORECASE)
+            for p in target_dir.iterdir():
+                if p.is_file():
+                    match = pattern.match(p.name)
+                    if match:
+                        num = int(match.group(1))
+                        if num > max_num:
+                            max_num = num
+        model_name = f"model_{max_num + 1}"
+
     runtime_root = ML_RUNTIME_DIR / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}-{recipe_key}-{time.time_ns()}"
     runtime_root.mkdir(parents=True, exist_ok=True)
     shutil.copytree(
@@ -1518,6 +1542,7 @@ def build_training_command(recipe_key, params, dataset_dir):
     extra = {
         "runtime_root": str(runtime_root),
         "artifact_cutoff_mtime": time.time(),
+        "model_name": model_name,
     }
     return recipe, cmd, runtime_root, extra
 

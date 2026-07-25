@@ -363,6 +363,10 @@
       <label style="margin-top:12px">Model recipe</label>
       <select id="recipe"></select>
       <div class="note" id="recipeDesc"></div>
+      <div style="margin-top:8px;margin-bottom:12px">
+        <label for="trainModelName">Model name (optional)</label>
+        <input type="text" id="trainModelName" maxlength="64" placeholder="e.g. gesture_v1 (defaults to model_1, model_2...)" autocomplete="off" style="margin-top:4px" />
+      </div>
       <div class="row" id="tuning">
         <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
         <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default" /></div>
@@ -1207,7 +1211,7 @@ $("uploadBtn").onclick = async () => {
 };
 $("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
-  await startJob("/api/train",{ recipe:$("recipe").value, epochs:$("epochs").value||undefined,
+  await startJob("/api/train",{ recipe:$("recipe").value, model_name:$("trainModelName").value||undefined, epochs:$("epochs").value||undefined,
     batch_size:$("batchSize").value||undefined, alpha:$("alpha").value||undefined, export_onnx:$("exportOnnx").checked, augment_flip:$("augmentFlip").checked }, $("trainMsg"), "training", $("trainBtn"));
 };
 $("autoSplitBtn").onclick = async () => {
