@@ -292,9 +292,9 @@
 
     <div class="card">
       <h2><span class="step">STEP 0.</span>Create gesture classes</h2>
-      <p class="note">在開始拍照之前，先建立你想辨識的手勢類別（例如：<code>rock</code>、<code>paper</code>、<code>scissors</code>）。每個類別會對應一個資料夾，之後拍的照片都會存進對應的資料夾裡。</p>
+      <p class="note">在開始拍照之前，先建立你想辨識的手勢類別（例如：<code>background</code>、<code>rock</code>、<code>paper</code>）。建議建立一個 <code>background</code> 類別儲存純背景或無手勢的照片，能有效避免誤判。</p>
       <div class="row compact">
-        <div><label>New class name</label><input id="step0ClassName" placeholder="e.g. palm, ok" /></div>
+        <div><label>New class name</label><input id="step0ClassName" placeholder="e.g. background, rock, paper" /></div>
         <div><button id="step0CreateBtn">Create class</button></div>
       </div>
       <div class="msg" id="step0Msg"></div>

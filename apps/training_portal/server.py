@@ -119,7 +119,7 @@ ARTIFACT_REPORTS_DIR = REPO_ROOT / "firmware" / "pc" / "artifacts" / "reports"
 # Fallback gesture class order when no dataset has been imported yet. Students may
 # upload their own six class folders with ARBITRARY names; the imported order is
 # recorded in each browser session's dataset/class_mapping.json.
-CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
+CLASS_NAMES = ["background", "up", "ok", "thumb", "palm", "rock"]
 
 # Shared class-order / action-mapping helper (model_finetune/class_map.py).
 sys.path.insert(0, str(MODEL_FINETUNE_DIR))
