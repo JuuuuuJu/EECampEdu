@@ -562,10 +562,10 @@ def load_source_model(tf, model_path, image_size):
 
 def class_names_for_output(output_shape):
     classes = int(output_shape[-1]) if output_shape else len(CLASS_NAMES)
-    # Dynamically reload class order so newly saved active classes are always used
-    saved_order = _class_map.load_class_order(default=None)
-    if saved_order and len(saved_order) == classes:
-        return list(saved_order)
+    # The student's saved class order wins whenever its length matches the model
+    # output (supports arbitrary six-class folder names like n1..n6).
+    if SAVED_CLASS_ORDER and len(SAVED_CLASS_ORDER) == classes:
+        return list(SAVED_CLASS_ORDER)
     if classes == len(FOUR_CLASS_NAMES):
         return FOUR_CLASS_NAMES
     if classes == len(CLASS_NAMES):
