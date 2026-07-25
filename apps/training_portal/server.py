@@ -182,14 +182,6 @@ TRAINING_RECIPES = {
         "supports": ["epochs", "batch_size", "alpha", "export_onnx", "augment_flip"],
         "description": "Transfer-learned MobileNetV2, best accuracy/speed on the ESP32-S3.",
     },
-    "tf_mini_resnet": {
-        "framework": "tensorflow",
-        "label": "Mini ResNet (TensorFlow)",
-        "script": "model_finetune/train_mini_resnet.py",
-        "keras_model_name": "Mini_ResNet_finetuned",
-        "supports": ["augment_flip"],  # module-level script, supports CLI arguments
-        "description": "Lightweight Keras Mini ResNet. Runs with default settings.",
-    },
 }
 
 QUANTIZE_SCRIPT = "firmware/pc/tools/quantize_keras_model.py"
