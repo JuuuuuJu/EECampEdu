@@ -2842,7 +2842,7 @@ def create_app():
         _prune_expired_temp_artifacts()
         items = []
         categories = [
-            ("keras_source", TF_MODELS_DIR, {".keras", ".h5"}),
+            ("keras_source", TF_MODELS_DIR, {".keras", ".h5", ".onnx"}),
             ("pytorch", PYTORCH_MODELS_DIR, {".pth", ".onnx", ".keras", ".h5"}),
             ("tflite_deploy", ARTIFACT_MODELS_DIR, {".tflite"}),
             ("quant_report", ARTIFACT_REPORTS_DIR, {".json"}),
@@ -2857,7 +2857,7 @@ def create_app():
                     items.append({
                         "category": category,
                         "name": path.name,
-                        "path": str(rel),
+                        "path": rel.as_posix(),
                         "size": stat.st_size,
                         "modified": datetime.fromtimestamp(
                             stat.st_mtime, timezone.utc
