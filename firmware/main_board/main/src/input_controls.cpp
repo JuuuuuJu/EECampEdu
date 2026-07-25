@@ -114,6 +114,7 @@ esp_err_t input_controls_init() {
         return ESP_OK;
     }
 
+
     // Interrupt on both phases so direction uses a full quadrature state machine.
     esp_err_t err = configure_input_gpio(INPUT_ENCODER_CLK_GPIO, GPIO_INTR_ANYEDGE);
     if (err != ESP_OK) {

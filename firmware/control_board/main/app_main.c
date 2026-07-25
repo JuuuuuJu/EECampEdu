@@ -23,12 +23,12 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define SERVO_DUTY_BITS LEDC_TIMER_16_BIT
 #define SERVO_MIN_US 500
 #define SERVO_MAX_US 2500
-#define STEP_DEG 2
+#define STEP_DEG 1
 
 #define BASE_INITIAL_DEG 90
 #define ARM_INITIAL_DEG 90
 #define PITCH_INITIAL_DEG 90
-#define CLAW_INITIAL_DEG 30
+#define CLAW_INITIAL_DEG 60
 #define ARM_MIN_DEG 45
 #define ARM_MAX_DEG 180
 #define PITCH_MIN_DEG 30
@@ -42,19 +42,36 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
-static int pitch_angle = PITCH_INITIAL_DEG;
-static int claw_angle = CLAW_INITIAL_DEG;
-
-static int target_arm = ARM_INITIAL_DEG;
-static int target_base = BASE_INITIAL_DEG;
-
-static void print_state(const char *prefix, int gesture);
 
 static int clamp_int(int value, int low, int high) {
     if (value < low) return low;
     if (value > high) return high;
     return value;
 }
+
+static int pitch_angle_calculator(int arm){
+    double arm_Rad = (double)arm * M_PI / 180.0;
+    double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
+    return clamp_int((int)calculated_pitch, PITCH_MIN_DEG, PITCH_MAX_DEG);
+}
+
+static int pitch_angle = pitch_angle_calculator(ARM_INITIAL_DEG);
+static int claw_angle = CLAW_INITIAL_DEG;
+
+static int target_arm = ARM_INITIAL_DEG;
+static int target_base = BASE_INITIAL_DEG;
+
+typedef enum {
+    ROBOT_IDLE = 0,
+    ROBOT_MOVING_FORWARD,
+    ROBOT_MOVING_BACKWARD,
+    ROBOT_MOVING_LEFT,
+    ROBOT_MOVING_RIGHT
+} robot_state_t;
+
+static robot_state_t current_state = ROBOT_IDLE;
+static void print_state(const char *prefix, int gesture);
+
 
 static uint32_t angle_to_duty(int angle) {
     const int pulse_us = SERVO_MIN_US + ((SERVO_MAX_US - SERVO_MIN_US) * angle) / 180;
@@ -72,11 +89,7 @@ static void write_all_servos(void) {
     write_servo(LEDC_CHANNEL_3, claw_angle);
 }
 
-static int pitch_angle_calculator(int arm){
-    double arm_Rad = (double)arm * M_PI / 180.0;
-    double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
-    return clamp_int((int)calculated_pitch, PITCH_MIN_DEG, PITCH_MAX_DEG);
-}
+
 
 static void set_angles_constant_height(int base, int arm, int claw) {
     base_angle = clamp_int(base, 0, 180);
@@ -327,6 +340,39 @@ static void apply_action(int action) {
     }
 }
 
+static void apply_smart_action(int action) {
+    switch (action) {
+        case 0:
+            current_state = ROBOT_MOVING_FORWARD;
+            break;
+        case 1:
+            current_state = ROBOT_MOVING_BACKWARD;
+            break;
+        case 2:
+            current_state = ROBOT_MOVING_LEFT;
+            break;
+        case 3:
+            current_state = ROBOT_MOVING_RIGHT;
+            break;
+        case 4: 
+            current_state = ROBOT_IDLE;
+            claw_angle = clamp_int(CLAW_CLAMP_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
+            write_servo(LEDC_CHANNEL_3, claw_angle);
+            break;
+        case 5:
+            current_state = ROBOT_IDLE;    
+            claw_angle = clamp_int(CLAW_RELEASE_DEG, CLAW_MIN_DEG, CLAW_MAX_DEG);
+            write_servo(LEDC_CHANNEL_3, claw_angle);
+            break;
+        case 6:
+            current_state = ROBOT_IDLE;
+            break;
+        default:
+            break;
+    }
+}
+
+
 static bool apply_manual_servo_command(const char *command) {
     if (command == NULL || command[0] == '\0' || command[1] == '\0') {
         return false;
@@ -373,7 +419,7 @@ static void handle_command(char *line) {
     if (strncmp(command_lower, "action,", 7) == 0) {
         const int action = parse_action(line);
         if (action >= 0 && action <= 6) {
-            apply_action(action);
+            apply_smart_action(action);
             print_action_state("OK_ACTION", action);
             return;
         }
@@ -390,7 +436,7 @@ static void handle_command(char *line) {
         print_state("OK_MANUAL", 4);
         return;
     }
-
+    current_state = ROBOT_IDLE; 
     printf("ERR,unknown_command,%s\n", line);
     fflush(stdout);
 }
@@ -418,6 +464,7 @@ static void servo_output_init(void) {
 }
 
 static int move_towards(int current, int target, int step) {
+    int result = current;
     if (current < target) {
         current += step;
         if (current > target) current = target;
@@ -428,18 +475,55 @@ static int move_towards(int current, int target, int step) {
     return current;
 }
 
+// static void motor_control_task(void *pvParameter) {
+//     while (true) {
+//         if (base_angle != target_base) {
+//             base_angle = move_towards(base_angle, target_base, STEP_DEG);
+//             write_servo(LEDC_CHANNEL_0, base_angle);
+//         }
+
+//         if (arm_angle != target_arm) {
+//             arm_angle = move_towards(arm_angle, target_arm, STEP_DEG);
+//             write_servo(LEDC_CHANNEL_1, arm_angle);
+            
+//             pitch_angle = pitch_angle_calculator(arm_angle);
+//             write_servo(LEDC_CHANNEL_2, pitch_angle);
+//         }
+
+//         vTaskDelay(pdMS_TO_TICKS(SERVO_UPDATE_MS));
+//     }
+// }
 static void motor_control_task(void *pvParameter) {
     while (true) {
-        if (base_angle != target_base) {
-            base_angle = move_towards(base_angle, target_base, STEP_DEG);
-            write_servo(LEDC_CHANNEL_0, base_angle);
+        bool moved = false;
+        
+        switch (current_state) {
+            case ROBOT_MOVING_FORWARD:
+                arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+                pitch_angle = pitch_angle_calculator(arm_angle);
+                moved = true;
+                break;
+            case ROBOT_MOVING_BACKWARD:
+                arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+                pitch_angle = pitch_angle_calculator(arm_angle);
+                moved = true;
+                break;
+            case ROBOT_MOVING_LEFT:
+                base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
+                moved = true;
+                break;
+            case ROBOT_MOVING_RIGHT:
+                base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
+                moved = true;
+                break;
+            case ROBOT_IDLE:
+            default:
+                break;
         }
 
-        if (arm_angle != target_arm) {
-            arm_angle = move_towards(arm_angle, target_arm, STEP_DEG);
+        if (moved) {
+            write_servo(LEDC_CHANNEL_0, base_angle);
             write_servo(LEDC_CHANNEL_1, arm_angle);
-            
-            pitch_angle = pitch_angle_calculator(arm_angle);
             write_servo(LEDC_CHANNEL_2, pitch_angle);
         }
 
@@ -454,7 +538,7 @@ void app_main(void) {
 
     printf("READY,CONTROL_BOARD_SERVO_OUTPUT\n");
     print_state("STATE", 4);
-    xTaskCreate(motor_control_task, "motor_control_task", 2048, NULL, 5, NULL);
+    xTaskCreate(motor_control_task, "motor_control_task", 4096, NULL, 5, NULL);
     char line[128];
     while (true) {
         if (fgets(line, sizeof(line), stdin) != NULL) {

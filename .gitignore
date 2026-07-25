@@ -67,6 +67,75 @@ apps/*/build/
 # Training portal runtime (uploaded zips, extracted datasets, job logs, web-run metadata)
 apps/training_portal/runs/
 
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+my_env*/
+
+# ESP-IDF generated files
+build/
+managed_components/
+firmware/esp/managed_components/
+firmware/esp/sdkconfig.old
+
+# Local generated deploy artifacts
+firmware/pc/artifacts/
+
+# Local model-finetune generated outputs
+model_finetune/plots/
+model_finetune/debug_injected_images/
+model_finetune/__pycache__/
+model_finetune/models/*.tflite
+model_finetune/models/*_saved_model/
+
+# Generated / trained model artifacts (regenerable by train -> quantize).
+# The mini_resnet pretrained base weight is an INPUT seed and is kept (negated below).
+model_finetune/models/**/*.keras
+model_finetune/models/**/*.onnx
+model_finetune/models/**/*.pth
+model_finetune/models/**/*.h5
+!model_finetune/models/pytorch/mini_resnet_pretrained_weights.pth
+
+# Uploaded / generated datasets (students provide their own six class folders).
+# Dataset CONTENT is never committed — only the dataset README and .gitkeep
+# placeholders are tracked. (Dataset files were purged from history; see
+# model_finetune/dataset/README.md.)
+model_finetune/dataset/train/
+model_finetune/dataset/validation/
+model_finetune/dataset/test/
+model_finetune/dataset/sign_mnist/
+model_finetune/dataset/_old/
+model_finetune/new_test_data/
+model_finetune/direction_data/
+model_finetune/dataset/class_mapping.json
+# Belt-and-suspenders: ignore dataset media anywhere under dataset/, keep placeholders.
+model_finetune/dataset/**/*.jpg
+model_finetune/dataset/**/*.jpeg
+model_finetune/dataset/**/*.png
+model_finetune/dataset/**/*.bmp
+model_finetune/dataset/**/*.csv
+!model_finetune/dataset/**/.gitkeep
+
+# Uploaded dataset zips anywhere
+*.zip
+
+# Logs and local editor files
+*.log
+.vscode/
+.idea/
+
+# Teaching firmware generated config (keep only sdkconfig.defaults* sources)
+firmware/teaching_output_demo/sdkconfig
+firmware/teaching_output_demo/sdkconfig.old
+
+# Local PC app builds
+apps/*/build/
+
+# Training portal runtime (uploaded zips, extracted datasets, job logs, web-run metadata)
+apps/training_portal/runs/
+
 # esp firmware output
 esp/build/
 esp/managed_components/
@@ -78,6 +147,7 @@ challenge_image.png
 scripts/generate_challenge.py
 stego.jpg
 stego_dual.png
+!apps/training_portal/static/stego_dual.png
 scripts/generate_dual_image.py
 scripts/generate_maze.py
 # Portal service secrets (never commit)
