@@ -2303,6 +2303,52 @@ def create_app():
             shutil.rmtree(upload_dir, ignore_errors=True)
         return jsonify({"ok": True, "deleted_files": deleted_files})
 
+    @app.post("/api/dataset/delete-class")
+    def dataset_delete_class():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        name = str(data.get("name") or "").strip()
+        if not name:
+            abort(400, "Class name is required.")
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        dataset_lock = _user_dataset_lock(owner_id)
+        with dataset_lock:
+            # Whitelist against the dataset's own class list (not a raw path join)
+            # so a crafted name can't escape into an arbitrary directory.
+            available = _dataset_class_names(dataset_dir)
+            if name not in available:
+                abort(404, f"Class '{name}' is not in the dataset.")
+            deleted_files = 0
+            for split in ("train", "validation"):
+                class_dir = Path(dataset_dir) / split / name
+                if class_dir.is_dir():
+                    deleted_files += sum(1 for p in class_dir.rglob("*") if p.is_file())
+                    shutil.rmtree(class_dir, ignore_errors=True)
+            # Don't use _refresh_class_map_from_dataset here: it's meant for the
+            # "add a class after capture" case, and _dataset_class_names() unions
+            # in whatever this class_map.json still says on disk -- since we
+            # haven't rewritten it yet, that would resurrect the class we just
+            # deleted. Recompute the active order ourselves, explicitly excluding it.
+            class_map_path = _class_map_path(dataset_dir)
+            remaining_available = [c for c in available if c != name]
+            if not remaining_available:
+                class_map_path.unlink(missing_ok=True)
+                class_map = None
+            else:
+                order = []
+                if class_map_lib is not None:
+                    order = class_map_lib.load_class_order(default=None, path=class_map_path) or []
+                order = [c for c in order if c != name]
+                if not order:
+                    order = sorted(remaining_available)[:NUM_CLASSES]
+                class_map = _write_class_map(order, dataset_dir)
+        return jsonify({
+            "ok": True,
+            "deleted_class": name,
+            "deleted_files": deleted_files,
+            "class_map": class_map,
+        })
+
     @app.post("/api/models/upload")
     def model_upload():
         if "file" not in request.files:
