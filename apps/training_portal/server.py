@@ -1090,6 +1090,18 @@ def _processed_dest_name(img, src_class):
     return f"{stem}.png"
 
 
+def _crop_to_center_square(img):
+    width, height = img.size
+    if width == height:
+        return img
+    min_dim = min(width, height)
+    left = (width - min_dim) // 2
+    top = (height - min_dim) // 2
+    right = left + min_dim
+    bottom = top + min_dim
+    return img.crop((left, top, right, bottom))
+
+
 def _save_processed_model_image(src_path, dest_path, image_size=MODEL_INPUT_SIZE):
     """Store training images in the same grayscale 96x96 format used by inference."""
     try:
@@ -1098,7 +1110,7 @@ def _save_processed_model_image(src_path, dest_path, image_size=MODEL_INPUT_SIZE
         raise ValueError(f"Pillow missing on the AI PC environment: {exc}")
     try:
         with Image.open(src_path) as img:
-            img = img.convert("L").resize(image_size)
+            img = _crop_to_center_square(img).convert("L").resize(image_size)
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             img.save(dest_path, format="PNG")
     except Exception as exc:
@@ -1112,7 +1124,7 @@ def _save_processed_model_image_bytes(raw, dest_path, image_size=MODEL_INPUT_SIZ
         raise ValueError(f"Pillow missing on the AI PC environment: {exc}")
     try:
         with Image.open(io.BytesIO(raw)) as img:
-            img = img.convert("L").resize(image_size)
+            img = _crop_to_center_square(img).convert("L").resize(image_size)
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             img.save(dest_path, format="PNG")
     except Exception as exc:
@@ -1431,7 +1443,7 @@ def _preprocess_image_bytes_for_keras(raw, image_size=MODEL_INPUT_SIZE):
     except ImportError as exc:
         raise RuntimeError(f"Pillow/numpy missing on the AI PC environment: {exc}")
     with Image.open(io.BytesIO(raw)) as img:
-        img = img.convert("L").resize(image_size)
+        img = _crop_to_center_square(img).convert("L").resize(image_size)
         arr = np.asarray(img, dtype="float32") / 255.0
     return arr[None, ..., None]
 
