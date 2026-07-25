@@ -644,6 +644,8 @@ def _job_has_artifacts(job):
 
 def _prune_owner_kind_artifacts(job):
     """Keep only this successful result for its browser session and job kind."""
+    if job.kind == "train":
+        return
     token = _artifact_token(job)
     for root in ARTIFACT_ROOTS:
         current = _temporary_artifact_dir(root, job.owner_id, job.kind, token)
@@ -1515,7 +1517,7 @@ def build_training_command(recipe_key, params, dataset_dir):
         max_num = 0
         if target_dir.is_dir():
             pattern = re.compile(r"^model_(\d+)\.(keras|h5)$", re.IGNORECASE)
-            for p in target_dir.iterdir():
+            for p in list(target_dir.rglob("*.keras")) + list(target_dir.rglob("*.h5")):
                 if p.is_file():
                     match = pattern.match(p.name)
                     if match:
