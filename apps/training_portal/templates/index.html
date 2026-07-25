@@ -273,7 +273,7 @@
   <section class="pane" id="pane-model">
     <div class="card">
       <h2>Model finetune — dataset &amp; training</h2>
-      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: flash model camera firmware → collect OV2640 images → train or fine-tune a model → preview prediction before deploy.</p>
+      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: <b>Step 0</b> Create classes → <b>Step 1</b> Collect photos or upload dataset zip → <b>Step 2</b> Train model → <b>Step 3</b> Preview prediction before deploy.</p>
     </div>
 
     <div class="card" style="display:none">
@@ -301,7 +301,8 @@
     </div>
 
     <div class="card">
-      <h2><span class="step">STEP 1.</span>Photo capture (Dataset Collection)</h2>
+      <h2><span class="step">STEP 1.</span>Dataset Collection</h2>
+      <h3 style="margin-top: 10px; margin-bottom: 6px;">Option A: Photo capture with Camera</h3>
       <p class="note">開啟相機預覽，對著鏡頭做出手勢，然後按 <b>Save current frame</b> 把這一幀存入資料集。每個手勢類別建議各拍 <b>100～120 張</b>，動作稍微變化（角度、距離、光線、畫面位置）可以讓模型更強健。</p>
       <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port so it appears in the camera list below.</p>
       <div class="row compact">
@@ -328,6 +329,16 @@
         <div><button class="secondary" id="autoSplitBtn">Auto-split Train/Val (4:1)</button></div>
       </div>
       <div class="msg" id="captureMsg"></div>
+
+      <hr style="margin: 20px 0; border: none; border-top: 1px dashed var(--border);" />
+
+      <h3 style="margin-bottom: 6px;">Option B: Upload existing Dataset (.zip)</h3>
+      <p class="note">已有準備好的資料集？可以直接上傳 Zip 檔（每個手勢資料夾為一個類別）。</p>
+      <div class="row compact" style="margin-top:8px">
+        <div style="flex: 2 1 240px;"><input type="file" id="datasetFile" accept=".zip" style="min-height:46px" /></div>
+        <div style="flex: 1 1 120px;"><button id="uploadBtn" style="margin-top:0; width:100%">Upload &amp; import</button></div>
+      </div>
+      <div class="msg" id="uploadMsg"></div>
       <div style="display:none">
         <label style="margin-top:12px">Camera messages</label>
         <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera.</pre>
@@ -337,10 +348,6 @@
     <div class="card">
       <h2><span class="step">Step 2.</span>Train</h2>
       <p class="note">選好要訓練的手勢類別、調整參數，然後按 <b>Start training</b> 開始訓練。訓練會在背景的 AI PC 上執行，完成後可以在下方看到結果與生成的模型檔。</p>
-      <label>Dataset zip (one folder per gesture class, any names)</label>
-      <input type="file" id="datasetFile" accept=".zip" />
-      <button id="uploadBtn">Upload &amp; import</button>
-      <div class="msg" id="uploadMsg"></div>
       <p class="note">Your dataset can hold <b>more than six</b> classes (collect extras, replace gestures). Each
          training / inference run uses an <b>active set of up to <span id="maxActive">6</span></b> classes.</p>
       <label style="margin-top:10px">Active gesture classes (choose up to <span id="maxActiveLabel">6</span>)</label>

@@ -2,10 +2,18 @@ import os
 import time
 import urllib.request
 import shutil
+import random
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from PIL import Image
+
+# Set seed for reproducibility
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
+tf.keras.utils.set_random_seed(SEED)
 import matplotlib.pyplot as plt
 
 import class_map  # shared class-order loader (same folder)
