@@ -99,7 +99,7 @@
     width:100%; min-height:46px; padding:10px 11px; background:var(--panel2); color:var(--text); border:1px solid var(--border); border-radius:7px; }
   input:focus, select:focus, textarea:focus { outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset:1px; }
   input[type=range] { width:100%; }
-  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start; } .row > div { flex:1 1 0; min-width:160px; } .row.compact > div { min-width:180px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; } .row > div { flex:1 1 0; min-width:160px; } .row.compact > div { min-width:180px; }
   button { cursor:pointer; padding:10px 15px; border-radius:7px; border:1px solid var(--border);
     background:var(--accent); color:var(--accent-text); font-weight:700; margin-top:12px;
     min-height:46px; min-width:150px; display:inline-flex; align-items:center; justify-content:center; text-align:center; line-height:1.2; }
@@ -291,25 +291,25 @@
     </div>
 
     <div class="card">
-      <h2><span class="step">0.</span>Create gesture classes</h2>
-      <p class="note">Create empty folders for your gesture classes first, so that you can select them from the dropdown list when capturing photos.</p>
+      <h2><span class="step">STEP 0.</span>Create gesture classes</h2>
+      <p class="note">在開始拍照之前，先建立你想辨識的手勢類別（例如：<code>rock</code>、<code>paper</code>、<code>scissors</code>）。每個類別會對應一個資料夾，之後拍的照片都會存進對應的資料夾裡。</p>
       <div class="row compact">
-        <div><label>New class name</label><input id="step0ClassName" placeholder="e.g. wave_hand, double_click" /></div>
+        <div><label>New class name</label><input id="step0ClassName" placeholder="e.g. palm, ok" /></div>
         <div><button id="step0CreateBtn">Create class</button></div>
       </div>
       <div class="msg" id="step0Msg"></div>
     </div>
 
     <div class="card">
-      <h2><span class="step">A.</span>Photo capture (Dataset Collection)</h2>
-      <p class="note">Start your camera preview to capture images for your dataset. Captured frames are preprocessed and saved under the selected gesture class directory.</p>
+      <h2><span class="step">STEP 1.</span>Photo capture (Dataset Collection)</h2>
+      <p class="note">開啟相機預覽，對著鏡頭做出手勢，然後按 <b>Save current frame</b> 把這一幀存入資料集。每個手勢類別建議各拍 <b>100～120 張</b>，動作稍微變化（角度、距離、光線、畫面位置）可以讓模型更強健。</p>
       <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port so it appears in the camera list below.</p>
       <div class="row compact">
         <div><label>Camera</label><select id="cameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
         <div><button id="localWebcamBtn">Start camera preview</button></div>
       </div>
-      <div class="msg" id="modelMsg"></div>
-      <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p>
+      <div class="msg" id="modelMsg" style="display:none;"></div>
+      <!-- <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p> -->
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <div style="position:relative;display:inline-block;max-width:100%;max-height:420px;">
           <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none;vertical-align:middle;"></video>
@@ -328,13 +328,15 @@
         <div><button class="secondary" id="autoSplitBtn">Auto-split Train/Val (4:1)</button></div>
       </div>
       <div class="msg" id="captureMsg"></div>
-      <label style="margin-top:12px">Camera messages</label>
-      <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera.</pre>
+      <div style="display:none">
+        <label style="margin-top:12px">Camera messages</label>
+        <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera.</pre>
+      </div>
     </div>
 
     <div class="card">
-      <h2><span class="step">B.</span>Dataset &amp; train</h2>
-      <p class="note">Uploaded or captured images are stored as processed model inputs: <code>96x96 grayscale PNG</code>.</p>
+      <h2><span class="step">Step 2.</span>Train</h2>
+      <p class="note">選好要訓練的手勢類別、調整參數，然後按 <b>Start training</b> 開始訓練。訓練會在背景的 AI PC 上執行，完成後可以在下方看到結果與生成的模型檔。</p>
       <label>Dataset zip (one folder per gesture class, any names)</label>
       <input type="file" id="datasetFile" accept=".zip" />
       <button id="uploadBtn">Upload &amp; import</button>
@@ -368,27 +370,14 @@
         <input type="text" id="trainModelName" maxlength="64" placeholder="e.g. gesture_v1 (defaults to model_1, model_2...)" autocomplete="off" style="margin-top:4px" />
       </div>
       <div class="row" id="tuning">
-        <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default" /></div>
-        <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default" /></div>
-        <div><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
+        <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default 15 (max 500)" /></div>
+        <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default 32 (max 512)" /></div>
+        <div style="display:none"><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
       </div>
-      <label><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
+      <label style="display:none"><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
       <label><input type="checkbox" id="augmentFlip" style="width:auto" checked /> Horizontal flip (data augmentation)</label>
       <button id="trainBtn">Start training</button>
       <div class="msg" id="trainMsg"></div>
-    </div>
-
-    <div class="card">
-      <h2><span class="step">C.</span>Model prediction preview</h2>
-      <p class="note">Test your trained <code>.keras</code> models. It runs inference locally on the AI PC using the latest frame from the camera preview card above.</p>
-      <div class="row compact">
-        <div><label>.keras model</label><select id="predictModel"></select></div>
-        <div><button class="secondary" id="predictFrameBtn" disabled>Predict current frame</button></div>
-        <div><label><input type="checkbox" id="livePredictToggle" /> Live .keras prediction</label></div>
-      </div>
-      <div class="big" id="modelGestureResult" style="margin-top:12px">Prediction: --</div>
-      <label style="margin-top:12px">Model file (ONNX) for preview</label>
-      <div id="modelOnnx" class="note">Looking for a TensorFlow training export in ONNX format…</div>
     </div>
   </section>
 
@@ -750,6 +739,34 @@
         <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
     </div>
   </div>
+  <div class="card" id="pane-model-predict-preview" style="display:none">
+    <h2><span class="step">STEP 3.</span>Model prediction preview</h2>
+    <p class="note">訓練完成後，在這裡即時測試你的模型！開啟相機、選擇模型，對著鏡頭做手勢，就能馬上看到模型的預測結果。確認效果滿意後，就可以把模型部署到板子上。</p>
+
+    <!-- Camera controls mirror from Part A -->
+    <div class="row compact" style="margin-bottom:8px">
+      <div><label>Camera</label><select id="predictCameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
+      <div><button id="predictCameraBtn">Start camera preview</button></div>
+    </div>
+
+    <!-- Webcam preview for Section C -->
+    <div style="margin-bottom:12px;border:1px solid var(--border);border-radius:8px;min-height:180px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
+      <div style="position:relative;display:inline-block;max-width:100%;max-height:360px;">
+        <video id="predictWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:360px;object-fit:contain;display:none;vertical-align:middle;"></video>
+        <div id="predictCameraSquareGuide" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%, -50%);border:3px dashed var(--accent);box-shadow:0 0 8px rgba(59,130,246,0.4);pointer-events:none;box-sizing:border-box;border-radius:6px;transition:width 0.1s, height 0.1s;"></div>
+      </div>
+      <div class="note" id="predictCameraPlaceholderInner">No camera frame yet.</div>
+    </div>
+
+    <div class="big" id="modelGestureResult" style="margin-bottom:12px">Prediction: --</div>
+    <div class="row compact">
+      <div><label>.keras model</label><select id="predictModel"></select></div>
+      <div><button class="secondary" id="predictFrameBtn" disabled>Predict current frame</button></div>
+      <div><label><input type="checkbox" id="livePredictToggle" /> Live .keras prediction</label></div>
+    </div>
+    <label style="margin-top:12px;display:none">Model file (ONNX) for preview</label>
+    <div id="modelOnnx" class="note" style="display:none">Looking for a trained ONNX model…</div>
+  </div>
 </main>
 
 <footer class="site-footer">
@@ -972,6 +989,8 @@ function activateTopic(topic, push){
   if(topic==="drive") loadDrive();
 
   updateSharedJobPanels(topic);
+  const predictC = $("pane-model-predict-preview");
+  if(predictC) predictC.style.display = (topic === "model") ? "" : "none";
 }
 function initTabs(){
   document.querySelectorAll('#tabs button').forEach(btn => btn.onclick = () => activateTopic(btn.dataset.topic, true));
@@ -1065,7 +1084,7 @@ function renderActiveClassRows(){
     row.innerHTML=`<label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1;min-width:0"><input type="checkbox" data-active-class="${name}" ${checked?"checked":""} style="width:auto;margin:0" />${name}</label>`
       +`<span class="note" style="white-space:nowrap">${(c.train||0)} train / ${(c.validation||0)} val</span>`
       +`<div style="display:flex;gap:4px;flex:0 0 auto">`
-      +`<button type="button" class="secondary" data-preview-class="${name}" style="padding:4px 8px;min-height:0;margin:0">👁️ Preview</button>`
+      +`<button type="button" class="secondary" data-preview-class="${name}" style="padding:4px 8px;min-height:0;margin:0">Preview</button>`
       +`<button type="button" class="secondary" data-delete-class="${name}" style="padding:4px 8px;min-height:0;margin:0">Delete</button>`
       +`</div>`;
     host.appendChild(row);
@@ -1195,8 +1214,8 @@ function onRecipeChange(){
   $("recipeDesc").textContent=r.description; const s=r.supports||[];
   $("epochs").parentElement.style.display=s.includes("epochs")?"":"none";
   $("batchSize").parentElement.style.display=s.includes("batch_size")?"":"none";
-  $("alpha").parentElement.style.display=s.includes("alpha")?"":"none";
-  $("exportOnnx").parentElement.style.display=s.includes("export_onnx")?"":"none";
+  $("alpha").parentElement.style.display="none";
+  $("exportOnnx").parentElement.style.display="none";
   $("augmentFlip").parentElement.style.display=s.includes("augment_flip")?"":"none";
 }
 
@@ -1588,43 +1607,51 @@ function captureLocalWebcamFrame(){
   };
   if($("saveFrameBtn")) $("saveFrameBtn").disabled=false;
   if($("predictFrameBtn")) $("predictFrameBtn").disabled=!($("predictModel") && $("predictModel").value);
+  // predictWebcamPreview shares the same srcObject stream — no manual update needed
   localWebcamFrameCount++;
   if(localWebcamFrameCount % 5 === 0) setMsg($("modelMsg"), `Camera preview ${width}x${height}`, "ok");
   
   const guide = $("cameraSquareGuide");
-  if(guide && video.style.display !== "none") {
-    const rect = video.getBoundingClientRect();
-    if(rect.width && rect.height) {
-      const videoRatio = video.videoWidth / video.videoHeight;
-      const elementRatio = rect.width / rect.height;
-      let displayW, displayH;
-      if(elementRatio > videoRatio) {
-        displayH = rect.height;
-        displayW = rect.height * videoRatio;
+  const guideC = $("predictCameraSquareGuide");
+  [guide, guideC].forEach(g => {
+    const targetVideo = (g === guideC) ? $("predictWebcamPreview") : video;
+    if(g && targetVideo && targetVideo.style.display !== "none") {
+      const rect = targetVideo.getBoundingClientRect();
+      if(rect.width && rect.height) {
+        const videoRatio = video.videoWidth / video.videoHeight;
+        const elementRatio = rect.width / rect.height;
+        let displayW, displayH;
+        if(elementRatio > videoRatio) {
+          displayH = rect.height;
+          displayW = rect.height * videoRatio;
+        } else {
+          displayW = rect.width;
+          displayH = rect.width / videoRatio;
+        }
+        const size = Math.min(displayW, displayH);
+        g.style.width = `${size}px`;
+        g.style.height = `${size}px`;
+        g.style.display = "block";
       } else {
-        displayW = rect.width;
-        displayH = rect.width / videoRatio;
+        g.style.display = "none";
       }
-      const size = Math.min(displayW, displayH);
-      guide.style.width = `${size}px`;
-      guide.style.height = `${size}px`;
-      guide.style.display = "block";
-    } else {
-      guide.style.display = "none";
+    } else if(g) {
+      g.style.display = "none";
     }
-  } else if(guide) {
-    guide.style.display = "none";
-  }
+  });
 
   maybeLivePredict();
 }
 async function stopLocalWebcam(options={}){
   if($("cameraSquareGuide")) $("cameraSquareGuide").style.display = "none";
+  if($("predictCameraSquareGuide")) $("predictCameraSquareGuide").style.display = "none";
   const preserveFrame=options.preserveFrame !== false;
   if(localWebcamTimer){ clearInterval(localWebcamTimer); localWebcamTimer=null; }
   if(localWebcamStream){ localWebcamStream.getTracks().forEach(track=>track.stop()); localWebcamStream=null; }
   const video=$("localWebcamPreview"), ph=$("cameraPlaceholder");
   if(video){ video.srcObject=null; video.style.display="none"; }
+  const videoC = $("predictWebcamPreview");
+  if(videoC){ videoC.srcObject = null; videoC.style.display = "none"; }
   if(!preserveFrame){
     latestCameraFrame=null;
     if(ph) ph.style.display="";
@@ -1632,10 +1659,9 @@ async function stopLocalWebcam(options={}){
     if($("predictFrameBtn")) $("predictFrameBtn").disabled=true;
   }
   if($("cameraDeviceSelect")) $("cameraDeviceSelect").value="";
-  if($("localWebcamBtn")){
-    $("localWebcamBtn").disabled=false;
-    $("localWebcamBtn").textContent="Start camera preview";
-  }
+  if($("predictCameraDeviceSelect")) $("predictCameraDeviceSelect").value="";
+  [$("localWebcamBtn"), $("predictCameraBtn")].forEach(b=>{ if(b){ b.disabled=false; b.textContent="Start camera preview"; } });
+  if($("predictCameraPlaceholderInner")) $("predictCameraPlaceholderInner").style.display="";
   if(options.message !== false) setMsg($("modelMsg"), "Camera preview stopped.", "ok");
 }
 // Rebuild the camera dropdown from scratch and reset the selection, so every
@@ -1668,16 +1694,19 @@ async function populateCameraDeviceSelect(){
       setMsg($("modelMsg"), denied, "bad");
     }
   }
-  select.innerHTML="";
-  const placeholder=document.createElement("option");
-  placeholder.value=""; placeholder.textContent = devices.length ? "Choose a camera…" : "No camera found";
-  select.appendChild(placeholder);
-  devices.forEach((d, i) => {
-    const opt=document.createElement("option");
-    opt.value=d.deviceId; opt.textContent=d.label || `Camera ${i+1}`;
-    select.appendChild(opt);
+  const selC=$("predictCameraDeviceSelect");
+  [select, selC].filter(Boolean).forEach(sel => {
+    sel.innerHTML="";
+    const placeholder=document.createElement("option");
+    placeholder.value=""; placeholder.textContent = devices.length ? "Choose a camera…" : "No camera found";
+    sel.appendChild(placeholder);
+    devices.forEach((d, i) => {
+      const opt=document.createElement("option");
+      opt.value=d.deviceId; opt.textContent=d.label || `Camera ${i+1}`;
+      sel.appendChild(opt);
+    });
+    sel.value="";
   });
-  select.value="";
   if(devices.length) setMsg($("modelMsg"), "Choose a camera from the list above.", "warn");
 }
 async function startSelectedCamera(deviceId){
@@ -1694,10 +1723,13 @@ async function startSelectedCamera(deviceId){
     if(ph) ph.style.display="none";
     video.srcObject=stream; video.style.display="block";
     await video.play();
+    const videoC=$("predictWebcamPreview");
+    if(videoC){ videoC.srcObject=stream; videoC.style.display="block"; videoC.play().catch(()=>{}); }
+    if($("predictCameraPlaceholderInner")) $("predictCameraPlaceholderInner").style.display="none";
     localWebcamFrameCount=0;
     captureLocalWebcamFrame();
     localWebcamTimer=setInterval(captureLocalWebcamFrame, 200);
-    $("localWebcamBtn").textContent="Stop camera preview";
+    [$("localWebcamBtn"), $("predictCameraBtn")].forEach(b=>{ if(b) b.textContent="Stop camera preview"; });
     setMsg($("modelMsg"), "Camera preview connected.", "ok");
   } catch(e){
     await stopLocalWebcam({message:false, preserveFrame:false});
@@ -1717,7 +1749,9 @@ async function startLocalWebcam(){
   if($("cameraDeviceSelect")) $("cameraDeviceSelect").focus();
 }
 $("localWebcamBtn").onclick = () => localWebcamStream ? stopLocalWebcam() : startLocalWebcam();
-$("cameraDeviceSelect").onchange = (e) => startSelectedCamera(e.target.value);
+if($("predictCameraBtn")) $("predictCameraBtn").onclick = () => localWebcamStream ? stopLocalWebcam() : startLocalWebcam();
+$("cameraDeviceSelect").onchange = (e) => { startSelectedCamera(e.target.value); if($("predictCameraDeviceSelect")) $("predictCameraDeviceSelect").value=e.target.value; };
+if($("predictCameraDeviceSelect")) $("predictCameraDeviceSelect").onchange = (e) => { startSelectedCamera(e.target.value); if($("cameraDeviceSelect")) $("cameraDeviceSelect").value=e.target.value; };
 window.addEventListener("beforeunload", () => {
   if(localWebcamStream) localWebcamStream.getTracks().forEach(track=>track.stop());
 });
