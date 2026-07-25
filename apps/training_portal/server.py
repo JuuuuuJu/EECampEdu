@@ -2565,6 +2565,86 @@ def create_app():
             "class_map": class_map_payload
         })
 
+    @app.get("/api/dataset/list-images")
+    def dataset_list_images():
+        class_name = request.args.get("class_name", "")
+        try:
+            class_name = _sanitize_class_name(class_name)
+        except ValueError as exc:
+            abort(400, str(exc))
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        
+        result = {"train": [], "validation": []}
+        for split in ("train", "validation"):
+            class_dir = dataset_dir / split / class_name
+            if class_dir.is_dir():
+                files = []
+                for p in class_dir.iterdir():
+                    if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS:
+                        files.append({
+                            "name": p.name,
+                            "mtime": p.stat().st_mtime
+                        })
+                files.sort(key=lambda x: x["mtime"], reverse=True)
+                result[split] = [f["name"] for f in files]
+        return jsonify({
+            "ok": True,
+            "class_name": class_name,
+            "images": result
+        })
+
+    @app.get("/api/dataset/image")
+    def dataset_image():
+        split = request.args.get("split", "train")
+        class_name = request.args.get("class_name", "")
+        filename = request.args.get("filename", "")
+        if split not in {"train", "validation"}:
+            abort(400, "Invalid split.")
+        try:
+            class_name = _sanitize_class_name(class_name)
+        except ValueError as exc:
+            abort(400, str(exc))
+        if not filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
+            abort(400, "Invalid filename.")
+            
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        img_path = dataset_dir / split / class_name / filename
+        if not img_path.is_file() or img_path.suffix.lower() not in IMAGE_EXTENSIONS:
+            abort(404, "Image not found.")
+        return send_file(str(img_path))
+
+    @app.post("/api/dataset/delete-image")
+    def dataset_delete_image():
+        data = request.get_json(silent=True) or request.form.to_dict()
+        split = data.get("split", "train")
+        class_name = data.get("class_name", "")
+        filename = data.get("filename", "")
+        if split not in {"train", "validation"}:
+            abort(400, "Invalid split.")
+        try:
+            class_name = _sanitize_class_name(class_name)
+        except ValueError as exc:
+            abort(400, str(exc))
+        if not filename or "/" in filename or "\\" in filename or filename in {".", ".."}:
+            abort(400, "Invalid filename.")
+            
+        owner_id = _session_user_id()
+        dataset_dir = _user_dataset_dir(owner_id)
+        img_path = dataset_dir / split / class_name / filename
+        dataset_lock = _user_dataset_lock(owner_id)
+        
+        try:
+            with dataset_lock:
+                if img_path.is_file():
+                    img_path.unlink()
+                _refresh_class_map_from_dataset(dataset_dir, class_name)
+        except Exception as exc:
+            abort(500, f"Delete failed: {str(exc)}")
+            
+        return jsonify({"ok": True, "filename": filename})
+
     @app.post("/api/model/keras/predict")
     def model_keras_predict():
         """Run one browser-provided camera frame through a source .keras model."""
