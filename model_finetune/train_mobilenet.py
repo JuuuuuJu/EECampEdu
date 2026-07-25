@@ -29,7 +29,7 @@ ONNX_PATH = MODELS_DIR / "MobileNetV2_finetuned.onnx"
 IMG_SIZE = (96, 96)
 # Default gesture classes; overridden by model_finetune/dataset/class_mapping.json when
 # a student uploads their own six class folders (arbitrary names supported).
-DEFAULT_CLASS_NAMES = ["background", "up", "ok", "thumb", "palm", "rock"]
+DEFAULT_CLASS_NAMES = ["up", "ok", "thumb", "palm", "rock", "stone"]
 CLASS_NAMES = class_map.load_class_order(default=DEFAULT_CLASS_NAMES)
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 
