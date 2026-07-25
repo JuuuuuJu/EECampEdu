@@ -1546,7 +1546,7 @@ def build_training_command(recipe_key, params, dataset_dir):
         cmd += ["--batch-size", str(_safe_int(params["batch_size"], "batch_size", 1, 512))]
     if "alpha" in supports and params.get("alpha") not in (None, ""):
         cmd += ["--alpha", str(_safe_float(params["alpha"], "alpha", 0.1, 2.0))]
-    if "export_onnx" in supports and params.get("export_onnx"):
+    if "export_onnx" in supports:
         cmd += ["--export-onnx"]
     if "augment_flip" in supports and params.get("augment_flip"):
         cmd += ["--augment-flip"]
