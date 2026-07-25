@@ -986,6 +986,24 @@ async function init(){
   loadBenchOptions();
 }
 // ---------- theme selector (dark / light / high-contrast; persisted) ----------
+const THEME_EGG_URL = "https://youtu.be/Tqc8cEAK9rc?si=yA-lKF5g_gd-pEKu";
+const THEME_EGG_WINDOW_MS = 15000;
+const THEME_EGG_CHANGE_COUNT = 4;
+
+function initThemeEgg(select){
+  if(!select) return;
+  let changes = [];
+  select.addEventListener("change", () => {
+    const now = Date.now();
+    changes = changes.filter((time) => now - time <= THEME_EGG_WINDOW_MS);
+    changes.push(now);
+    if(changes.length >= THEME_EGG_CHANGE_COUNT){
+      changes = [];
+      window.location.assign(THEME_EGG_URL);
+    }
+  });
+}
+
 function applyTheme(name){
   const t = ["dark","light","contrast","solarized"].includes(name) ? name : "light";
   document.documentElement.setAttribute("data-theme", t);
@@ -996,7 +1014,9 @@ function initTheme(){
   let saved = "light";
   try { saved = localStorage.getItem("eecampTheme") || "light"; } catch(e){}
   applyTheme(saved);
-  if($("themeSelect")) $("themeSelect").onchange = (e)=>applyTheme(e.target.value);
+  const select = $("themeSelect");
+  if(select) select.onchange = (e)=>applyTheme(e.target.value);
+  initThemeEgg(select);
 }
 
 // ---------- class map ----------
