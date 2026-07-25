@@ -807,9 +807,18 @@ def _available_keras_models():
                 continue
             model_id = f"{prefix}/{rel.as_posix()}"
             stat = path.stat()
+            
+            parts = rel.parts
+            if len(parts) >= 3 and parts[0] == "runs" and parts[1] == "temporary":
+                mtime_dt = datetime.fromtimestamp(stat.st_mtime, LOCAL_TIMEZONE)
+                time_str = mtime_dt.strftime("%m/%d %H:%M")
+                label = f"{prefix}/{path.name} (Temp - {time_str}) ({stat.st_size / 1024:.1f} KB)"
+            else:
+                label = f"{model_id} ({stat.st_size / 1024:.1f} KB)"
+
             models.append({
                 "id": model_id,
-                "label": f"{model_id} ({stat.st_size / 1024:.1f} KB)",
+                "label": label,
                 "framework": prefix,
                 "name": path.name,
                 "relative_path": rel.as_posix(),
