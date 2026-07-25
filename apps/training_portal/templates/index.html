@@ -311,7 +311,11 @@
       <div class="msg" id="modelMsg"></div>
       <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:220px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
-        <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none"></video>
+        <div style="position:relative;display:inline-block;max-width:100%;max-height:420px;">
+          <video id="localWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:420px;object-fit:contain;display:none;vertical-align:middle;"></video>
+          <!-- Center square overlay guide -->
+          <div id="cameraSquareGuide" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%, -50%);border:3px dashed var(--accent);box-shadow:0 0 8px rgba(59,130,246,0.4);pointer-events:none;box-sizing:border-box;border-radius:6px;transition:width 0.1s, height 0.1s;"></div>
+        </div>
         <canvas id="localWebcamCanvas" hidden></canvas>
         <div class="note" id="cameraPlaceholder">No camera frame yet.</div>
       </div>
@@ -1582,9 +1586,36 @@ function captureLocalWebcamFrame(){
   if($("predictFrameBtn")) $("predictFrameBtn").disabled=!($("predictModel") && $("predictModel").value);
   localWebcamFrameCount++;
   if(localWebcamFrameCount % 5 === 0) setMsg($("modelMsg"), `Camera preview ${width}x${height}`, "ok");
+  
+  const guide = $("cameraSquareGuide");
+  if(guide && video.style.display !== "none") {
+    const rect = video.getBoundingClientRect();
+    if(rect.width && rect.height) {
+      const videoRatio = video.videoWidth / video.videoHeight;
+      const elementRatio = rect.width / rect.height;
+      let displayW, displayH;
+      if(elementRatio > videoRatio) {
+        displayH = rect.height;
+        displayW = rect.height * videoRatio;
+      } else {
+        displayW = rect.width;
+        displayH = rect.width / videoRatio;
+      }
+      const size = Math.min(displayW, displayH);
+      guide.style.width = `${size}px`;
+      guide.style.height = `${size}px`;
+      guide.style.display = "block";
+    } else {
+      guide.style.display = "none";
+    }
+  } else if(guide) {
+    guide.style.display = "none";
+  }
+
   maybeLivePredict();
 }
 async function stopLocalWebcam(options={}){
+  if($("cameraSquareGuide")) $("cameraSquareGuide").style.display = "none";
   const preserveFrame=options.preserveFrame !== false;
   if(localWebcamTimer){ clearInterval(localWebcamTimer); localWebcamTimer=null; }
   if(localWebcamStream){ localWebcamStream.getTracks().forEach(track=>track.stop()); localWebcamStream=null; }
