@@ -781,6 +781,23 @@
   </div>
 </div>
 
+<!-- Modal for class preview -->
+<div id="previewModal" style="display:none;position:fixed;z-index:2000;left:0;top:0;width:100%;height:100%;overflow:auto;background-color:rgba(0,0,0,0.65);backdrop-filter:blur(4px);justify-content:center;align-items:center;">
+  <div class="card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:800px;width:90%;max-height:85vh;overflow-y:auto;position:relative;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
+    <span id="closePreviewModal" style="position:absolute;right:20px;top:16px;font-size:24px;font-weight:bold;cursor:pointer;color:var(--muted);transition:color 0.2s;">&times;</span>
+    <h2 id="previewModalTitle" style="margin-top:0;font-size:20px;color:var(--fg);">Class Preview</h2>
+    <p class="note">Showing processed 96x96 grayscale PNG images. Hover to zoom, click ❌ to delete.</p>
+    
+    <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px;">
+      <button id="previewTabTrain" style="padding:6px 12px;min-height:0;min-width:0;border-radius:4px;border:none;cursor:pointer;font-weight:bold;">Train Set</button>
+      <button id="previewTabVal" style="padding:6px 12px;min-height:0;min-width:0;border-radius:4px;border:none;cursor:pointer;font-weight:bold;">Validation Set</button>
+    </div>
+    
+    <div id="previewGallery" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(96px, 1fr));gap:12px;margin-bottom:16px;"></div>
+    <div id="previewModalMsg" class="msg"></div>
+  </div>
+</div>
+
 <script>
 const ORIGIN = window.location.origin;
 const INITIAL_TOPIC = "{{ topic }}";
@@ -1019,10 +1036,14 @@ function renderActiveClassRows(){
     row.className="imglist"; row.style.display="flex"; row.style.justifyContent="space-between"; row.style.alignItems="center"; row.style.gap="8px";
     row.innerHTML=`<label style="display:flex;align-items:center;gap:6px;cursor:pointer;flex:1;min-width:0"><input type="checkbox" data-active-class="${name}" ${checked?"checked":""} style="width:auto;margin:0" />${name}</label>`
       +`<span class="note" style="white-space:nowrap">${(c.train||0)} train / ${(c.validation||0)} val</span>`
-      +`<button type="button" class="secondary" data-delete-class="${name}" style="padding:4px 8px;min-height:0;margin:0;flex:0 0 auto">Delete</button>`;
+      +`<div style="display:flex;gap:4px;flex:0 0 auto">`
+      +`<button type="button" class="secondary" data-preview-class="${name}" style="padding:4px 8px;min-height:0;margin:0">👁️ Preview</button>`
+      +`<button type="button" class="secondary" data-delete-class="${name}" style="padding:4px 8px;min-height:0;margin:0">Delete</button>`
+      +`</div>`;
     host.appendChild(row);
   });
   host.querySelectorAll('input[data-active-class]').forEach(cb=>cb.onchange=enforceActiveLimit);
+  host.querySelectorAll('button[data-preview-class]').forEach(btn=>btn.onclick=()=>previewDatasetClass(btn.dataset.previewClass));
   host.querySelectorAll('button[data-delete-class]').forEach(btn=>btn.onclick=()=>deleteDatasetClass(btn.dataset.deleteClass));
   enforceActiveLimit();
 }
@@ -2911,6 +2932,152 @@ $("driveUploadBtn").onclick = async () => {
 };
 $("driveFolder").onchange = refreshDrive;
 $("driveRefreshBtn").onclick = refreshDrive;
+
+let currentPreviewClass = "";
+let currentPreviewSplit = "train";
+let currentPreviewImages = { train: [], validation: [] };
+
+function showPreviewModal(className) {
+  currentPreviewClass = className;
+  currentPreviewSplit = "train";
+  $("previewModalTitle").textContent = `Class Preview: ${className}`;
+  $("previewModal").style.display = "flex";
+  updatePreviewTabs();
+  loadClassImages();
+}
+
+function updatePreviewTabs() {
+  const isTrain = currentPreviewSplit === "train";
+  const trainBtn = $("previewTabTrain");
+  const valBtn = $("previewTabVal");
+  
+  trainBtn.style.background = isTrain ? "var(--accent)" : "transparent";
+  trainBtn.style.color = isTrain ? "#fff" : "var(--muted)";
+  trainBtn.style.border = isTrain ? "none" : "1px solid var(--border)";
+  
+  valBtn.style.background = !isTrain ? "var(--accent)" : "transparent";
+  valBtn.style.color = !isTrain ? "#fff" : "var(--muted)";
+  valBtn.style.border = !isTrain ? "none" : "1px solid var(--border)";
+}
+
+async function loadClassImages() {
+  const gallery = $("previewGallery");
+  gallery.innerHTML = '<div class="note" style="grid-column:1/-1;">Loading images...</div>';
+  setMsg($("previewModalMsg"), "");
+  try {
+    const r = await api(`/api/dataset/list-images?class_name=${encodeURIComponent(currentPreviewClass)}`);
+    currentPreviewImages = r.images;
+    renderGallery();
+  } catch(e) {
+    gallery.innerHTML = "";
+    setMsg($("previewModalMsg"), "Failed to load images: " + e.message, "bad");
+  }
+}
+
+function renderGallery() {
+  const gallery = $("previewGallery");
+  gallery.innerHTML = "";
+  const list = currentPreviewImages[currentPreviewSplit] || [];
+  if (!list.length) {
+    gallery.innerHTML = `<div class="note" style="grid-column:1/-1;">No images in ${currentPreviewSplit} split.</div>`;
+    return;
+  }
+  
+  list.forEach(filename => {
+    const div = document.createElement("div");
+    div.style.position = "relative";
+    div.style.width = "96px";
+    div.style.height = "96px";
+    div.style.border = "1px solid var(--border)";
+    div.style.borderRadius = "6px";
+    div.style.overflow = "hidden";
+    div.style.background = "#000";
+    div.style.boxShadow = "0 2px 8px rgba(0,0,0,0.2)";
+    div.style.transition = "transform 0.2s";
+    div.onmouseover = () => div.style.transform = "scale(1.08)";
+    div.onmouseout = () => div.style.transform = "scale(1)";
+    
+    const img = document.createElement("img");
+    img.src = `/api/dataset/image?split=${currentPreviewSplit}&class_name=${encodeURIComponent(currentPreviewClass)}&filename=${encodeURIComponent(filename)}`;
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.display = "block";
+    img.style.objectFit = "cover";
+    
+    const delBtn = document.createElement("span");
+    delBtn.innerHTML = "&times;";
+    delBtn.style.position = "absolute";
+    delBtn.style.right = "4px";
+    delBtn.style.top = "2px";
+    delBtn.style.background = "rgba(0,0,0,0.75)";
+    delBtn.style.color = "#ff4d4f";
+    delBtn.style.fontSize = "16px";
+    delBtn.style.fontWeight = "bold";
+    delBtn.style.width = "20px";
+    delBtn.style.height = "20px";
+    delBtn.style.borderRadius = "50%";
+    delBtn.style.display = "flex";
+    delBtn.style.justifyContent = "center";
+    delBtn.style.alignItems = "center";
+    delBtn.style.cursor = "pointer";
+    delBtn.style.boxShadow = "0 1px 4px rgba(0,0,0,0.3)";
+    delBtn.title = "Delete this image";
+    
+    delBtn.onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete this image "${filename}"?`)) return;
+      setMsg($("previewModalMsg"), `Deleting image...`, "warn");
+      try {
+        await api("/api/dataset/delete-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            split: currentPreviewSplit,
+            class_name: currentPreviewClass,
+            filename: filename
+          })
+        });
+        setMsg($("previewModalMsg"), `Deleted successfully!`, "ok");
+        await loadClassImages();
+        await refreshClassMap();
+      } catch(err) {
+        setMsg($("previewModalMsg"), "Delete failed: " + err.message, "bad");
+      }
+    };
+    
+    div.appendChild(img);
+    div.appendChild(delBtn);
+    gallery.appendChild(div);
+  });
+}
+
+$("closePreviewModal").onclick = () => $("previewModal").style.display = "none";
+$("closePreviewModal").onmouseover = () => $("closePreviewModal").style.color = "var(--fg)";
+$("closePreviewModal").onmouseout = () => $("closePreviewModal").style.color = "var(--muted)";
+
+window.addEventListener("click", (e) => {
+  if (e.target === $("previewModal")) {
+    $("previewModal").style.display = "none";
+  }
+});
+
+$("previewTabTrain").onclick = () => {
+  if (currentPreviewSplit === "train") return;
+  currentPreviewSplit = "train";
+  updatePreviewTabs();
+  renderGallery();
+};
+
+$("previewTabVal").onclick = () => {
+  if (currentPreviewSplit === "validation") return;
+  currentPreviewSplit = "validation";
+  updatePreviewTabs();
+  renderGallery();
+};
+
+function previewDatasetClass(className) {
+  showPreviewModal(className);
+}
 
 init();
 </script>
