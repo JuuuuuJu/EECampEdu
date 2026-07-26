@@ -117,7 +117,7 @@ def select_calibration_images(calibration_dir, class_names, sample_limit):
 def evaluate_source_model(model, validation_dir, image_size, preprocess_mode, min_accuracy):
     validation_dir = Path(validation_dir)
     output_classes = int(model.output_shape[-1]) if model.output_shape else 0
-    class_names = class_names_for_output(model.output_shape)
+    class_names = class_names_for_output(model.output_shape, calibration_dir=validation_dir)
     if not validation_dir.exists():
         print(f"[WARN] Source validation skipped: {validation_dir} does not exist.")
         return None
@@ -237,7 +237,7 @@ def evaluate_tflite_model(tf, tflite_path, validation_dir, image_size, preproces
     input_detail = interpreter.get_input_details()[0]
     output_detail = interpreter.get_output_details()[0]
     output_shape = output_detail["shape"].tolist()
-    class_names = class_names_for_output(output_shape)
+    class_names = class_names_for_output(output_shape, calibration_dir=validation_dir)
 
     if not validation_dir.exists():
         print(f"[WARN] TFLite validation skipped: {validation_dir} does not exist.")
@@ -560,7 +560,15 @@ def load_source_model(tf, model_path, image_size):
             ) from fallback_exc
 
 
-def class_names_for_output(output_shape):
+def class_names_for_output(output_shape, calibration_dir=None):
+    classes = int(output_shape[-1]) if output_shape else len(CLASS_NAMES)
+    if calibration_dir:
+        from pathlib import Path
+        cm = Path(calibration_dir).parent / "class_mapping.json"
+        if cm.is_file():
+            order = _class_map.load_class_order(default=None, path=cm)
+            if order and len(order) == classes:
+                return list(order)
     classes = int(output_shape[-1]) if output_shape else len(CLASS_NAMES)
     # The student's saved class order wins whenever its length matches the model
     # output (supports arbitrary six-class folder names like n1..n6).
@@ -655,7 +663,7 @@ def main():
     print(f"Preprocess          : {args.preprocess_mode}, {image_size[0]}x{image_size[1]}, grayscale / 255.0")
 
     model = load_source_model(tf, model_path, image_size)
-    class_order = class_names_for_output(model.output_shape)
+    class_order = class_names_for_output(model.output_shape, calibration_dir=calibration_dir)
     needs_calibration = args.quant_format in ("int8", "int16")
     image_paths = []
     calibration_counts = {name: 0 for name in class_order}
