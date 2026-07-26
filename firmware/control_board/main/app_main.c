@@ -24,13 +24,14 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define SERVO_MIN_US 500
 #define SERVO_MAX_US 2500
 #define STEP_DEG 1
+#define STEP_LENGTH 1
 
-#define BASE_INITIAL_DEG 90
-#define ARM_INITIAL_DEG 90
+#define BASE_INITIAL_DEG 180
+#define ARM_INITIAL_DEG 88
 #define PITCH_INITIAL_DEG 90
 #define CLAW_INITIAL_DEG 60
 #define ARM_MIN_DEG 45
-#define ARM_MAX_DEG 180
+#define ARM_MAX_DEG 165
 #define PITCH_MIN_DEG 30
 #define PITCH_MAX_DEG 125
 #define CLAW_MIN_DEG 10
@@ -39,6 +40,11 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define CLAW_RELEASE_DEG 60
 #define HEIGHT_COEFFICIENT 0.25
 #define SERVO_UPDATE_MS 100
+
+#define MAX_X 15
+#define MIN_X -15
+#define MAX_Y 16
+#define MIN_Y 0
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
@@ -57,6 +63,10 @@ static int pitch_angle_calculator(int arm){
 
 static int pitch_angle = pitch_angle_calculator(ARM_INITIAL_DEG);
 static int claw_angle = CLAW_INITIAL_DEG;
+static int current_x = -5;
+static int current_y = 0;
+static int current_r = 5;
+static int current_theta = BASE_INITIAL_DEG;
 
 static int target_arm = ARM_INITIAL_DEG;
 static int target_base = BASE_INITIAL_DEG;
@@ -340,6 +350,8 @@ static void apply_action(int action) {
     }
 }
 
+
+
 static void apply_smart_action(int action) {
     switch (action) {
         case 0:
@@ -493,39 +505,78 @@ static int move_towards(int current, int target, int step) {
 //         vTaskDelay(pdMS_TO_TICKS(SERVO_UPDATE_MS));
 //     }
 // }
+
+static double cartesian_to_r(int x, int y){
+    double double_x = (double)x;
+    double double_y = (double)y;
+    return sqrt(double_x*double_x + double_y*double_y);
+}
+static int cartesian_to_theta(int x, int y){
+    double double_x = (double)x;
+    return (int)round(180.0*acos(double_x/cartesian_to_r(x, y)));
+}
+static int r_to_arm_angle(double r){
+    double r2 = r*r;
+    double r4 = r2*r2;
+    double ans = 57.2958*acos((0.5*((-double_r*(128.0 + 32.0*r2)) + sqrt(4128768.0 + 1015808.0*r2 - 4096.0*r4)))/(1024.0 + 256.0*r2));
+    return (int)round(ans);
+}
+static void update_angle(){
+    arm_angle = clamp_int(r_to_arm_angle(cartesian_to_r(current_x, current_y)), ARM_MIN_DEG, ARM_MAX_DEG);
+    pitch_angle = pitch_angle_calculator(arm_angle);
+    base_angle = clamp_int(cartesian_to_theta(current_x, current_y), 0, 180);
+}
+
+static void on_state_forward(){
+    // arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+    // pitch_angle = pitch_angle_calculator(arm_angle);
+    current_y = clamp_int(current_y + STEP_LENGTH, MIN_Y, MAX_Y);
+    update_angle();
+}
+
+static void on_state_backward(){
+    // arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
+    // pitch_angle = pitch_angle_calculator(arm_angle);
+    current_y = clamp_int(current_y - STEP_LENGTH, MIN_Y, MAX_Y);
+    update_angle();
+}
+
+static void on_state_left(){
+    // base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
+    current_x = clamp_int(current_x - STEP_LENGTH, MIN_X, MAX_X);
+    update_angle();
+}
+
+static void on_state_right(){
+    // base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
+    current_x = clamp_int(current_x + STEP_LENGTH, MIN_X, MAX_X);
+    update_angle();
+}
+
 static void motor_control_task(void *pvParameter) {
     while (true) {
-        bool moved = false;
         
         switch (current_state) {
             case ROBOT_MOVING_FORWARD:
-                arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
-                pitch_angle = pitch_angle_calculator(arm_angle);
-                moved = true;
+                on_state_forward();
                 break;
             case ROBOT_MOVING_BACKWARD:
-                arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
-                pitch_angle = pitch_angle_calculator(arm_angle);
-                moved = true;
+                on_state_backward();
                 break;
             case ROBOT_MOVING_LEFT:
-                base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
-                moved = true;
+                on_state_left();
                 break;
             case ROBOT_MOVING_RIGHT:
-                base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
-                moved = true;
+                on_state_right();
                 break;
             case ROBOT_IDLE:
             default:
                 break;
         }
 
-        if (moved) {
-            write_servo(LEDC_CHANNEL_0, base_angle);
-            write_servo(LEDC_CHANNEL_1, arm_angle);
-            write_servo(LEDC_CHANNEL_2, pitch_angle);
-        }
+        write_servo(LEDC_CHANNEL_0, base_angle);
+        write_servo(LEDC_CHANNEL_1, arm_angle);
+        write_servo(LEDC_CHANNEL_2, pitch_angle);
 
         vTaskDelay(pdMS_TO_TICKS(SERVO_UPDATE_MS));
     }
