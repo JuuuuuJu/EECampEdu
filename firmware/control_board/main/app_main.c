@@ -27,13 +27,13 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define STEP_LENGTH 0.1
 
 #define BASE_INITIAL_DEG 180
-#define ARM_INITIAL_DEG 88
-#define PITCH_INITIAL_DEG 90
+#define ARM_INITIAL_DEG 46
+#define PITCH_INITIAL_DEG 62
 #define CLAW_INITIAL_DEG 60
-#define ARM_MIN_DEG 45
+#define ARM_MIN_DEG 30
 #define ARM_MAX_DEG 165
-#define PITCH_MIN_DEG 30
-#define PITCH_MAX_DEG 125
+#define PITCH_MIN_DEG 15
+#define PITCH_MAX_DEG 165
 #define CLAW_MIN_DEG 10
 #define CLAW_MAX_DEG 90
 #define CLAW_CLAMP_DEG 10
@@ -80,7 +80,7 @@ static int pitch_angle_calculator(int arm){
     return clamp_int((int)calculated_pitch, PITCH_MIN_DEG, PITCH_MAX_DEG);
 }
 
-static int pitch_angle = pitch_angle_calculator(ARM_INITIAL_DEG);
+static int pitch_angle = PITCH_INITIAL_DEG;
 static int claw_angle = CLAW_INITIAL_DEG;
 static double current_x = -6.5;
 static double current_y = 0;
@@ -463,10 +463,10 @@ static void handle_command(char *line) {
         return;
     }
 
-    if (apply_manual_servo_command(line)) {
-        print_state("OK_MANUAL", 4);
-        return;
-    }
+    // if (apply_manual_servo_command(line)) {
+    //     print_state("OK_MANUAL", 4);
+    //     return;
+    // }
     current_state = ROBOT_IDLE; 
     printf("ERR,unknown_command,%s\n", line);
     fflush(stdout);
@@ -547,26 +547,26 @@ static void update_angle(){
 static void on_state_forward(){
     // arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
     // pitch_angle = pitch_angle_calculator(arm_angle);
-    current_y = clamp_y(current_y + STEP_LENGTH, MIN_Y, MAX_Y);
+    current_y = clamp_y(current_y + STEP_LENGTH, current_x, MIN_Y, MAX_Y);
     update_angle();
 }
 
 static void on_state_backward(){
     // arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
     // pitch_angle = pitch_angle_calculator(arm_angle);
-    current_y = clamp_y(current_y - STEP_LENGTH, MIN_Y, MAX_Y);
+    current_y = clamp_y(current_y - STEP_LENGTH, current_x, MIN_Y, MAX_Y);
     update_angle();
 }
 
 static void on_state_left(){
     // base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
-    current_x = clamp_x(current_x - STEP_LENGTH, MIN_X, MAX_X);
+    current_x = clamp_x(current_x - STEP_LENGTH, current_y, MIN_X, MAX_X);
     update_angle();
 }
 
 static void on_state_right(){
     // base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
-    current_x = clamp_x(current_x + STEP_LENGTH, MIN_X, MAX_X);
+    current_x = clamp_x(current_x + STEP_LENGTH, current_y, MIN_X, MAX_X);
     update_angle();
 }
 
