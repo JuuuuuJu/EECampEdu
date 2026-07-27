@@ -123,7 +123,7 @@
     background-color: #4b5058;
     color: transparent;
     border-radius: 4px;
-    padding: 0px 0px;
+    padding: 2px 7px;
     cursor: pointer;
     user-select: none;
     transition: background-color 0.2s ease, color 0.2s ease;
@@ -289,7 +289,7 @@
     <div class="card">
       <h2><span class="step">2.</span>Flash output demo firmware</h2>
       <p class="note">Build 成功後才能 flash。這會 flash 你剛編譯出的 <code>firmware/teaching_output_demo</code>。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash。</p>
       <div id="outFwImages" class="imglist"><div class="note">請先 build，成功後才能 flash。</div></div>
       <div class="row">
         <div><button id="outFwFlashBtn" disabled>連線並 flash output firmware</button></div>
@@ -330,7 +330,7 @@
     <div class="card" style="display:none">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
       <p class="note">這是 model 課程用的 OV2640 preview/capture workflow，來自 <code>firmware/model_finetune</code>，是獨立於 full integration 與 deploy benchmark 的 camera-only firmware。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash。</p>
       <div id="modelFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
         <div><button id="modelFwFlashBtn" disabled>連線並 flash model firmware</button></div>
@@ -450,7 +450,7 @@
     <div class="card">
       <h2><span class="step">A.</span>Flash deploy benchmark firmware</h2>
       <p class="note">這個 firmware 固定使用 <code>RuntimeMode::kTestUartFrame</code>，讓 benchmark script 透過 UART/CDC 傳 frame 並收回 latency/results。它和 model finetune camera firmware 不同。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash。</p>
       <div id="benchFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
         <div><button id="benchFwFlashBtn" disabled>連線並 flash benchmark firmware</button></div>
@@ -486,7 +486,7 @@
     <div class="card">
       <h2><span class="step">C.</span>Flash model partition（.tflite）</h2>
       <p class="note">只會把 model flash 到獨立 partition，main board firmware 不會被改動。當 firmware 已經燒好、只想更新 model 時使用。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash model partition。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash model partition。</p>
       <label>TFLite model</label>
       <select id="flashArtifact"></select>
       <div class="row">
@@ -514,7 +514,7 @@
 
       <h2 style="margin-top:18px">On-device benchmark（在你的 browser 執行）</h2>
       <p class="note">Benchmark 會在你的 browser 透過 <b>Web Serial</b> 執行，ESP32-S3 插在 <b>你的 PC</b> 上，不需要安裝程式，也不使用 AI PC 的 serial port。請先 flash <b>deploy benchmark firmware</b> 和 model，再開始測試。請使用 <b>Chrome 或 Edge</b>；AI PC 只負責提供 dataset images。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來執行 benchmark stream。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來執行 benchmark stream。</p>
       <div class="row compact">
         <div><label>Dataset</label><select id="benchDataset"></select></div>
         <div><label>測試圖片數量</label><input type="number" id="benchLimit" min="1" max="2000" value="60" /></div>
@@ -533,7 +533,7 @@
     <div class="card">
       <h2>Flash main board firmware</h2>
       <p class="note">Flash <b>完整 ESP32-S3 main board firmware</b>（camera + USB + TFLite Micro inference）。這和 flash model 分開；offset 由 ESP-IDF build 產生的 <code>flasher_args.json</code> 決定，學生不需要輸入。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash firmware。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash firmware。</p>
       <div id="mainFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
         <div><button id="mainFwFlashBtn" disabled>連線並 flash firmware</button></div>
@@ -560,7 +560,7 @@
     <div class="card">
       <h2>Flash model partition（.tflite）</h2>
       <p class="note">和 Deploy 頁相同：只把 model flash 到 ESP32-S3 model partition。當 main board firmware 已經燒好、只想更新 model 時使用。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash model partition。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash model partition。</p>
       <label>TFLite model</label>
       <select id="mainFlashArtifact"></select>
       <div class="row">
@@ -616,7 +616,7 @@
     <div class="card">
       <h2><span class="step">1.</span>Flash Camera &amp; USB demo firmware</h2>
       <p class="note">Flash <b>Camera &amp; USB demo firmware</b>（camera + USB CDC/MSC，不含 TFLite inference）。這是此 demo page 專用 firmware；offset 由 ESP-IDF build 產生的 <code>flasher_args.json</code> 決定，學生不需要輸入。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>COM / UART / TTL</b> port 來 flash。</p>
       <div id="usbFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
         <div><button id="usbFwFlashBtn" disabled>連線並 flash firmware</button></div>
