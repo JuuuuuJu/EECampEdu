@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>EECampEdu 教學入口</title>
+<title>EECampEdu 教學</title>
 <style>
   /* ---------- theme tokens ---------- */
   :root, :root[data-theme="dark"] {
@@ -505,9 +505,22 @@
       <pre class="log" id="modelFlashLog">按「連線並 flash model」開始。</pre>
     </div>
 
+    <!-- Benchmark dataset setup -->
+    <div class="card">
+      <h2><span class="step">D.</span>Benchmark dataset 設定</h2>
+      <p class="note">Benchmark 需要先有 dataset images。可以使用 Model finetune 頁面收集好的 dataset，也可以在這裡直接上傳 zip。上傳後下方 Dataset 選單會自動更新。</p>
+      <p class="note">Zip 格式：每個手勢資料夾就是一個 class，例如 <code>dataset/train/rock/*.jpg</code>、<code>dataset/validation/paper/*.png</code>，或直接 <code>rock/*.jpg</code>、<code>paper/*.jpg</code>。</p>
+      <div class="row compact" style="margin-top:8px">
+        <div style="flex:2 1 260px"><label>Benchmark dataset zip</label><input type="file" id="benchDatasetFile" accept=".zip" style="min-height:46px" /></div>
+        <div style="flex:1 1 160px;display:flex;align-items:flex-end"><button id="benchUploadBtn" style="width:100%">上傳並設定 benchmark dataset</button></div>
+        <div style="flex:1 1 140px;display:flex;align-items:flex-end"><button class="secondary" id="benchRefreshDatasetsBtn" style="width:100%">重新掃描 dataset</button></div>
+      </div>
+      <div class="msg" id="benchDatasetMsg"></div>
+    </div>
+
     <!-- Results / benchmark -->
     <div class="card">
-      <h2><span class="step">D.</span>結果與 benchmark</h2>
+      <h2><span class="step">E.</span>結果與 benchmark</h2>
       <p class="note">PC-side quantization results（quantization 時在 AI PC 上計算）：</p>
       <table><thead><tr><th>Model</th><th>Format</th><th>TFLite accuracy</th><th>Samples</th><th>Output variation</th></tr></thead>
         <tbody id="reportsBody"><tr><td colspan="5" class="note">目前還沒有 quantization reports。</td></tr></tbody></table>
@@ -755,7 +768,7 @@
   <section class="pane" id="pane-account">
     <div class="card" style="max-width:560px">
       <h2>帳號設定</h2>
-      <p class="note">這會更新 <b>{{ team }}</b> 在這台 AI PC 上的登入密碼。密碼存在 runtime folder，不會 commit 到 git。</p>
+      <p class="note">這會更新 <b>{{ team }}</b> 在這台 AI PC 上的登入密碼。</p>
       <label>目前密碼</label>
       <input type="password" id="currentPassword" autocomplete="current-password" />
       <label>新密碼</label>
@@ -1269,9 +1282,40 @@ $("uploadBtn").onclick = async () => {
   const fd=new FormData(); fd.append("file",f); setMsg($("uploadMsg"),"正在上傳並解壓縮…","warn"); $("uploadBtn").disabled=true;
   try { const r=await api("/api/dataset/upload",{method:"POST",body:fd});
     const detail=r.imports?r.imports.map(x=>`${x.target}:${x.total_images}`).join("  "):r.target;
-    setMsg($("uploadMsg"),`已匯入 ${r.total_images} 張 images — ${detail}。Classes：${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap();
+    setMsg($("uploadMsg"),`已匯入 ${r.total_images} 張 images — ${detail}。Classes：${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap(); loadBenchOptions();
   } catch(e){ setMsg($("uploadMsg"),"上傳失敗： "+e.message,"bad"); } $("uploadBtn").disabled=false;
 };
+if($("benchUploadBtn")){
+  $("benchUploadBtn").onclick = async () => {
+    const input = $("benchDatasetFile");
+    const f = input && input.files ? input.files[0] : null;
+    if(!f){ setMsg($("benchDatasetMsg"),"請先選擇 benchmark dataset zip。","bad"); return; }
+    const fd = new FormData(); fd.append("file", f);
+    $("benchUploadBtn").disabled = true;
+    setMsg($("benchDatasetMsg"),"正在上傳並設定 benchmark dataset…","warn");
+    try {
+      const r = await api("/api/dataset/upload", { method:"POST", body:fd });
+      const detail = r.imports ? r.imports.map(x=>`${x.target}:${x.total_images}`).join("  ") : r.target;
+      await refreshClassMap();
+      await loadBenchOptions();
+      const preferred = (r.imports || []).some(x=>x.target === "validation") ? "dataset_validation" : ((r.imports || []).some(x=>x.target === "test") ? "dataset_test" : "dataset_train");
+      if($("benchDataset") && Array.from($("benchDataset").options).some(o=>o.value===preferred)) $("benchDataset").value = preferred;
+      setMsg($("benchDatasetMsg"),`已設定 benchmark dataset：${r.total_images} 張 images — ${detail}。Classes：${(r.class_order||[]).join(", ")}`,"ok");
+      if(input) input.value = "";
+    } catch(e) {
+      setMsg($("benchDatasetMsg"),"上傳失敗： "+e.message,"bad");
+    }
+    $("benchUploadBtn").disabled = false;
+  };
+}
+if($("benchRefreshDatasetsBtn")){
+  $("benchRefreshDatasetsBtn").onclick = async () => {
+    setMsg($("benchDatasetMsg"),"正在重新掃描 benchmark dataset…","warn");
+    await loadBenchOptions();
+    const hasDataset = $("benchDataset") && $("benchDataset").value;
+    setMsg($("benchDatasetMsg"), hasDataset ? "已重新掃描，下方 Dataset 選單已更新。" : "目前找不到 benchmark dataset，請先上傳 zip 或在 Model finetune 收集 dataset。", hasDataset ? "ok" : "warn");
+  };
+}
 $("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
   await startJob("/api/train",{ recipe:$("recipe").value, model_name:$("trainModelName").value||undefined, epochs:$("epochs").value||undefined,
