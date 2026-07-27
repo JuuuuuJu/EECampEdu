@@ -24,7 +24,7 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define SERVO_MIN_US 500
 #define SERVO_MAX_US 2500
 #define STEP_DEG 1
-#define STEP_LENGTH 1
+#define STEP_LENGTH 0.1
 
 #define BASE_INITIAL_DEG 180
 #define ARM_INITIAL_DEG 88
@@ -45,6 +45,7 @@ static const char *TAG = "CONTROL_BOARD_OUTPUT";
 #define MIN_X -15
 #define MAX_Y 16
 #define MIN_Y 0
+#define FORBIDDEN_RANGE 6.5
 
 static int base_angle = BASE_INITIAL_DEG;
 static int arm_angle = ARM_INITIAL_DEG;
@@ -54,7 +55,25 @@ static int clamp_int(int value, int low, int high) {
     if (value > high) return high;
     return value;
 }
-
+static double clamp_x(double value, double y, double low, double high){
+    if(y < FORBIDDEN_RANGE){
+        if(value >= 0 && value < FORBIDDEN_RANGE) return FORBIDDEN_RANGE;
+        if(value < 0 && value > -FORBIDDEN_RANGE) return -FORBIDDEN_RANGE;
+        return value;
+    }
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
+}
+static double clamp_y(double value, double x, double low, double high){
+    if(x < FORBIDDEN_RANGE && x > -FORBIDDEN_RANGE){
+        if(value < FORBIDDEN_RANGE) return FORBIDDEN_RANGE;
+        return value;
+    }
+    if (value < low) return low;
+    if (value > high) return high;
+    return value;
+}
 static int pitch_angle_calculator(int arm){
     double arm_Rad = (double)arm * M_PI / 180.0;
     double calculated_pitch = 180 - (180.0 * acos(HEIGHT_COEFFICIENT - sin(arm_Rad)) / M_PI);
@@ -63,9 +82,9 @@ static int pitch_angle_calculator(int arm){
 
 static int pitch_angle = pitch_angle_calculator(ARM_INITIAL_DEG);
 static int claw_angle = CLAW_INITIAL_DEG;
-static int current_x = -5;
-static int current_y = 0;
-static int current_r = 5;
+static double current_x = -6.5;
+static double current_y = 0;
+static double current_r = 6.5;
 static int current_theta = BASE_INITIAL_DEG;
 
 static int target_arm = ARM_INITIAL_DEG;
@@ -506,19 +525,17 @@ static int move_towards(int current, int target, int step) {
 //     }
 // }
 
-static double cartesian_to_r(int x, int y){
-    double double_x = (double)x;
-    double double_y = (double)y;
-    return sqrt(double_x*double_x + double_y*double_y);
+static double cartesian_to_r(double x, double y){
+    return sqrt(x*x + y*y);
 }
-static int cartesian_to_theta(int x, int y){
-    double double_x = (double)x;
-    return (int)round(180.0*acos(double_x/cartesian_to_r(x, y)));
+static int cartesian_to_theta(double x, double y){
+    return (int)round(57.2958*acos(x/cartesian_to_r(x, y)));
 }
 static int r_to_arm_angle(double r){
     double r2 = r*r;
+    double r3 = r*r2;
     double r4 = r2*r2;
-    double ans = 57.2958*acos((0.5*((-double_r*(128.0 + 32.0*r2)) + sqrt(4128768.0 + 1015808.0*r2 - 4096.0*r4)))/(1024.0 + 256.0*r2));
+    double ans = 57.2958*acos((0.5*(4640.0 - 2528.0*r + 480.0*r2 - 32.0*r3 + sqrt(26963968.0 - 8110060.0*r + 401408.0*r2 + 81920.0*r3 - 4096.0*r4)))/(7424.0 - 2560.0*r + 256.0*r2));
     return (int)round(ans);
 }
 static void update_angle(){
@@ -530,26 +547,26 @@ static void update_angle(){
 static void on_state_forward(){
     // arm_angle = clamp_int(arm_angle + STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
     // pitch_angle = pitch_angle_calculator(arm_angle);
-    current_y = clamp_int(current_y + STEP_LENGTH, MIN_Y, MAX_Y);
+    current_y = clamp_y(current_y + STEP_LENGTH, MIN_Y, MAX_Y);
     update_angle();
 }
 
 static void on_state_backward(){
     // arm_angle = clamp_int(arm_angle - STEP_DEG, ARM_MIN_DEG, ARM_MAX_DEG);
     // pitch_angle = pitch_angle_calculator(arm_angle);
-    current_y = clamp_int(current_y - STEP_LENGTH, MIN_Y, MAX_Y);
+    current_y = clamp_y(current_y - STEP_LENGTH, MIN_Y, MAX_Y);
     update_angle();
 }
 
 static void on_state_left(){
     // base_angle = clamp_int(base_angle + STEP_DEG, 0, 180);
-    current_x = clamp_int(current_x - STEP_LENGTH, MIN_X, MAX_X);
+    current_x = clamp_x(current_x - STEP_LENGTH, MIN_X, MAX_X);
     update_angle();
 }
 
 static void on_state_right(){
     // base_angle = clamp_int(base_angle - STEP_DEG, 0, 180);
-    current_x = clamp_int(current_x + STEP_LENGTH, MIN_X, MAX_X);
+    current_x = clamp_x(current_x + STEP_LENGTH, MIN_X, MAX_X);
     update_angle();
 }
 
