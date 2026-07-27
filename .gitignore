@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 venv/
 my_env*/
+runs/
 
 # ESP-IDF generated files
 build/
@@ -47,7 +48,7 @@ model_finetune/dataset/**/*.jpeg
 model_finetune/dataset/**/*.png
 model_finetune/dataset/**/*.bmp
 model_finetune/dataset/**/*.csv
-!model_finetune/dataset/**/.gitkeep
+model_finetune/dataset/**/.gitkeep
 
 # Uploaded dataset zips anywhere
 *.zip
@@ -60,7 +61,6 @@ model_finetune/dataset/**/*.csv
 # Teaching firmware generated config (keep only sdkconfig.defaults* sources)
 firmware/teaching_output_demo/sdkconfig
 firmware/teaching_output_demo/sdkconfig.old
-
 # Local PC app builds
 apps/*/build/
 

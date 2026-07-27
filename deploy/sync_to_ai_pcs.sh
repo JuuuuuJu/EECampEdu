@@ -7,10 +7,15 @@ REMOTE_ROOT="/home/eecamp/EECampEdu"
 SOURCE_TEAM=10
 TARGETS="1-9"
 APPLY=0
+INCLUDE_LOCAL=0
 DELETE_CODE=0
 RESTART_SERVICES=1
 REBUILD_FIRMWARE=1
 RUN_CHECKS=1
+FOREGROUND=0
+SHOW_STATUS=0
+TAIL_LOG=0
+ORIGINAL_ARGS=("$@")
 
 FIRMWARE_PROJECTS=(
   "firmware/main_board"
@@ -36,15 +41,26 @@ Common examples:
   bash deploy/sync_to_ai_pcs.sh
 
   # Actually sync Teams 1-9 from Team 10, rebuild firmware, restart services.
+  # Apply mode starts in the background by default.
   bash deploy/sync_to_ai_pcs.sh --apply
+  bash deploy/sync_to_ai_pcs.sh --status
+  bash deploy/sync_to_ai_pcs.sh --tail
+
+  # Also rebuild/restart the source AI PC itself.
+  bash deploy/sync_to_ai_pcs.sh --apply --include-local
 
   # Sync only Teams 1,2,3 and skip firmware rebuild.
   bash deploy/sync_to_ai_pcs.sh --apply --targets 1,2,3 --skip-rebuild
 
 Options:
   --apply              Really sync and run remote commands. Default is dry-run.
+                       Apply mode runs in the background unless --foreground is set.
+  --foreground         Run apply mode in the current terminal.
+  --status             Show latest background sync PID and log tail, then exit.
+  --tail               Follow the latest background sync log, then exit.
   --targets LIST       Target teams. Examples: 1-9, 1,3,5, 2. Default: 1-9.
   --source-team N      Team number of this source AI PC. Skipped if in targets. Default: 10.
+  --include-local      Also run checks/rebuild/restart on the source AI PC itself.
   --gateway HOST       Gateway host. Default: 140.112.194.42.
   --user USER          SSH user. Default: eecamp.
   --remote-root PATH   Repo path on target AI PCs. Default: /home/eecamp/EECampEdu.
@@ -103,8 +119,12 @@ expand_targets() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply) APPLY=1 ;;
+    --foreground) FOREGROUND=1 ;;
+    --status) SHOW_STATUS=1 ;;
+    --tail) TAIL_LOG=1 ;;
     --targets) TARGETS="${2:?missing value for --targets}"; shift ;;
     --source-team) SOURCE_TEAM="${2:?missing value for --source-team}"; shift ;;
+    --include-local) INCLUDE_LOCAL=1 ;;
     --gateway) GATEWAY="${2:?missing value for --gateway}"; shift ;;
     --user) SSH_USER="${2:?missing value for --user}"; shift ;;
     --remote-root) REMOTE_ROOT="${2:?missing value for --remote-root}"; shift ;;
@@ -121,9 +141,66 @@ done
 ROOT="$(repo_root)"
 cd "$ROOT"
 
-if ! command -v rsync >/dev/null 2>&1; then
-  err "rsync is required on the source AI PC. Install it or use git-based deployment."
-  exit 1
+SYNC_RUN_DIR="$ROOT/deploy/runs"
+SYNC_PID_FILE="$SYNC_RUN_DIR/sync_to_ai_pcs.pid"
+SYNC_LATEST_LOG="$SYNC_RUN_DIR/sync_to_ai_pcs.latest.log"
+
+pid_is_running() {
+  local pid="$1"
+  [[ -n "$pid" ]] && kill -0 "$pid" >/dev/null 2>&1
+}
+
+print_sync_status() {
+  mkdir -p "$SYNC_RUN_DIR"
+  local pid=""
+  [[ -f "$SYNC_PID_FILE" ]] && pid="$(cat "$SYNC_PID_FILE" 2>/dev/null || true)"
+  if pid_is_running "$pid"; then
+    log "background sync running: pid=$pid"
+  elif [[ -n "$pid" ]]; then
+    log "background sync not running: last pid=$pid"
+  else
+    log "no background sync pid found"
+  fi
+  log "latest log: $SYNC_LATEST_LOG"
+  if [[ -f "$SYNC_LATEST_LOG" ]]; then
+    printf '\n--- latest log tail ---\n'
+    tail -n 80 "$SYNC_LATEST_LOG"
+  fi
+}
+
+if [[ "$SHOW_STATUS" -eq 1 ]]; then
+  print_sync_status
+  exit 0
+fi
+
+if [[ "$TAIL_LOG" -eq 1 ]]; then
+  mkdir -p "$SYNC_RUN_DIR"
+  log "following latest log: $SYNC_LATEST_LOG"
+  touch "$SYNC_LATEST_LOG"
+  tail -f "$SYNC_LATEST_LOG"
+  exit 0
+fi
+
+if [[ "$APPLY" -eq 1 && "$FOREGROUND" -eq 0 ]]; then
+  mkdir -p "$SYNC_RUN_DIR"
+  existing_pid=""
+  [[ -f "$SYNC_PID_FILE" ]] && existing_pid="$(cat "$SYNC_PID_FILE" 2>/dev/null || true)"
+  if pid_is_running "$existing_pid"; then
+    err "background sync already running: pid=$existing_pid"
+    err "Check progress with: bash deploy/sync_to_ai_pcs.sh --status"
+    exit 1
+  fi
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  log_file="$SYNC_RUN_DIR/sync_to_ai_pcs-$timestamp.log"
+  ln -sfn "$(basename "$log_file")" "$SYNC_LATEST_LOG"
+  nohup bash "$0" "${ORIGINAL_ARGS[@]}" --foreground > "$log_file" 2>&1 &
+  bg_pid=$!
+  echo "$bg_pid" > "$SYNC_PID_FILE"
+  log "background sync started: pid=$bg_pid"
+  log "log file: $log_file"
+  log "check progress: bash deploy/sync_to_ai_pcs.sh --status"
+  log "follow log:     bash deploy/sync_to_ai_pcs.sh --tail"
+  exit 0
 fi
 
 RSYNC_ARGS=(
@@ -305,11 +382,24 @@ if [[ "${#target_teams[@]}" -eq 0 ]]; then
   err "No targets selected."
   exit 2
 fi
+if [[ "$INCLUDE_LOCAL" -eq 1 ]]; then
+  has_source_team=0
+  for team in "${target_teams[@]}"; do
+    if [[ "$team" == "$SOURCE_TEAM" ]]; then
+      has_source_team=1
+      break
+    fi
+  done
+  if [[ "$has_source_team" -eq 0 ]]; then
+    target_teams+=("$SOURCE_TEAM")
+  fi
+fi
 
 log "source repo : $ROOT"
 log "gateway     : $GATEWAY"
 log "targets     : ${target_teams[*]}"
 log "mode        : $([[ $APPLY -eq 1 ]] && echo apply || echo dry-run)"
+log "include local: $([[ $INCLUDE_LOCAL -eq 1 ]] && echo yes || echo no)"
 log "rebuild     : $([[ $REBUILD_FIRMWARE -eq 1 ]] && echo yes || echo no)"
 log "restart     : $([[ $RESTART_SERVICES -eq 1 ]] && echo yes || echo no)"
 
@@ -319,7 +409,45 @@ printf '%s\n' "-----------------------------------------------------------------
 failures=0
 for team in "${target_teams[@]}"; do
   if [[ "$team" == "$SOURCE_TEAM" ]]; then
-    printf '%-6s %-8s %-8s %-8s %-8s %s\n' "$team" "SKIP" "SKIP" "SKIP" "SKIP" "source team"
+    if [[ "$INCLUDE_LOCAL" -eq 0 ]]; then
+      printf '%-6s %-8s %-8s %-8s %-8s %s\n' "$team" "SKIP" "SKIP" "SKIP" "SKIP" "source team"
+      continue
+    fi
+
+    sync_status="LOCAL"
+    check_status="SKIP"
+    build_status="SKIP"
+    restart_status="SKIP"
+    msg=""
+
+    if [[ "$APPLY" -eq 0 ]]; then
+      printf '%-6s %-8s %-8s %-8s %-8s %s\n' "$team" "$sync_status" "$check_status" "$build_status" "$restart_status" "dry-run local only"
+      continue
+    fi
+
+    firmware_projects_text="$(IFS=';'; echo "${FIRMWARE_PROJECTS[*]}")"
+    if output=$(
+      REMOTE_ROOT="$ROOT" \
+      RUN_CHECKS="$RUN_CHECKS" \
+      REBUILD_FIRMWARE="$REBUILD_FIRMWARE" \
+      RESTART_SERVICES="$RESTART_SERVICES" \
+      FIRMWARE_PROJECTS_TEXT="$firmware_projects_text" \
+      bash -s <<< "$(remote_script)" 2>&1
+    ); then
+      [[ "$RUN_CHECKS" == "1" ]] && check_status="OK"
+      [[ "$REBUILD_FIRMWARE" == "1" ]] && build_status="OK"
+      [[ "$RESTART_SERVICES" == "1" ]] && restart_status="OK"
+      msg="local done"
+    else
+      msg="local failed: $(printf '%s' "$output" | tail -n 1)"
+      failures=$((failures + 1))
+    fi
+    printf '%-6s %-8s %-8s %-8s %-8s %s\n' "$team" "$sync_status" "$check_status" "$build_status" "$restart_status" "$msg"
+    if [[ -n "${output:-}" && "$msg" == local\ failed:* ]]; then
+      printf '[sync][team %s local] output tail:\n' "$team"
+      printf '%s\n' "$output" | tail -n 80
+      printf '\n'
+    fi
     continue
   fi
   port="$(ssh_port_for_team "$team")"
@@ -330,6 +458,13 @@ for team in "${target_teams[@]}"; do
   check_status="SKIP"
   build_status="SKIP"
   restart_status="SKIP"
+
+  if ! command -v rsync >/dev/null 2>&1; then
+    msg="rsync is required for remote sync on the source AI PC"
+    printf '%-6s %-8s %-8s %-8s %-8s %s\n' "$team" "$sync_status" "$check_status" "$build_status" "$restart_status" "$msg"
+    failures=$((failures + 1))
+    continue
+  fi
 
   if rsync "${RSYNC_ARGS[@]}" -e "ssh -p ${port}" ./ "$rsync_target" >/tmp/eecamp_sync_${team}.log 2>&1; then
     sync_status="OK"
