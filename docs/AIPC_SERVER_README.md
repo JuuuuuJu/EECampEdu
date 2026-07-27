@@ -1,4 +1,4 @@
-# AI PC Server Guide
+﻿# AI PC Server Guide
 
 This guide is for teaching assistants and developers who maintain one AI PC for one team.
 
@@ -111,6 +111,60 @@ Firmware flashing uses ESP-IDF build outputs:
 
 Model flashing uses the `.tflite` file directly. There is no `.tflite -> .bin` conversion. The `.tflite` is written as raw bytes into the model partition, and the firmware maps that partition at runtime.
 
+## Sync Local Code To Other AI PCs
+
+When one AI PC has been fixed and tested, use `deploy/sync_to_ai_pcs.sh` to copy the current local working tree to the other AI PCs. This uses `rsync`, not `git pull`, so uncommitted local fixes are included. Runtime data is excluded so team uploads, datasets, generated models, job logs, and `apps/training_portal/runs/` are preserved.
+
+Default classroom mapping:
+
+- Team 1 SSH: `221`
+- Team 2 SSH: `222`
+- ...
+- Team 9 SSH: `229`
+- Team 10 SSH: `230`
+
+The source team is skipped by default. Typical use from Team 10:
+
+```bash
+cd ~/EECampEdu
+bash deploy/sync_to_ai_pcs.sh
+```
+
+The first command is a dry-run. It prints what would be synchronized and does not change target machines. To actually update Teams 1-9, rebuild firmware artifacts, and restart services:
+
+```bash
+bash deploy/sync_to_ai_pcs.sh --apply
+```
+
+Useful variants:
+
+```bash
+# Sync only selected teams.
+bash deploy/sync_to_ai_pcs.sh --apply --targets 1,2,3
+
+# Sync portal-only changes quickly; skip firmware rebuild.
+bash deploy/sync_to_ai_pcs.sh --apply --skip-rebuild
+
+# Sync without restarting services.
+bash deploy/sync_to_ai_pcs.sh --apply --no-restart
+
+# If you intentionally removed code files locally and want targets to match.
+bash deploy/sync_to_ai_pcs.sh --apply --delete-code
+```
+
+The script prints one row per team with `sync`, `checks`, `build`, and `restart` status. It restarts `eecamp-portal` and restarts `eecamp-camera-app` only if that service exists. Firmware rebuild loads ESP-IDF from `IDF_EXPORT_SH` in `deploy/eecamp-portal.env`, `/opt/esp/idf/export.sh`, or `$HOME/esp/esp-idf/export.sh`.
+
+Excluded data includes:
+
+- `.git/`
+- `apps/training_portal/runs/`
+- `deploy/eecamp-portal.env`
+- `model_finetune/dataset/`
+- `model_finetune/models/`
+- `firmware/pc/artifacts/`
+- firmware `build/` and `managed_components/`
+
+Use git commit/push for official history. Use this sync script for classroom deployment or emergency fixes.
 ## Logs
 
 Portal jobs write runtime logs under ignored folders in `apps/training_portal/runs/`.
