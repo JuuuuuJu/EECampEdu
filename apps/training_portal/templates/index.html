@@ -1995,6 +1995,9 @@ function usbCamSetStorageOwner(owner){
     else if(UsbCam.storageOwner === "pc") state.textContent="PC owns EECamp. Browse it in your file explorer, or safely eject it to capture.";
     else state.textContent="Waiting for storage status from the camera.";
   }
+  if(UsbCam.controls && (owner === "app" || owner === "pc")){
+    setMsg($("usbCamControlMsg"), "Camera controls 已連線。", "ok");
+  }
   usbCamSyncUi();
 }
 function usbCamResetControlState(){
@@ -2073,6 +2076,7 @@ async function usbCamConnectControls(){
     UsbCam.controls=true;
     usbCamSetStorageOwner("unknown");
     setMsg($("usbCamControlMsg"), "Camera controls 已連線，正在檢查 storage owner...", "ok");
+    setMsg("usbCamSettingsMsg", "", "");
     await cameraWrite("storage status");
   }catch(e){
     usbCamResetControlState();
