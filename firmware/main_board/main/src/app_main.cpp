@@ -9,6 +9,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_partition.h"
+#include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -1474,6 +1475,16 @@ static bool fill_input_tensor_from_raw_frame(const uint8_t *frame) {
         return true;
     }
 
+    if (g_input->type == kTfLiteInt16) {
+        for (int i = 0; i < expected_elements; ++i) {
+            const float normalized = frame[i] / 255.0f;
+            const int quantized = (int)lroundf(normalized / g_input->params.scale)
+                                + g_input->params.zero_point;
+            g_input->data.i16[i] = (int16_t)clamp_int(quantized, -32768, 32767);
+        }
+        return true;
+    }
+
     if (g_input->type == kTfLiteUInt8) {
         for (int i = 0; i < expected_elements; ++i) {
             const float normalized = frame[i] / 255.0f;
@@ -1509,6 +1520,8 @@ static bool read_output_scores(int *scores, int *pred_index) {
         int score = 0;
         if (g_output->type == kTfLiteInt8) {
             score = g_output->data.int8[i];
+        } else if (g_output->type == kTfLiteInt16) {
+            score = g_output->data.i16[i];
         } else if (g_output->type == kTfLiteUInt8) {
             score = g_output->data.uint8[i];
         } else if (g_output->type == kTfLiteFloat32) {
@@ -1713,9 +1726,11 @@ static bool run_inference_on_grayscale_frame(const uint8_t *frame) {
     const int64_t preprocess_end_time = esp_timer_get_time();
     dump_frame("DEVICE_MODEL_DUMP", g_model_frame, INPUT_WIDTH, INPUT_HEIGHT);
 
+    vTaskDelay(pdMS_TO_TICKS(10));
     const int64_t start_time = esp_timer_get_time();
     const TfLiteStatus invoke_status = g_interpreter->Invoke();
     const int64_t end_time = esp_timer_get_time();
+    vTaskDelay(pdMS_TO_TICKS(10));
     if (invoke_status != kTfLiteOk) {
         printf("ERROR,invoke_failed\n");
         fflush(stdout);
@@ -1929,6 +1944,7 @@ static void camera_flash_task(void *pvParameters) {
 }
 
 extern "C" void app_main() {
+    esp_task_wdt_deinit();
     ESP_LOGI(TAG, "Runtime mode: %s", runtime_mode_name());
     log_memory_status();
     maybe_start_input_controls();

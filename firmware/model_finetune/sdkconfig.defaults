@@ -49,3 +49,6 @@ CONFIG_PARTITION_TABLE_MD5=y
 # Long filenames: photo_storage.cpp creates folders like "model_finetune"
 # (>8.3), which needs LFN support or mkdir() silently fails.
 CONFIG_FATFS_LFN_HEAP=y
+
+# Increase Task Watchdog timeout to 30 seconds for 16-bit neural network inference
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30
