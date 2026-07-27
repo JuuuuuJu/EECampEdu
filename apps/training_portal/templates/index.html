@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>EECampEdu AI PC Portal</title>
+<title>EECampEdu 教學入口</title>
 <style>
   /* ---------- theme tokens ---------- */
   :root, :root[data-theme="dark"] {
@@ -169,6 +169,38 @@
     main { padding:16px 12px 42px; }
     .grid2, .home-hero { grid-template-columns:1fr; }
   }
+
+  /* ---------- responsive desktop/mobile layout ---------- */
+  body { overflow-x:hidden; }
+  @media (max-width:980px){
+    .topbar { display:grid; grid-template-columns:1fr; align-items:stretch; gap:10px; padding:10px 12px; }
+    .topbar .brand { min-width:0; justify-content:center; min-height:32px; font-size:18px; }
+    #tabs { width:100% !important; max-width:none !important; min-width:0 !important; flex:none !important; grid-template-columns:repeat(6, minmax(40px, 1fr)) !important; gap:6px !important; }
+    #tabs button { width:100% !important; min-width:0 !important; max-width:none !important; height:42px !important; min-height:42px !important; max-height:42px !important; }
+    #tabs .nav-label { display:none !important; }
+    .topbar .right { width:100%; margin-left:0; display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; white-space:normal; }
+    .topbar .right label, .topbar .right select, .toplink, .topbar .right button { width:100%; min-width:0; }
+    .topbar .right .team { grid-column:1 / -1; text-align:center; }
+  }
+  @media (max-width:620px){
+    body { font-size:15px; }
+    main { padding:12px 10px 36px; }
+    .card { padding:14px; border-radius:8px; margin-bottom:14px; }
+    .card h2 { font-size:17px; }
+    .row, .row.compact { flex-direction:column; align-items:stretch; gap:8px; }
+    .row > div, .row.compact > div { min-width:0; width:100%; }
+    button { width:100%; min-width:0; }
+    input[type=text], input[type=password], input[type=number], select, input[type=file], textarea { min-height:44px; }
+    table { display:block; overflow-x:auto; white-space:nowrap; }
+    pre.log { height:180px; font-size:12px; }
+    pre.log.tall { height:220px; }
+    .grid2 { grid-template-columns:1fr; gap:12px; }
+    .home-hero { min-height:calc(100vh - 220px); }
+    .home-icon { width:150px; height:150px; }
+    .home-icon img { max-width:118px; max-height:118px; }
+    .home-script { font-size:34px; }
+    .home-joke { font-size:15px; }
+  }
 </style>
 </head>
 <body>
@@ -183,17 +215,17 @@
     <button data-topic="drive" data-path="/drive" title="AI PC Drive" aria-label="AI PC Drive"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7h7l2 3h9v9H3z"></path><path d="M3 7v12"></path></svg></span><span class="nav-label">Drive</span></button>
   </nav>
   <div class="right">
-    <label style="margin:0;color:var(--muted);font-size:12px">Theme
-      <select id="themeSelect" title="Display theme" style="margin-left:4px">
+    <label style="margin:0;color:var(--muted);font-size:12px">主題
+      <select id="themeSelect" title="顯示主題" style="margin-left:4px">
         <option value="dark">Dark modern</option><option value="light">Light</option><option value="contrast">Dark high contrast</option><option value="solarized">Solarized light</option>
       </select>
     </label>
-    <label style="margin:0;color:var(--muted);font-size:12px" title="Baud rate for all Web Serial flashing (model + firmware). ROM sync stays 115200; lower this if flashing is unreliable.">Flash baud
+    <label style="margin:0;color:var(--muted);font-size:12px" title="所有 Web Serial flash 的 baud rate（model + firmware）。ROM sync 固定 115200；flash 不穩時請降低。">Flash baud
       <select id="flashBaud" style="margin-left:4px"><option value="115200">115200</option><option value="230400">230400</option><option value="460800">460800</option><option value="921600" selected>921600</option></select>
     </label>
-        <span class="team">Team <b>{{ team }}</b></span>
-    <a class="toplink" href="/account">Account settings</a>
-    <form method="post" action="/logout"><button class="secondary">Logout</button></form>
+        <span class="team">小隊 <b>{{ team }}</b></span>
+    <a class="toplink" href="/account">帳號設定</a>
+    <form method="post" action="/logout"><button class="secondary">登出</button></form>
   </div>
 </header>
 
@@ -205,109 +237,105 @@
         <div class="home-icon">
           <img src="/static/Logo.png" alt="NTUEE Camp logo" />
         </div>
-        <h1 class="home-script">Welcome to NTUEE Camp</h1>
-        <p class="home-joke">Give us a hand — the robot is still learning yours.</p>
+        <h1 class="home-script">歡迎來到 NTUEE Camp</h1>
+        <p class="home-joke">手勢要準，先把手借給 AI 一下。</p>
       </div>
     </div>
   </section>
 <!-- ==================== OUTPUT DEMO ==================== -->
   <section class="pane" id="pane-output">
     <div class="card">
-      <h2>Output class — write code, build, flash</h2>
-      <p class="note">Board: <b>ESP32-S3</b> with an addressable RGB LED on <code>GPIO38</code>. You write a small
-         light pattern in the editor below, <b>build</b> it on the AI PC, then <b>flash</b> it to the board and run it.
-         Use <b>Chrome/Edge</b>.</p>
+      <h2>Output 課程 — 寫 code、build、flash</h2>
+      <p class="note">Board：<b>ESP32-S3</b>，<code>GPIO38</code> 接 addressable RGB LED。你會在下方 editor 撰寫一小段 light pattern，在 AI PC 上 <b>build</b>，再 <b>flash</b> 到板子上執行。請使用 <b>Chrome/Edge</b>。</p>
     </div>
 
     <div class="card">
-      <h2><span class="step">1.</span>Edit your output code &amp; build</h2>
-      <p class="note">Edit only <code>student_pattern()</code> below — it runs once each time you click
-         <b>Run pattern</b> after flashing. Available helpers:
-         <code>led_set_rgb(r, g, b)</code> (0–255 each) and <code>led_delay_ms(ms)</code>.</p>
-      <label>Teaching code block</label>
-      <textarea id="outCode" class="code-editor" spellcheck="false" style="width:100%;min-height:240px;white-space:pre;overflow:auto" wrap="off">Loading…</textarea>
+      <h2><span class="step">1.</span>編輯 Output code 並 build</h2>
+      <p class="note">只編輯下方 <code>student_pattern()</code>。Flash 後每按一次 <b>Run pattern</b>，它就會執行一次。可用 helper：<code>led_set_rgb(r, g, b)</code>（每個值 0-255）與 <code>led_delay_ms(ms)</code>。</p>
+      <label>教學 code block</label>
+      <textarea id="outCode" class="code-editor" spellcheck="false" style="width:100%;min-height:240px;white-space:pre;overflow:auto" wrap="off">載入中…</textarea>
       <div class="row" style="margin-top:10px">
         <div><button id="outBuildBtn">Build firmware</button></div>
-        <div><button class="secondary" id="outResetBtn">Reset to default</button></div>
+        <div><button class="secondary" id="outResetBtn">重設預設</button></div>
       </div>
       <div class="msg" id="outBuildStatus"></div>
-      <label style="margin-top:12px">Build log (full compiler output)</label>
-      <pre class="log" id="outBuildLog">Edit the code above, then click Build firmware. Flashing unlocks after a successful build.</pre>
+      <label style="margin-top:12px">Build log（完整 compiler output）</label>
+      <pre class="log" id="outBuildLog">編輯上方 code 後按 Build firmware。Build 成功後才會解鎖 flash。</pre>
     </div>
 
     <div class="card">
       <h2><span class="step">2.</span>Flash output demo firmware</h2>
-      <p class="note">Enabled after a successful build. Flashes your compiled <code>firmware/teaching_output_demo</code>.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
-      <div id="outFwImages" class="imglist"><div class="note">Build first to enable flashing.</div></div>
+      <p class="note">Build 成功後才能 flash。這會 flash 你剛編譯出的 <code>firmware/teaching_output_demo</code>。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <div id="outFwImages" class="imglist"><div class="note">請先 build，成功後才能 flash。</div></div>
       <div class="row">
-        <div><button id="outFwFlashBtn" disabled>Connect &amp; flash output firmware</button></div>
-        <div><button class="secondary" id="outFwRefreshBtn">Re-check build</button></div>
+        <div><button id="outFwFlashBtn" disabled>連線並 flash output firmware</button></div>
+        <div><button class="secondary" id="outFwRefreshBtn">重新檢查 build</button></div>
       </div>
       <div class="msg" id="outFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="outFwLog">Build your code first, then flash, then control the LED below.</pre>
+      <pre class="log" id="outFwLog">先 build code，再 flash，最後用下方控制 LED。</pre>
     </div>
 
     <div class="card">
-      <h2><span class="step">3.</span>Control the LED</h2>
-      <p class="note">After flashing, connect to the board's serial port to drive the LED live.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect for live control.</p>
-      <button class="secondary" id="ctrlConnectBtn">Connect for control</button>
+      <h2><span class="step">3.</span>控制 LED</h2>
+      <p class="note">Flash 後連線到 serial port，就可以用下方按鈕控制 LED。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>USB / OTG</b> port 來做 live control。</p>
+      <button class="secondary" id="ctrlConnectBtn">連線控制</button>
       <div class="row" style="margin-top:10px">
-        <div><button id="ledPatternBtn" disabled>Run pattern</button></div>
-        <div><button class="secondary" id="ledToggleBtn" disabled>Turn LED On</button></div>
-        <div><button class="secondary" id="ledBlinkBtn" disabled>Blink</button></div>
+        <div><button id="ledPatternBtn" disabled>執行 pattern</button></div>
+        <div><button class="secondary" id="ledToggleBtn" disabled>打開 LED</button></div>
+        <div><button class="secondary" id="ledBlinkBtn" disabled>閃爍</button></div>
         <div><button class="secondary" id="ledTestBtn" disabled>TEST</button></div>
         <div><button class="secondary" id="ledStatusBtn" disabled>STATUS</button></div>
       </div>
-      <label style="margin-top:12px">Brightness (PWM): <span id="pwmVal">128</span> / 255</label>
+      <label style="margin-top:12px">LED PWM 強度：<span id="pwmVal">128</span> / 255</label>
       <input type="range" id="pwmSlider" min="0" max="255" value="128" disabled />
       <div class="msg" id="ctrlStatus"></div>
-      <label style="margin-top:10px">Board messages</label>
-      <pre class="log" id="ctrlLog">Not connected.</pre>
+      <label style="margin-top:10px">Board 訊息</label>
+      <pre class="log" id="ctrlLog">尚未連線。</pre>
     </div>
   </section>
 
   <!-- ==================== MODEL DEMO ==================== -->
   <section class="pane" id="pane-model">
     <div class="card">
-      <h2>Model finetune — dataset &amp; training</h2>
-      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: <b>Step 0</b> Create classes → <b>Step 1</b> Collect photos or upload dataset zip → <b>Step 2</b> Train model → <b>Step 3</b> Preview prediction before deploy.</p>
+      <h2>Model finetune — dataset 與 training</h2>
+      <p class="note">Board：<b>ESP32-S3 main board</b>。流程：<b>Step 0</b> 建立 classes → <b>Step 1</b> 拍照收集或上傳 dataset zip → <b>Step 2</b> train model → <b>Step 3</b> deploy 前預覽 prediction。</p>
     </div>
 
     <div class="card" style="display:none">
       <h2><span class="step">A.</span>Flash model finetune camera firmware</h2>
-      <p class="note">Use this for the model class OV2640 preview/capture workflow. It is built from <code>firmware/model_finetune</code>, a camera-only firmware separate from full integration and deploy benchmark firmware.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
-      <div id="modelFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <p class="note">這是 model 課程用的 OV2640 preview/capture workflow，來自 <code>firmware/model_finetune</code>，是獨立於 full integration 與 deploy benchmark 的 camera-only firmware。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <div id="modelFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
-        <div><button id="modelFwFlashBtn" disabled>Connect &amp; flash model firmware</button></div>
-        <div><button class="secondary" id="modelFwRefreshBtn">Re-check build</button></div>
+        <div><button id="modelFwFlashBtn" disabled>連線並 flash model firmware</button></div>
+        <div><button class="secondary" id="modelFwRefreshBtn">重新檢查 build</button></div>
       </div>
       <div class="msg" id="modelFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="modelFwLog">Flash this before the ESP32-S3 shows up as a camera for model class.</pre>
+      <pre class="log" id="modelFwLog">請先 flash，ESP32-S3 才能作為 model 課程 camera 使用。</pre>
     </div>
 
     <div class="card">
-      <h2><span class="step">STEP 0.</span>Create gesture classes</h2>
+      <h2><span class="step">STEP 0.</span>建立手勢類別</h2>
       <p class="note">在開始拍照之前，先建立你想辨識的手勢類別（例如：<code>background</code>、<code>rock</code>、<code>paper</code>）。建議建立一個 <code>background</code> 類別儲存純背景或無手勢的照片，能有效避免誤判。</p>
       <div class="row compact">
-        <div><label>New class name</label><input id="step0ClassName" placeholder="e.g. background, rock, paper" /></div>
-        <div><button id="step0CreateBtn">Create class</button></div>
+        <div><label>新 class 名稱</label><input id="step0ClassName" placeholder="例如 background, rock, paper" /></div>
+        <div><button id="step0CreateBtn">建立類別</button></div>
       </div>
       <div class="msg" id="step0Msg"></div>
     </div>
 
     <div class="card">
-      <h2><span class="step">STEP 1.</span>Dataset Collection</h2>
-      <h3 style="margin-top: 10px; margin-bottom: 6px;">Option A: Photo capture with Camera</h3>
-      <p class="note">開啟相機預覽，對著鏡頭做出手勢，然後按 <b>Save current frame</b> 把這一幀存入資料集。每個手勢類別建議各拍 <b>100～120 張</b>，動作稍微變化（角度、距離、光線、畫面位置）可以讓模型更強健。</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port so it appears in the camera list below.</p>
+      <h2><span class="step">STEP 1.</span>Dataset 收集</h2>
+      <h3 style="margin-top: 10px; margin-bottom: 6px;">Option A：使用 Camera 拍照</h3>
+      <p class="note">開啟相機預覽，對著鏡頭做出手勢，然後按 <b>Save frame</b> 把這一幀存入資料集。每個手勢類別建議各拍 <b>100～120 張</b>，動作稍微變化（角度、距離、光線、畫面位置）可以讓模型更強健。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>USB / OTG</b> port，讓它出現在下方 camera 清單。</p>
       <div class="row compact">
-        <div><label>Camera</label><select id="cameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
-        <div><button id="localWebcamBtn">Start camera preview</button></div>
+        <div><label>Camera</label><select id="cameraDeviceSelect"><option value="">請先開啟 preview 再選擇 camera…</option></select></div>
+        <div><button id="localWebcamBtn">開啟 camera preview</button></div>
       </div>
       <div class="msg" id="modelMsg" style="display:none;"></div>
       <!-- <p class="note">Camera access stays in this browser. Students do not run Python. Each start asks you to pick a camera again, so you can switch between a laptop webcam and the ESP32-S3.</p> -->
@@ -318,74 +346,73 @@
           <div id="cameraSquareGuide" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%, -50%);border:3px dashed var(--accent);box-shadow:0 0 8px rgba(59,130,246,0.4);pointer-events:none;box-sizing:border-box;border-radius:6px;transition:width 0.1s, height 0.1s;"></div>
         </div>
         <canvas id="localWebcamCanvas" hidden></canvas>
-        <div class="note" id="cameraPlaceholder">No camera frame yet.</div>
+        <div class="note" id="cameraPlaceholder">目前還沒有 camera frame。</div>
       </div>
       <div class="row compact" style="margin-top:12px">
-        <div><label>Gesture class</label><select id="captureClass"></select></div>
+        <div><label>手勢類別</label><select id="captureClass"></select></div>
         <div style="display:none"><label>Dataset split</label><select id="captureSplit"><option value="train" selected>train</option></select></div>
       </div>
       <div class="row compact">
-        <div><button id="saveFrameBtn" disabled>Save current frame to dataset</button></div>
-        <div><button class="secondary" id="autoSplitBtn">Auto-split Train/Val (4:1)</button></div>
+        <div><button id="saveFrameBtn" disabled>儲存目前畫面到 dataset</button></div>
+        <div><button class="secondary" id="autoSplitBtn">自動切分 Train/Val (4:1)</button></div>
       </div>
       <div class="msg" id="captureMsg"></div>
 
       <hr style="margin: 20px 0; border: none; border-top: 1px dashed var(--border);" />
 
-      <h3 style="margin-bottom: 6px;">Option B: Upload existing Dataset (.zip)</h3>
+      <h3 style="margin-bottom: 6px;">Option B：上傳現有 Dataset（.zip）</h3>
       <p class="note">已有準備好的資料集？可以直接上傳 Zip 檔（每個手勢資料夾為一個類別）。</p>
       <div class="row compact" style="margin-top:8px">
         <div style="flex: 2 1 240px;"><input type="file" id="datasetFile" accept=".zip" style="min-height:46px" /></div>
-        <div style="flex: 1 1 120px;"><button id="uploadBtn" style="margin-top:0; width:100%">Upload &amp; import</button></div>
+        <div style="flex: 1 1 120px;"><button id="uploadBtn" style="margin-top:0; width:100%">上傳並匯入</button></div>
       </div>
       <div class="msg" id="uploadMsg"></div>
       <hr style="margin: 20px 0; border: none; border-top: 1px dashed var(--border);" />
 
-      <label style="margin-top:14px">Export dataset</label>
-      <p class="note">Downloads or saves a zip of the <b>whole</b> dataset on disk (all classes).</p>
+      <label style="margin-top:14px">匯出 dataset</label>
+      <p class="note">把目前 <b>active</b> dataset 匯出成 zip，方便備份或傳給其他同學使用。</p>
       <div class="row compact">
-        <div style="flex:1 1 220px"><label>File name</label><input type="text" id="datasetExportName" value="active-dataset.zip" /></div>
-        <div><label>Save to Drive folder</label><select id="datasetExportFolder"></select></div>
+        <div style="flex:1 1 220px"><label>檔案名稱</label><input type="text" id="datasetExportName" value="active-dataset.zip" /></div>
+        <div><label>存到 Drive folder</label><select id="datasetExportFolder"></select></div>
       </div>
       <div class="row compact" style="margin-top:6px">
-        <div><button class="secondary" id="datasetDownloadBtn">Download zip</button></div>
-        <div><button class="secondary" id="datasetSaveToDriveBtn">Save to Drive</button></div>
+        <div><button class="secondary" id="datasetDownloadBtn">下載 zip</button></div>
+        <div><button class="secondary" id="datasetSaveToDriveBtn">存到 Drive</button></div>
       </div>
       <div class="msg" id="datasetExportMsg"></div>
       <div style="display:none">
-        <label style="margin-top:12px">Camera messages</label>
-        <pre class="log" id="cameraLog">Click "Start camera preview" and choose a camera.</pre>
+        <label style="margin-top:12px">Camera 訊息</label>
+        <pre class="log" id="cameraLog">按「開啟 camera preview」並選擇 camera。</pre>
       </div>
     </div>
 
     <div class="card">
       <h2><span class="step">Step 2.</span>Train</h2>
-      <p class="note">選好要訓練的手勢類別、調整參數，然後按 <b>Start training</b> 開始訓練。訓練會在背景的 AI PC 上執行，完成後可以在下方看到結果與生成的模型檔。</p>
-      <p class="note">Your dataset can hold <b>more than 7 (6+1)</b> classes (collect extras, replace gestures). Each
-         training / inference run uses an <b>active set of up to <span id="maxActive">7</span></b> classes (e.g. 6 gestures + 1 background).</p>
-      <label style="margin-top:10px">Active gesture classes (choose up to <span id="maxActiveLabel">7</span>)</label>
-      <div id="activeClassRows"><div class="note">Import a dataset or capture frames to add gesture classes.</div></div>
-      <button class="secondary" id="saveActiveClassesBtn">Save active classes</button>
+      <p class="note">選好要訓練的手勢類別、調整參數，然後按 <b>開始 training</b> 開始訓練。訓練會在背景的 AI PC 上執行，完成後可以在下方看到結果與生成的模型檔。</p>
+      <p class="note">Dataset 可以保留 <b>超過 7 個</b> classes（例如多收一些替換手勢）。每次 training / inference 只會使用 active set，最多 <span id="maxActive">7</span> 個 classes（例如 6 gestures + 1 background）。</p>
+      <label style="margin-top:10px">Active gesture classes（最多選 <span id="maxActiveLabel">7</span> 個）</label>
+      <div id="activeClassRows"><div class="note">請先匯入 dataset 或用 camera 收集 frames。</div></div>
+      <button class="secondary" id="saveActiveClassesBtn">儲存 active classes</button>
       <div class="msg" id="activeClassMsg"></div>
-      <label style="margin-top:14px">Map active classes → robot actions</label>
-      <div id="classMapRows" style="margin-top:6px"><div class="note">Select active classes above to map them to robot actions.</div></div>
-      <button class="secondary" id="saveClassMapBtn">Save action mapping</button>
+      <label style="margin-top:14px">Active classes 對應 robot actions</label>
+      <div id="classMapRows" style="margin-top:6px"><div class="note">請先在上方選擇 active classes，再對應到 robot actions。</div></div>
+      <button class="secondary" id="saveClassMapBtn">儲存 action mapping</button>
       <div class="msg" id="classMapMsg"></div>
       <label style="margin-top:12px">Model recipe</label>
       <select id="recipe"></select>
       <div class="note" id="recipeDesc"></div>
       <div style="margin-top:8px;margin-bottom:12px">
-        <label for="trainModelName">Model name (optional)</label>
-        <input type="text" id="trainModelName" maxlength="64" placeholder="e.g. gesture_v1 (defaults to model_1, model_2...)" autocomplete="off" style="margin-top:4px" />
+        <label for="trainModelName">Model name（可選）</label>
+        <input type="text" id="trainModelName" maxlength="64" placeholder="例如 gesture_v1（預設 model_1, model_2...）" autocomplete="off" style="margin-top:4px" />
       </div>
       <div class="row" id="tuning">
-        <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="default 15 (max 500)" /></div>
-        <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="default 32 (max 512)" /></div>
+        <div><label>Epochs</label><input type="number" id="epochs" min="1" max="500" placeholder="預設 15（最大 500）" /></div>
+        <div><label>Batch size</label><input type="number" id="batchSize" min="1" max="512" placeholder="預設 32（最大 512）" /></div>
         <div style="display:none"><label>Alpha</label><input type="number" id="alpha" step="0.05" min="0.1" max="2" placeholder="0.35" /></div>
       </div>
       <label style="display:none"><input type="checkbox" id="exportOnnx" style="width:auto" /> Export ONNX (if supported)</label>
-      <label><input type="checkbox" id="augmentFlip" style="width:auto" checked /> Horizontal flip (data augmentation)</label>
-      <button id="trainBtn">Start training</button>
+      <label><input type="checkbox" id="augmentFlip" style="width:auto" checked /> Horizontal flip（data augmentation）</label>
+      <button id="trainBtn">開始 training</button>
       <div class="msg" id="trainMsg"></div>
     </div>
   </section>
@@ -393,23 +420,22 @@
   <!-- ==================== DEPLOY & BENCHMARK ==================== -->
   <section class="pane" id="pane-deploy">
     <div class="card">
-      <h2>Deploy class — hardware</h2>
-      <p class="note">Board: <b>ESP32-S3 main board</b>. Workflow: flash benchmark firmware → quantize →
-         flash the model partition → run benchmark and review latency/throughput/accuracy.</p>
+      <h2>Deploy 課程 — hardware</h2>
+      <p class="note">Board：<b>ESP32-S3 main board</b>。流程：flash benchmark firmware → quantize → flash model partition → run benchmark，最後查看 latency / throughput / accuracy。</p>
     </div>
 
     <div class="card">
       <h2><span class="step">A.</span>Flash deploy benchmark firmware</h2>
-      <p class="note">Uses <code>RuntimeMode::kTestUartFrame</code> so the benchmark script can send frames over UART/CDC and collect latency/results. This is separate from model finetune camera firmware.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
-      <div id="benchFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <p class="note">這個 firmware 固定使用 <code>RuntimeMode::kTestUartFrame</code>，讓 benchmark script 透過 UART/CDC 傳 frame 並收回 latency/results。它和 model finetune camera firmware 不同。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <div id="benchFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
-        <div><button id="benchFwFlashBtn" disabled>Connect &amp; flash benchmark firmware</button></div>
-        <div><button class="secondary" id="benchFwRefreshBtn">Re-check build</button></div>
+        <div><button id="benchFwFlashBtn" disabled>連線並 flash benchmark firmware</button></div>
+        <div><button class="secondary" id="benchFwRefreshBtn">重新檢查 build</button></div>
       </div>
       <div class="msg" id="benchFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="benchFwLog">Flash this before running Deploy benchmark.</pre>
+      <pre class="log" id="benchFwLog">跑 Deploy benchmark 前請先 flash 這個 firmware。</pre>
     </div>
 
     <!-- Quantize -->
@@ -418,71 +444,64 @@
       <label>Source .keras model</label>
       <select id="quantModel"></select>
       <div class="row compact">
-        <div><button class="secondary" id="refreshModelsBtn">Refresh model list</button></div>
-        <div><label>Upload source model as</label>
+        <div><button class="secondary" id="refreshModelsBtn">重新整理 model 清單</button></div>
+        <div><label>上傳 source model 到</label>
           <select id="uploadModelFramework"><option value="tf">TensorFlow folder</option><option value="pytorch">PyTorch folder</option></select></div>
       </div>
       <input type="file" id="sourceModelFile" accept=".keras,.h5" />
-      <button class="secondary" id="uploadModelBtn">Upload source model</button>
+      <button class="secondary" id="uploadModelBtn">上傳 source model</button>
       <div class="row">
         <div><label>Quant format</label><select id="quantFormat"></select></div>
         <div><label>Granularity</label><select id="quantGranularity"></select></div>
       </div>
-      <label><input type="checkbox" id="skipValidation" style="width:auto" /> Skip source accuracy check (not recommended)</label>
-      <button id="quantBtn">Start quantization</button>
+      <label><input type="checkbox" id="skipValidation" style="width:auto" /> 跳過 source accuracy check（不建議）</label>
+      <button id="quantBtn">開始 quantization</button>
       <div class="msg" id="quantMsg"></div>
     </div>
 
     <!-- Flash model (Web Serial) -->
     <div class="card">
-      <h2><span class="step">C.</span>Flash model partition (.tflite)</h2>
-      <p class="note">Flashes only the model into its partition — the main board firmware is untouched.
-         Chrome/Edge; the browser asks you to pick the serial port. No offsets shown.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to flash the model partition.</p>
+      <h2><span class="step">C.</span>Flash model partition（.tflite）</h2>
+      <p class="note">只會把 model flash 到獨立 partition，main board firmware 不會被改動。當 firmware 已經燒好、只想更新 model 時使用。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash model partition。</p>
       <label>TFLite model</label>
       <select id="flashArtifact"></select>
       <div class="row">
-        <div><button id="connectBtn">Connect &amp; flash model</button></div>
+        <div><button id="connectBtn">連線並 flash model</button></div>
       </div>
       <div class="msg" id="flashStatus"></div>
       <div id="httpHelp" style="display:none;margin-top:10px;border:1px solid var(--border);border-radius:8px;padding:10px">
-        <p class="note" style="margin-top:0">This page is served over <b>HTTP</b>, so Chrome/Edge hide serial flashing.
-           Ask your instructor for the <b>https://</b> address, or (per PC) allow this origin once:</p>
+        <p class="note" style="margin-top:0">此頁面目前透過 <b>HTTP</b> 提供，因此 Chrome/Edge 會隱藏 serial flashing。若要使用 Web Serial，請改用 HTTPS 或 localhost。</p>
         <ol class="note" style="margin:0 0 6px 18px;line-height:1.7">
-          <li>Copy: <code id="originCode"></code> <button class="secondary" id="copyOriginBtn" style="margin:0;padding:2px 8px">Copy</button></li>
-          <li>Open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code> (Edge: <code>edge://flags/…</code>).</li>
-          <li>Paste the address, set <b>Enabled</b>, click <b>Relaunch</b>, reload this page.</li>
+          <li>Copy: <code id="originCode"></code> <button class="secondary" id="copyOriginBtn" style="margin:0;padding:2px 8px">複製</button></li>
+          <li>開啟 <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>（Edge：<code>edge://flags/…</code>）。</li>
+          <li>把該設定改成 <b>Enabled</b>，按 <b>Relaunch</b> 後重新載入此頁。</li>
         </ol>
       </div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="modelFlashLog">Click “Connect ESP32-S3” to begin.</pre>
+      <pre class="log" id="modelFlashLog">按「連線並 flash model」開始。</pre>
     </div>
 
     <!-- Results / benchmark -->
     <div class="card">
-      <h2><span class="step">D.</span>Results &amp; benchmark</h2>
-      <p class="note">PC-side quantization results (computed on the AI PC during quantization):</p>
+      <h2><span class="step">D.</span>結果與 benchmark</h2>
+      <p class="note">PC-side quantization results（quantization 時在 AI PC 上計算）：</p>
       <table><thead><tr><th>Model</th><th>Format</th><th>TFLite accuracy</th><th>Samples</th><th>Output variation</th></tr></thead>
-        <tbody id="reportsBody"><tr><td colspan="5" class="note">No quantization reports yet.</td></tr></tbody></table>
+        <tbody id="reportsBody"><tr><td colspan="5" class="note">目前還沒有 quantization reports。</td></tr></tbody></table>
 
-      <h2 style="margin-top:18px">On-device benchmark (in your browser)</h2>
-      <p class="note">Runs entirely in <b>your browser over Web Serial</b> against the ESP32-S3 plugged
-         into <b>your PC</b> — no install, no AI-PC serial port. Flash the <b>deploy benchmark firmware</b>
-         and your model first, then run this. Use <b>Chrome or Edge</b>. The AI PC only serves the
-         dataset images.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to run the benchmark stream.</p>
+      <h2 style="margin-top:18px">On-device benchmark（在你的 browser 執行）</h2>
+      <p class="note">Benchmark 會在你的 browser 透過 <b>Web Serial</b> 執行，ESP32-S3 插在 <b>你的 PC</b> 上，不需要安裝程式，也不使用 AI PC 的 serial port。請先 flash <b>deploy benchmark firmware</b> 和 model，再開始測試。請使用 <b>Chrome 或 Edge</b>；AI PC 只負責提供 dataset images。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來執行 benchmark stream。</p>
       <div class="row compact">
         <div><label>Dataset</label><select id="benchDataset"></select></div>
-        <div><label>Images to test</label><input type="number" id="benchLimit" min="1" max="2000" value="60" /></div>
-        <div style="display:flex;align-items:flex-end"><button id="benchRunBtn">Connect ESP32-S3 &amp; run benchmark</button></div>
+        <div><label>測試圖片數量</label><input type="number" id="benchLimit" min="1" max="2000" value="60" /></div>
+        <div style="display:flex;align-items:flex-end"><button id="benchRunBtn">連線 ESP32-S3 並執行 benchmark</button></div>
       </div>
       <div class="msg" id="benchMsg"></div>
       <table style="margin-top:10px"><tbody id="benchSummary"></tbody></table>
       <label style="margin-top:12px">Benchmark log</label>
-      <pre class="log" id="benchLog">Flash the deploy benchmark firmware + a model, then click “Connect ESP32-S3 &amp; run benchmark”.</pre>
-      <p class="note">Output-similarity vs a PC reference (Top-1/MAE/Cosine) is available from the
-         developer CLI benchmark (see docs/LOCAL_LEGACY_README.md); the browser benchmark reports
-         on-device accuracy, latency, and throughput.</p>
+      <pre class="log" id="benchLog">請先 flash deploy benchmark firmware + model，再按「連線 ESP32-S3 並執行 benchmark」。</pre>
+      <p class="note">若有對應的 PC reference，可顯示 output similarity（Top-1 / MAE / Cosine）。</p>
     </div>
   </section>
 
@@ -490,53 +509,51 @@
   <section class="pane" id="pane-mainfw">
     <div class="card">
       <h2>Flash main board firmware</h2>
-      <p class="note">Flashes the <b>full ESP32-S3 main board firmware</b> (camera + USB + TFLite Micro).
-         Separate from flashing a model. Offsets come from the ESP-IDF build (<code>flasher_args.json</code>)
-         and are hidden unless developer mode is on.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing firmware.</p>
-      <div id="mainFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <p class="note">Flash <b>完整 ESP32-S3 main board firmware</b>（camera + USB + TFLite Micro inference）。這和 flash model 分開；offset 由 ESP-IDF build 產生的 <code>flasher_args.json</code> 決定，學生不需要輸入。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash firmware。</p>
+      <div id="mainFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
-        <div><button id="mainFwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
-        <div><button class="secondary" id="mainFwRefreshBtn">Re-check build</button></div>
+        <div><button id="mainFwFlashBtn" disabled>連線並 flash firmware</button></div>
+        <div><button class="secondary" id="mainFwRefreshBtn">重新檢查 build</button></div>
       </div>
       <div class="msg" id="mainFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="mainFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+      <pre class="log" id="mainFwLog">Firmware flashing 會寫入 bootloader + partition table + app。</pre>
     </div>
 
     <div class="card">
       <h2>Flash control board firmware</h2>
-      <p class="note">Flashes the plain ESP32 control board firmware for servo/output control. This is separate from the ESP32-S3 main board firmware.</p>
-      <div id="controlFwImages" class="imglist"><div class="note">Checking for firmware build...</div></div>
+      <p class="note">Flash ESP32 control board firmware，用來控制 servo/output。這和 ESP32-S3 main board firmware 是不同板子的程式。</p>
+      <div id="controlFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
-        <div><button id="controlFwFlashBtn" disabled>Connect &amp; flash control board</button></div>
-        <div><button class="secondary" id="controlFwRefreshBtn">Re-check build</button></div>
+        <div><button id="controlFwFlashBtn" disabled>連線並 flash control board</button></div>
+        <div><button class="secondary" id="controlFwRefreshBtn">重新檢查 build</button></div>
       </div>
       <div class="msg" id="controlFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="controlFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+      <pre class="log" id="controlFwLog">Firmware flashing 會寫入 bootloader + partition table + app。</pre>
     </div>
 
     <div class="card">
-      <h2>Flash model partition (.tflite)</h2>
-      <p class="note">Same as Deploy: flashes only the model into the ESP32-S3 model partition. Use this after flashing main board firmware when you want to update the model only.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port to flash the model partition.</p>
+      <h2>Flash model partition（.tflite）</h2>
+      <p class="note">和 Deploy 頁相同：只把 model flash 到 ESP32-S3 model partition。當 main board firmware 已經燒好、只想更新 model 時使用。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash model partition。</p>
       <label>TFLite model</label>
       <select id="mainFlashArtifact"></select>
       <div class="row">
-        <div><button id="mainConnectBtn">Connect &amp; flash model</button></div>
+        <div><button id="mainConnectBtn">連線並 flash model</button></div>
       </div>
       <div class="msg" id="mainFlashStatus"></div>
       <label style="margin-top:12px">Model flash log</label>
-      <pre class="log" id="mainModelFlashLog">Click “Connect ESP32-S3” to begin.</pre>
+      <pre class="log" id="mainModelFlashLog">按「連線並 flash model」開始。</pre>
     </div>
 
     <div class="card">
       <h2>Full firmware live preview + inference</h2>
-      <p class="note">After flashing the full main board firmware, connect the ESP32-S3 USB / OTG port to stream OV2640 JPEG frames and show live TFLite Micro prediction results.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>USB / OTG</b> port to connect camera stream &amp; inference.</p>
+      <p class="note">Flash full main board firmware 後，請把 ESP32-S3 接到 USB / OTG port，這裡會 stream OV2640 JPEG frames 並顯示 TFLite Micro prediction results。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>USB / OTG</b> port 來連線 camera stream 與 inference。</p>
       <div class="row compact">
-        <div><button class="secondary" id="fullCameraToggleBtn">Connect camera stream</button></div>
+        <div><button class="secondary" id="fullCameraToggleBtn">連線 camera stream</button></div>
       </div>
       <div class="row compact" style="margin-top:10px">
         <div><button class="secondary" id="fullControlUpBtn" disabled>Up</button></div>
@@ -549,19 +566,19 @@
       </div>
       <div class="msg" id="fullCameraMsg"></div>
       <div class="row compact" style="margin-top:10px">
-        <div><button class="secondary" id="fullControlConnectBtn">Connect control board</button></div>
-        <div><button class="secondary" id="fullControlIdleBtn" disabled>Send idle</button></div>
+        <div><button class="secondary" id="fullControlConnectBtn">連線 control board</button></div>
+        <div><button class="secondary" id="fullControlIdleBtn" disabled>送出 idle</button></div>
       </div>
-      <div class="msg" id="fullControlStatus">Connect control board to forward prediction actions to servo.</div>
-      <label style="margin-top:10px">Control board messages</label>
-      <pre class="log" id="fullControlLog">Waiting for control board serial.</pre>
+      <div class="msg" id="fullControlStatus">尚未連線 control board；prediction actions 不會送到 servo。</div>
+      <label style="margin-top:10px">Control board 訊息</label>
+      <pre class="log" id="fullControlLog">等待 control board serial。</pre>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <img id="fullCameraPreview" alt="Full firmware OV2640 preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none" />
-        <div class="note" id="fullCameraPlaceholder">No OV2640 frame yet.</div>
+        <div class="note" id="fullCameraPlaceholder">目前還沒有 OV2640 frame。</div>
       </div>
       <div class="big" id="fullGestureResult" style="margin-top:12px">Prediction: --</div>
-      <label style="margin-top:12px">Camera / inference messages</label>
-      <pre class="log tall" id="fullCameraLog">Connect after full main board firmware is running.</pre>
+      <label style="margin-top:12px">Camera / inference 訊息</label>
+      <pre class="log tall" id="fullCameraLog">Full main board firmware 連線後會顯示 log。</pre>
     </div>
   </section>
 
@@ -569,42 +586,38 @@
   <section class="pane" id="pane-camerausb">
     <div class="card">
       <h2>Camera + USB demo</h2>
-      <p class="note">Full OV2640 camera control over Web Serial, modeled on the developer
-         <code>camera_controller.py</code>. The ESP32-S3 is plugged into <b>your PC</b>; the browser
-         borrows the serial port. Use <b>Chrome or Edge</b>.</p>
+      <p class="note">透過 Web Serial 完整控制 OV2640 camera，流程參考 developer <code>camera_controller.py</code>。ESP32-S3 插在 <b>你的 PC</b> 上，browser 會借用 serial port。請使用 <b>Chrome 或 Edge</b>。</p>
     </div>
 
     <!-- Step 1: Flash Firmware -->
     <div class="card">
       <h2><span class="step">1.</span>Flash Camera &amp; USB demo firmware</h2>
-      <p class="note">Flashes the <b>Camera &amp; USB demo firmware</b> (camera + USB CDC/MSC, no TFLite inference).
-         Required for this demo page. Offsets come from the ESP-IDF build (<code>flasher_args.json</code>)
-         and are hidden unless developer mode is on.</p>
-      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>Connection notice:</b> Plug your USB cable into the board's <b>UART / COM</b> port for flashing.</p>
-      <div id="usbFwImages" class="imglist"><div class="note">Checking for firmware build…</div></div>
+      <p class="note">Flash <b>Camera &amp; USB demo firmware</b>（camera + USB CDC/MSC，不含 TFLite inference）。這是此 demo page 專用 firmware；offset 由 ESP-IDF build 產生的 <code>flasher_args.json</code> 決定，學生不需要輸入。</p>
+      <p class="note" style="color:var(--warn);margin-top:8px">⚠️ <b>連線提醒：</b>請把 USB 線接到板子的 <b>UART / COM</b> port 來 flash。</p>
+      <div id="usbFwImages" class="imglist"><div class="note">正在檢查 firmware build…</div></div>
       <div class="row">
-        <div><button id="usbFwFlashBtn" disabled>Connect &amp; flash firmware</button></div>
-        <div><button class="secondary" id="usbFwRefreshBtn">Re-check build</button></div>
+        <div><button id="usbFwFlashBtn" disabled>連線並 flash firmware</button></div>
+        <div><button class="secondary" id="usbFwRefreshBtn">重新檢查 build</button></div>
       </div>
       <div class="msg" id="usbFwStatus"></div>
       <label style="margin-top:12px">Flash log</label>
-      <pre class="log" id="usbFwLog">Firmware flashing writes bootloader + partition table + app in one step.</pre>
+      <pre class="log" id="usbFwLog">Firmware flashing 會寫入 bootloader + partition table + app。</pre>
     </div>
 
     <!-- Step 2: Configure camera before opening its UVC stream -->
     <div class="card">
       <h2><span class="step">2.</span>Camera settings</h2>
-      <p class="note">Connect the board’s CDC control port, choose a JPEG preview resolution and requested frame rate, then apply them before starting Live Camera. Higher requested rates may drop frames; the delivered rate is shown during preview.</p>
+      <p class="note">先連線板子的 CDC control port，選擇 JPEG preview resolution 和目標 frame rate，套用後再開啟 Live Camera。較高的 frame rate 可能會 drop frames；實際收到的 rate 會在 preview 時顯示。</p>
       <div class="row compact">
-        <div style="display:flex;align-items:flex-end"><button id="usbCamControlToggleBtn">Connect camera controls</button></div>
+        <div style="display:flex;align-items:flex-end"><button id="usbCamControlToggleBtn">連線 camera controls</button></div>
       </div>
       <div class="msg" id="usbCamControlMsg"></div>
       <div class="row compact">
         <div><label>Preview resolution</label><select id="usbCamResolution"><option value="0">160 × 120</option><option value="1" selected>320 × 240</option><option value="2">640 × 480</option><option value="3">800 × 600</option><option value="4">1600 × 1200</option></select></div>
-        <div><label>Frame rate</label><div class="note" style="margin-top:8px">Automatically requests the maximum 30 fps. Delivered FPS and drops are shown during preview.</div></div>
-        <div style="display:flex;align-items:flex-end"><button id="usbCamApplyBtn" disabled>Apply camera settings</button></div>
+        <div><label>Frame rate</label><div class="note" style="margin-top:8px">先從 30 fps 開始；若 FPS 或 preview 不穩，再往下調。</div></div>
+        <div style="display:flex;align-items:flex-end"><button id="usbCamApplyBtn" disabled>套用 camera settings</button></div>
       </div>
-      <div class="msg" id="usbCamSettingsMsg">Connect camera controls, then apply settings before starting Live Camera.</div>
+      <div class="msg" id="usbCamSettingsMsg">請先連線 camera controls，再套用 Live Camera settings。</div>
       <div class="row compact">
         <div><label>Brightness (-2…2): <span id="usbBriVal">0</span></label><input type="range" id="usbCamBrightness" min="-2" max="2" value="0" /></div>
         <div><label>Contrast (-2…2): <span id="usbConVal">0</span></label><input type="range" id="usbCamContrast" min="-2" max="2" value="0" /></div>
@@ -625,65 +638,65 @@
 
     <div class="card">
       <h2><span class="step">3.</span>Live camera</h2>
-      <p class="note">Plug the board into your PC’s USB / OTG port. After applying Camera Settings, open the EECamp UVC webcam here. The board also exposes the CDC control port and <b>EECamp</b> removable drive.</p>
+      <p class="note">請把板子接到你的 PC 的 USB / OTG port。套用 Camera Settings 後，在這裡開啟 EECamp UVC webcam。板子也會提供 CDC control port 與 <b>EECamp</b> removable drive。</p>
       <div class="row compact">
-        <div><label>Webcam</label><select id="usbCamDevice" disabled><option value="">Start preview to choose a webcam</option></select></div>
-        <div style="display:flex;align-items:flex-end"><button id="usbCamPreviewToggleBtn" disabled>Start webcam preview</button></div>
+        <div><label>Webcam</label><select id="usbCamDevice" disabled><option value="">請先套用 settings，再選擇 webcam</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button id="usbCamPreviewToggleBtn" disabled>開啟 webcam preview</button></div>
       </div>
-      <div class="msg" id="usbCamMsg">Apply Camera Settings before starting the preview.</div>
-      <div class="note" id="usbCamMetrics" style="margin-top:8px">Delivered camera rate will appear after preview starts.</div>
+      <div class="msg" id="usbCamMsg">請先在 Camera Settings 套用 preview 設定。</div>
+      <div class="note" id="usbCamMetrics" style="margin-top:8px">Preview 尚未開始，尚未取得 camera rate。</div>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:260px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <video id="usbCamVideo" autoplay muted playsinline aria-label="EECamp OV2640 webcam preview" style="max-width:100%;max-height:460px;object-fit:contain;display:none"></video>
-        <div class="note" id="usbCamPlaceholder">Apply settings, then start the webcam preview to see the OV2640 stream.</div>
+        <div class="note" id="usbCamPlaceholder">請先套用 settings 並開啟 webcam preview，才會看到 OV2640 stream。</div>
       </div>
     </div>
 
     <div class="card">
       <h2>EECamp storage</h2>
-      <p class="note">The <b>EECamp</b> drive starts owned by your PC. To save a camera frame, safely eject <b>EECamp</b> in your file explorer, then confirm below. Return it to your PC after capture to browse files normally.</p>
+      <p class="note"><b>EECamp</b> drive 會在 PC 上顯示為 removable drive。請在 file explorer 安全退出 <b>EECamp</b> 後，板子才能寫入新的 capture；要讓 PC 重新看到檔案時，再把 storage 交回 PC。</p>
       <div class="row compact">
-        <div><label>Storage owner</label><div id="usbStorageState" class="note">Connect camera controls to check storage.</div></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbStorageEjectConfirmBtn" disabled>I ejected EECamp</button></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbStorageReturnBtn" disabled>Return EECamp to PC</button></div>
+        <div><label>Storage owner</label><div id="usbStorageState" class="note">請先連線 camera controls 讀取 storage 狀態。</div></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbStorageEjectConfirmBtn" disabled>我已退出 EECamp</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbStorageReturnBtn" disabled>讓 EECamp 回到 PC</button></div>
       </div>
       <div class="row compact">
-        <div><button id="usbCamCaptureBtn" disabled>Save 96×96 grayscale JPEG</button></div>
-        <div><button class="secondary" id="usbCamListBtn" disabled>List saved files</button></div>
+        <div><button id="usbCamCaptureBtn" disabled>儲存 96×96 grayscale JPEG</button></div>
+        <div><button class="secondary" id="usbCamListBtn" disabled>列出已存照片</button></div>
       </div>
       <div class="msg" id="usbCamCmdMsg"></div>
-      <label style="margin-top:12px">Saved files while camera owns storage</label>
-      <div id="usbPhotoList"><div class="note">Safely eject EECamp in your OS, confirm it here, then capture or list files.</div></div>
+      <label style="margin-top:12px">Camera storage 檔案</label>
+      <div id="usbPhotoList"><div class="note">請先從 OS 退出 EECamp，或 capture 後再列出檔案。</div></div>
       <div style="margin-top:12px;border:1px solid var(--border);border-radius:8px;min-height:120px;display:grid;place-items:center;background:#0b1222;overflow:hidden">
         <img id="usbPhotoPreview" alt="downloaded photo" style="max-width:100%;max-height:280px;image-rendering:pixelated;display:none" />
-        <div class="note" id="usbPhotoPlaceholder">Downloaded file preview.</div>
+        <div class="note" id="usbPhotoPlaceholder">尚未下載 preview。</div>
       </div>
       <details style="margin-top:12px"><summary>Developer commands</summary>
         <div class="row compact" style="margin-top:8px">
           <div style="flex:2; min-width:240px"><label>CDC command</label><input id="usbCamRaw" placeholder="storage status" /></div>
-          <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">Send</button></div>
+          <div style="display:flex;align-items:flex-end"><button class="secondary" id="usbCamRawBtn">送出</button></div>
         </div>
       </details>
-      <label style="margin-top:12px">Camera / USB messages</label>
-      <pre class="log tall" id="usbCamLog">Connect camera controls to begin.</pre>
+      <label style="margin-top:12px">Camera / USB log</label>
+      <pre class="log tall" id="usbCamLog">請先連線 camera controls。</pre>
     </div>
 
     <!-- Step 3: Maze Challenge -->
     <div class="card">
       <h2><span class="step">3.</span>Maze challenge</h2>
-      <p class="note">Find the secret message hidden in the maze image using your ESP32-S3 local flash storage.</p>
+      <p class="note">從 ESP32-S3 local flash storage 取出 maze image，找出 hidden secret message。</p>
       <div style="margin-top:12px;text-align:center">
         <img id="stegoImg" src="/static/stego_dual.png" alt="Maze Steganography Hint" style="max-width:100%;max-height:360px;border:1px solid var(--border);border-radius:8px;object-fit:contain" onerror="this.style.display='none'" />
       </div>
-      <p class="note" style="margin-top:12px"><b>Instructions:</b></p>
+      <p class="note" style="margin-top:12px"><b>提示</b></p>
       <ol class="note" style="padding-left:20px;line-height:1.6">
-        <li>Solve the puzzle and find the hidden folders on your PC.</li>
-        <li>Use the camera settings tool below to help solve the image.</li>
+        <li>先把 puzzle image 取回 PC，再檢查資料夾與檔案。</li>
+        <li>必要時使用 camera settings tool 調整影像。</li>
       </ol>
       <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:16px">
-        <label style="font-weight:bold;display:block;margin-bottom:8px">Submit Flag:</label>
+        <label style="font-weight:bold;display:block;margin-bottom:8px">輸入 Flag</label>
         <div style="display:flex;gap:12px;align-items:center;max-width:500px">
           <input type="text" id="mazeFlagInput" placeholder="EE{...}" style="flex:1;padding:8px;border-radius:4px;border:1px solid var(--border);background:#0f172a;color:#fff" />
-          <button id="mazePrizeBtn" disabled style="padding:8px 16px;border-radius:4px;margin-top:0">Claim Prize 🎁</button>
+          <button id="mazePrizeBtn" disabled style="padding:8px 16px;border-radius:4px;margin-top:0">領取獎勵 🎁</button>
         </div>
         <div id="mazeFeedback" class="msg" style="margin-top:8px;display:none"></div>
       </div>
@@ -693,25 +706,21 @@
   <!-- ==================== AI PC DRIVE ==================== -->
   <section class="pane" id="pane-drive">
     <div class="card">
-      <h2>AI PC Drive — Team <b>{{ team }}</b></h2>
-      <p class="note">Shared storage on <b>this AI PC</b> for your team only (login required). Keep your
-         code, models, reports, build logs, and general uploads here. Use <code>0_shared/</code> for
-         team-wide files and folders <code>1</code>–<code>12</code> per member/station.</p>
-      <p class="note">📦 <b>Zip many files before uploading</b> (one <code>.zip</code> uploads far faster than many
-         small files). 📷 <b>Captured photos are not stored here</b> — they live on the ESP32-S3 and are viewed/downloaded
-         from the camera pages.</p>
+      <h2>AI PC Drive — 小隊 <b>{{ team }}</b></h2>
+      <p class="note">這是本小隊在 <b>這台 AI PC</b> 上共用的 storage（需要登入）。可以存 code、models、reports、build logs 和一般上傳檔案。<code>0_shared/</code> 給全隊共用，<code>1</code>–<code>12</code> 給各組員或工作站使用。</p>
+      <p class="note">📦 檔案很多時請先壓成 <code>.zip</code>，會比大量小檔案快很多。📷 Camera 拍到的照片不存這裡；它們在 ESP32-S3 上，請到 camera 頁面查看或下載。</p>
       <div class="row compact">
         <div><label>Folder</label><select id="driveFolder"></select></div>
-        <div><label>Upload a file (zip recommended)</label><input type="file" id="driveFile" /></div>
-        <div style="display:flex;align-items:flex-end"><button id="driveUploadBtn">Upload</button></div>
-        <div style="display:flex;align-items:flex-end"><button class="secondary" id="driveRefreshBtn">Refresh</button></div>
+        <div><label>上傳檔案（多檔請先 zip）</label><input type="file" id="driveFile" /></div>
+        <div style="display:flex;align-items:flex-end"><button id="driveUploadBtn">上傳</button></div>
+        <div style="display:flex;align-items:flex-end"><button class="secondary" id="driveRefreshBtn">重新整理</button></div>
       </div>
       <div class="msg" id="driveMsg"></div>
     </div>
     <div class="card">
-      <h2>Files in <span id="driveFolderLabel">0_shared</span></h2>
-      <table><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
-        <tbody id="driveList"><tr><td colspan="4" class="note">Loading…</td></tr></tbody></table>
+      <h2><span id="driveFolderLabel">0_shared</span> 檔案</h2>
+      <table><thead><tr><th>名稱</th><th>大小</th><th>修改時間</th><th></th></tr></thead>
+        <tbody id="driveList"><tr><td colspan="4" class="note">載入中…</td></tr></tbody></table>
       <div id="driveThumbs" class="thumbs"></div>
     </div>
   </section>
@@ -719,33 +728,33 @@
   <!-- ==================== ACCOUNT ==================== -->
   <section class="pane" id="pane-account">
     <div class="card" style="max-width:560px">
-      <h2>Account settings</h2>
-      <p class="note">Change the password for <b>{{ team }}</b>. The new password is stored on this AI PC runtime folder and is not committed to git.</p>
-      <label>Current password</label>
+      <h2>帳號設定</h2>
+      <p class="note">這會更新 <b>{{ team }}</b> 在這台 AI PC 上的登入密碼。密碼存在 runtime folder，不會 commit 到 git。</p>
+      <label>目前密碼</label>
       <input type="password" id="currentPassword" autocomplete="current-password" />
-      <label>New password</label>
+      <label>新密碼</label>
       <input type="password" id="newPassword" autocomplete="new-password" />
-      <label>Confirm new password</label>
+      <label>確認新密碼</label>
       <input type="password" id="confirmPassword" autocomplete="new-password" />
-      <button id="changePasswordBtn" type="button">Change password</button>
+      <button id="changePasswordBtn" type="button">變更密碼</button>
       <div class="msg" id="passwordMsg"></div>
     </div>
   </section>
   <!-- ==================== SHARED (deploy jobs) ==================== -->
   <div id="sharedJobPanels">
     <div class="card">
-      <h2><span id="jobLogHeading">Live job log</span> <span class="pill" id="jobPill"></span></h2>
-      <pre class="log tall" id="log">No job selected.</pre>
+      <h2><span id="jobLogHeading">即時 job log</span> <span class="pill" id="jobPill"></span></h2>
+      <pre class="log tall" id="log">尚未選擇 job。</pre>
     </div>
     <div class="card">
-      <h2><span id="artifactsHeading">Generated artifacts</span> <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">Refresh</button></h2>
-      <table><thead><tr><th>Category</th><th>Name</th><th>Size</th><th>Modified</th><th></th></tr></thead>
-        <tbody id="artifactsBody"><tr><td colspan="5" class="note">Loading…</td></tr></tbody></table>
+      <h2><span id="artifactsHeading">Generated artifacts</span> <button class="secondary" id="refreshArtifacts" style="float:right;margin:0;padding:4px 10px">重新整理</button></h2>
+      <table><thead><tr><th>Category</th><th>名稱</th><th>大小</th><th>時間</th><th></th></tr></thead>
+        <tbody id="artifactsBody"><tr><td colspan="5" class="note">載入中…</td></tr></tbody></table>
     </div>
     <div class="card">
       <h2 id="jobsHeading">Job history</h2>
-      <table><thead><tr><th>Job</th><th>Kind</th><th>Status</th><th>Return</th><th>Created</th></tr></thead>
-        <tbody id="jobsBody"><tr><td colspan="5" class="note">No jobs yet.</td></tr></tbody></table>
+      <table><thead><tr><th>Job</th><th>狀態</th><th>開始時間</th><th>Return</th><th>操作</th></tr></thead>
+        <tbody id="jobsBody"><tr><td colspan="5" class="note">目前沒有 jobs。</td></tr></tbody></table>
     </div>
   </div>
   <div class="card" id="pane-model-predict-preview" style="display:none">
@@ -754,8 +763,8 @@
 
     <!-- Camera controls mirror from Part A -->
     <div class="row compact" style="margin-bottom:8px">
-      <div><label>Camera</label><select id="predictCameraDeviceSelect"><option value="">Start preview to choose a camera…</option></select></div>
-      <div><button id="predictCameraBtn">Start camera preview</button></div>
+      <div><label>Camera</label><select id="predictCameraDeviceSelect"><option value="">請先開啟 preview 再選擇 camera…</option></select></div>
+      <div><button id="predictCameraBtn">開啟 camera preview</button></div>
     </div>
 
     <!-- Webcam preview for Section C -->
@@ -764,17 +773,17 @@
         <video id="predictWebcamPreview" autoplay playsinline muted style="max-width:100%;max-height:360px;object-fit:contain;display:none;vertical-align:middle;"></video>
         <div id="predictCameraSquareGuide" style="display:none;position:absolute;left:50%;top:50%;transform:translate(-50%, -50%);border:3px dashed var(--accent);box-shadow:0 0 8px rgba(59,130,246,0.4);pointer-events:none;box-sizing:border-box;border-radius:6px;transition:width 0.1s, height 0.1s;"></div>
       </div>
-      <div class="note" id="predictCameraPlaceholderInner">No camera frame yet.</div>
+      <div class="note" id="predictCameraPlaceholderInner">目前還沒有 camera frame。</div>
     </div>
 
     <div class="big" id="modelGestureResult" style="margin-bottom:12px">Prediction: --</div>
     <div class="row compact">
       <div><label>.keras model</label><select id="predictModel"></select></div>
-      <div><button class="secondary" id="predictFrameBtn" disabled>Predict current frame</button></div>
+      <div><button class="secondary" id="predictFrameBtn" disabled>儲存 frame</button></div>
       <div><label><input type="checkbox" id="livePredictToggle" /> Live .keras prediction</label></div>
     </div>
-    <label style="margin-top:12px;display:none">Model file (ONNX) for preview</label>
-    <div id="modelOnnx" class="note" style="display:none">Looking for a trained ONNX model…</div>
+    <label style="margin-top:12px;display:none">Preview model file（ONNX）</label>
+    <div id="modelOnnx" class="note" style="display:none">正在尋找訓練完成的 ONNX model…</div>
   </div>
 </main>
 
@@ -796,21 +805,21 @@
   <div class="egg-card">
     <h3 id="eggModalTitle"></h3>
     <img id="eggModalImg" alt="" />
-    <button type="button" class="secondary" id="eggModalClose">Close</button>
+    <button type="button" class="secondary" id="eggModalClose">關閉</button>
   </div>
 </div>
 <div class="modal" id="imgModal"><img id="imgModalImg" alt="preview" /></div>
 <div class="save-modal" id="artifactSaveModal" role="dialog" aria-modal="true" aria-labelledby="artifactSaveTitle">
   <div class="save-dialog">
-    <h3 id="artifactSaveTitle">Save to AI PC Drive</h3>
+    <h3 id="artifactSaveTitle">存到 AI PC Drive</h3>
     <label for="artifactSaveFolder">Folder</label>
     <select id="artifactSaveFolder"></select>
-    <label for="artifactSaveName">File name</label>
+    <label for="artifactSaveName">檔案名稱</label>
     <input type="text" id="artifactSaveName" maxlength="128" autocomplete="off" />
     <div class="msg" id="artifactSaveMsg"></div>
     <div class="row compact">
-      <div><button type="button" class="secondary" id="artifactSaveCancel">Cancel</button></div>
-      <div><button type="button" id="artifactSaveConfirm">Save</button></div>
+      <div><button type="button" class="secondary" id="artifactSaveCancel">取消</button></div>
+      <div><button type="button" id="artifactSaveConfirm">儲存</button></div>
     </div>
   </div>
 </div>
@@ -820,11 +829,11 @@
   <div class="card" style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;max-width:800px;width:90%;max-height:85vh;overflow-y:auto;position:relative;padding:24px;box-shadow:0 8px 32px rgba(0,0,0,0.4)">
     <span id="closePreviewModal" style="position:absolute;right:20px;top:16px;font-size:24px;font-weight:bold;cursor:pointer;color:var(--muted);transition:color 0.2s;">&times;</span>
     <h2 id="previewModalTitle" style="margin-top:0;font-size:20px;color:var(--fg);">Class Preview</h2>
-    <p class="note">Showing processed 96x96 grayscale PNG images. Hover to zoom, click ❌ to delete.</p>
+    <p class="note">顯示處理後的 96x96 grayscale PNG images。Hover 可放大，點 ❌ 可刪除。</p>
     
     <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:10px;">
-      <button id="previewTabTrain" style="padding:6px 12px;min-height:0;min-width:0;border-radius:4px;border:none;cursor:pointer;font-weight:bold;">Train Set</button>
-      <button id="previewTabVal" style="padding:6px 12px;min-height:0;min-width:0;border-radius:4px;border:none;cursor:pointer;font-weight:bold;">Validation Set</button>
+      <button id="previewTabTrain" style="padding:6px 12px;min-height:0;min-width:0;border-radius:4px;border:none;cursor:pointer;font-weight:bold;">Train set</button>
+      <button id="previewTabVal" style="padding:6px 12px;min-height:0;min-width:0;border-radius:4px;border:none;cursor:pointer;font-weight:bold;">Validation set</button>
     </div>
     
     <div id="previewGallery" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(96px, 1fr));gap:12px;margin-bottom:16px;"></div>
@@ -929,15 +938,15 @@ function initPasswordForm(){
     const current = $("currentPassword")?.value || "";
     const next = $("newPassword")?.value || "";
     const confirm = $("confirmPassword")?.value || "";
-    if(!current || !next || !confirm){ setMsg("passwordMsg", "Fill in all password fields.", "bad"); return; }
-    if(next !== confirm){ setMsg("passwordMsg", "New passwords do not match.", "bad"); return; }
+    if(!current || !next || !confirm){ setMsg("passwordMsg", "請填完所有密碼欄位。", "bad"); return; }
+    if(next !== confirm){ setMsg("passwordMsg", "兩次新密碼不一致。", "bad"); return; }
     btn.disabled = true;
-    setMsg("passwordMsg", "Updating password...", "warn");
+    setMsg("passwordMsg", "正在更新密碼...", "warn");
     try {
       await api("/api/change-password", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({current_password:current, new_password:next, confirm_password:confirm})});
       ["currentPassword","newPassword","confirmPassword"].forEach(id=>{ if($(id)) $(id).value=""; });
-      setMsg("passwordMsg", "Password updated.", "ok");
-    } catch(e){ setMsg("passwordMsg", "Change failed: "+e.message, "bad"); }
+      setMsg("passwordMsg", "密碼已更新。", "ok");
+    } catch(e){ setMsg("passwordMsg", "密碼變更失敗："+e.message, "bad"); }
     finally { btn.disabled = false; }
   };
 }
@@ -950,16 +959,16 @@ const WORKFLOWS = {
     logHeading: "Training log",
     artifactsHeading: "Result Model",
     jobsHeading: "Training job history",
-    emptyArtifacts: "No generated training artifacts yet.",
-    emptyJobs: "No training jobs yet.",
+    emptyArtifacts: "目前還沒有 training artifacts。",
+    emptyJobs: "目前還沒有 training jobs。",
   },
   deploy: {
     kind: "quantize",
     logHeading: "Quantization log",
     artifactsHeading: "Result Quantized Model",
     jobsHeading: "Quantization job history",
-    emptyArtifacts: "No generated deploy artifacts yet.",
-    emptyJobs: "No quantization jobs yet.",
+    emptyArtifacts: "目前還沒有 deploy artifacts。",
+    emptyJobs: "目前還沒有 quantization jobs。",
   },
 };
 function workflowForTopic(topic){ return WORKFLOWS[topic] || null; }
@@ -1009,7 +1018,7 @@ function initTabs(){
 
 async function init(){
   initEggs();
-  initTheme();
+  init主題();
   initPasswordForm();
   initTabs();
   try { const h = await api("/api/health"); } catch(e){}
@@ -1043,12 +1052,12 @@ function initThemeEgg(select){
 function applyTheme(name){
   const t = ["dark","light","contrast","solarized"].includes(name) ? name : "light";
   document.documentElement.setAttribute("data-theme", t);
-  try { localStorage.setItem("eecampTheme", t); } catch(e){}
+  try { localStorage.setItem("eecamp主題", t); } catch(e){}
   if($("themeSelect")) $("themeSelect").value = t;
 }
-function initTheme(){
+function init主題(){
   let saved = "light";
-  try { saved = localStorage.getItem("eecampTheme") || "light"; } catch(e){}
+  try { saved = localStorage.getItem("eecamp主題") || "light"; } catch(e){}
   applyTheme(saved);
   const select = $("themeSelect");
   if(select) select.onchange = (e)=>applyTheme(e.target.value);
@@ -1071,7 +1080,7 @@ async function refreshClassMap(){
     renderActiveClassRows();
     // Action-mapping rows: ACTIVE classes only.
     const host = $("classMapRows"); host.innerHTML = "";
-    if(!(m.classes||[]).length){ host.innerHTML = '<div class="note">Select active classes above to map them to robot actions.</div>'; return; }
+    if(!(m.classes||[]).length){ host.innerHTML = '<div class="note">請先在上方選擇 active classes，再對應到 robot actions。</div>'; return; }
     (m.classes||[]).forEach(c => {
       const row=document.createElement("div"); row.className="row compact";
       const opts=['<option value="">(none)</option>'].concat(OUTPUT_ACTIONS.map(a=>`<option value="${a}" ${c.action===a?"selected":""}>${a}</option>`)).join("");
@@ -1084,7 +1093,7 @@ async function refreshClassMap(){
 function renderActiveClassRows(){
   const host=$("activeClassRows"); if(!host) return;
   host.innerHTML="";
-  if(!AVAILABLE_CLASSES.length){ host.innerHTML='<div class="note">Import a dataset or capture frames to add gesture classes.</div>'; return; }
+  if(!AVAILABLE_CLASSES.length){ host.innerHTML='<div class="note">請先匯入 dataset 或用 camera 收集 frames。</div>'; return; }
   AVAILABLE_CLASSES.forEach(name=>{
     const c=DATASET_COUNTS[name]||{};
     const checked=ACTIVE_CLASSES.includes(name);
@@ -1094,7 +1103,7 @@ function renderActiveClassRows(){
       +`<span class="note" style="white-space:nowrap">${(c.train||0)} train / ${(c.validation||0)} val</span>`
       +`<div style="display:flex;gap:4px;flex:0 0 auto">`
       +`<button type="button" class="secondary" data-preview-class="${name}" style="padding:4px 8px;min-height:0;margin:0">Preview</button>`
-      +`<button type="button" class="secondary" data-delete-class="${name}" style="padding:4px 8px;min-height:0;margin:0">Delete</button>`
+      +`<button type="button" class="secondary" data-delete-class="${name}" style="padding:4px 8px;min-height:0;margin:0">刪除</button>`
       +`</div>`;
     host.appendChild(row);
   });
@@ -1111,26 +1120,26 @@ function enforceActiveLimit(){
   const n=boxes.filter(b=>b.checked).length;
   boxes.forEach(b=>{ b.disabled = (!b.checked && n>=MAX_ACTIVE); });
   const msg=$("activeClassMsg");
-  if(msg && !msg.textContent) setMsg(msg, `${n} / ${MAX_ACTIVE} selected.`, n?"":"warn");
+  if(msg && !msg.textContent) setMsg(msg, `${n} / ${MAX_ACTIVE} 已選擇。`, n?"":"warn");
 }
 $("saveActiveClassesBtn").onclick = async () => {
   const active=checkedActiveClasses();
-  if(!active.length){ setMsg($("activeClassMsg"),"Select at least one class.","bad"); return; }
-  if(active.length>MAX_ACTIVE){ setMsg($("activeClassMsg"),`Select at most ${MAX_ACTIVE} classes.`,"bad"); return; }
-  setMsg($("activeClassMsg"),"Saving active classes…","warn");
+  if(!active.length){ setMsg($("activeClassMsg"),"請至少選擇一個 class。","bad"); return; }
+  if(active.length>MAX_ACTIVE){ setMsg($("activeClassMsg"),`最多只能選 ${MAX_ACTIVE} 個 classes。`,"bad"); return; }
+  setMsg($("activeClassMsg"),"正在儲存 active classes…","warn");
   try { await api("/api/class-map",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({active})});
-    setMsg($("activeClassMsg"),`Active classes saved (${active.length}). Training, quantization, benchmark, and inference will use these.`,"ok");
+    setMsg($("activeClassMsg"),`已儲存 active classes（${active.length} 個）。Training、quantization、benchmark 與 inference 都會使用這組 classes。`,"ok");
     await refreshClassMap();
-  } catch(e){ setMsg($("activeClassMsg"),"Save failed: "+e.message,"bad"); }
+  } catch(e){ setMsg($("activeClassMsg"),"儲存失敗："+e.message,"bad"); }
 };
 async function deleteDatasetClass(name){
-  if(!confirm(`Delete all images for class "${name}"? This cannot be undone.`)) return;
+  if(!confirm(`確定刪除 class "${name}" 的所有 images？這個動作無法復原。`)) return;
   setMsg($("activeClassMsg"), `Deleting class "${name}"...`, "warn");
   try {
     const r = await api("/api/dataset/delete-class",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});
-    setMsg($("activeClassMsg"), `Deleted class "${name}" (${r.deleted_files||0} files).`, "ok");
+    setMsg($("activeClassMsg"), `已刪除 class "${name}"（${r.deleted_files||0} 個檔案）。`, "ok");
     await refreshClassMap();
-  } catch(e){ setMsg($("activeClassMsg"), "Delete failed: "+e.message, "bad"); }
+  } catch(e){ setMsg($("activeClassMsg"), "刪除失敗："+e.message, "bad"); }
 }
 async function populateDatasetExportFolders(){
   const sel=$("datasetExportFolder"); if(!sel) return;
@@ -1150,30 +1159,30 @@ $("datasetDownloadBtn").onclick = async () => {
   setMsg($("datasetExportMsg"), "Preparing dataset zip...", "warn");
   try {
     const resp = await fetch(ORIGIN+"/api/dataset/download");
-    if(!resp.ok) throw new Error((await resp.text().catch(()=>""))||("download failed ("+resp.status+")"));
+    if(!resp.ok) throw new Error((await resp.text().catch(()=>""))||("下載失敗（"+resp.status+"）"));
     const blob = await resp.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click();
     a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 4000);
-    setMsg($("datasetExportMsg"), `Downloaded ${name}.`, "ok");
-  } catch(e){ setMsg($("datasetExportMsg"), "Download failed: "+e.message, "bad"); }
+    setMsg($("datasetExportMsg"), `下載ed ${name}.`, "ok");
+  } catch(e){ setMsg($("datasetExportMsg"), "下載失敗："+e.message, "bad"); }
 };
 $("datasetSaveToDriveBtn").onclick = async () => {
   const name = datasetExportFileName();
   const folder = $("datasetExportFolder")?.value || "0_shared";
-  setMsg($("datasetExportMsg"), `Saving ${name} to ${folder}...`, "warn");
+  setMsg($("datasetExportMsg"), `正在把 ${name} 存到 ${folder}...`, "warn");
   try {
     const r = await api("/api/dataset/save-to-drive",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({folder,name})});
-    setMsg($("datasetExportMsg"), `Saved ${r.name} to ${r.folder} (${fmtSize(r.size)}).`, "ok");
-  } catch(e){ setMsg($("datasetExportMsg"), "Save failed: "+e.message, "bad"); }
+    setMsg($("datasetExportMsg"), `已把 ${r.name} 存到 ${r.folder}（${fmtSize(r.size)}）。`, "ok");
+  } catch(e){ setMsg($("datasetExportMsg"), "儲存失敗："+e.message, "bad"); }
 };
 $("saveClassMapBtn").onclick = async () => {
   const actions={}; document.querySelectorAll('#classMapRows select[data-class]').forEach(s=>actions[s.dataset.class]=s.value);
-  if(!Object.keys(actions).length){ setMsg($("classMapMsg"),"Select active classes first.","bad"); return; }
-  setMsg($("classMapMsg"),"Saving…","warn");
+  if(!Object.keys(actions).length){ setMsg($("classMapMsg"),"請先選擇 active classes。","bad"); return; }
+  setMsg($("classMapMsg"),"正在儲存…","warn");
   try { await api("/api/class-map",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({actions})});
-        setMsg($("classMapMsg"),"Action mapping saved.","ok"); await refreshClassMap(); }
-  catch(e){ setMsg($("classMapMsg"),"Save failed: "+e.message,"bad"); }
+        setMsg($("classMapMsg"),"已儲存 action mapping。","ok"); await refreshClassMap(); }
+  catch(e){ setMsg($("classMapMsg"),"儲存失敗："+e.message,"bad"); }
 };
 
 function fillSelect(sel, values, empty){
@@ -1184,7 +1193,7 @@ function fillSelect(sel, values, empty){
 }
 function populateQuantModels(){
   const prev=$("quantModel").value, sel=$("quantModel"); sel.innerHTML="";
-  if(!KERAS_MODELS.length){ const o=document.createElement("option"); o.value=""; o.textContent="(train or upload a .keras model first)"; sel.appendChild(o); return; }
+  if(!KERAS_MODELS.length){ const o=document.createElement("option"); o.value=""; o.textContent="（請先 train 或 upload .keras model）"; sel.appendChild(o); return; }
   KERAS_MODELS.forEach(m=>{ const o=document.createElement("option"); o.value=m.id||m; o.textContent=m.label||m.id||m; sel.appendChild(o); });
   if(prev && Array.from(sel.options).some(o=>o.value===prev)) sel.value=prev;
   populateModelPredictModels();
@@ -1202,7 +1211,7 @@ function renderCaptureClassOptions(){
   const labels = AVAILABLE_CLASSES.length ? AVAILABLE_CLASSES : Object.keys(DATASET_COUNTS || {}).sort();
   const blank=document.createElement("option");
   blank.value="";
-  blank.textContent=labels.length ? "(choose a class to add to, or type a new one)" : "(type a new class)";
+  blank.textContent=labels.length ? "（選擇既有 class，或輸入新 class）" : "（輸入新 class）";
   sel.appendChild(blank);
   if(!labels.length) return;
   labels.forEach(name=>{ const c=DATASET_COUNTS[name]||{}; const o=document.createElement("option"); o.value=name; o.textContent=`${name} (${c.train||0} train / ${c.validation||0} val)`; sel.appendChild(o); });
@@ -1230,12 +1239,12 @@ function onRecipeChange(){
 
 // ---------- dataset / train / quantize ----------
 $("uploadBtn").onclick = async () => {
-  const f=$("datasetFile").files[0]; if(!f){ setMsg($("uploadMsg"),"Choose a .zip first.","bad"); return; }
-  const fd=new FormData(); fd.append("file",f); setMsg($("uploadMsg"),"Uploading & extracting…","warn"); $("uploadBtn").disabled=true;
+  const f=$("datasetFile").files[0]; if(!f){ setMsg($("uploadMsg"),"請先選擇 .zip 檔。","bad"); return; }
+  const fd=new FormData(); fd.append("file",f); setMsg($("uploadMsg"),"正在上傳並解壓縮…","warn"); $("uploadBtn").disabled=true;
   try { const r=await api("/api/dataset/upload",{method:"POST",body:fd});
     const detail=r.imports?r.imports.map(x=>`${x.target}:${x.total_images}`).join("  "):r.target;
-    setMsg($("uploadMsg"),`Imported ${r.total_images} images — ${detail}. Classes: ${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap();
-  } catch(e){ setMsg($("uploadMsg"),"Upload failed: "+e.message,"bad"); } $("uploadBtn").disabled=false;
+    setMsg($("uploadMsg"),`已匯入 ${r.total_images} 張 images — ${detail}。Classes：${(r.class_order||[]).join(", ")}`,"ok"); refreshClassMap();
+  } catch(e){ setMsg($("uploadMsg"),"上傳失敗： "+e.message,"bad"); } $("uploadBtn").disabled=false;
 };
 $("recipe").onchange = onRecipeChange;
 $("trainBtn").onclick = async () => {
@@ -1254,7 +1263,7 @@ $("autoSplitBtn").onclick = async () => {
     setMsg($("captureMsg"), `Dataset split successfully! Details: ${details.join(", ")}`, "ok");
     refreshClassMap();
   } catch(e) {
-    setMsg($("captureMsg"), "Split failed: " + e.message, "bad");
+    setMsg($("captureMsg"), "切分失敗：" + e.message, "bad");
   }
   $("autoSplitBtn").disabled = false;
 };
@@ -1273,21 +1282,21 @@ $("step0CreateBtn").onclick = async () => {
     $("step0ClassName").value = "";
     refreshClassMap();
   } catch(e) {
-    setMsg($("step0Msg"), "Failed to create class: " + e.message, "bad");
+    setMsg($("step0Msg"), "建立 class 失敗：" + e.message, "bad");
   }
   $("step0CreateBtn").disabled = false;
 };
-$("refreshModelsBtn").onclick = async () => { setMsg($("quantMsg"),"Refreshing…","warn");
-  try { await refreshModelList(); setMsg($("quantMsg"),`Found ${KERAS_MODELS.length} model(s).`,"ok"); } catch(e){ setMsg($("quantMsg"),"Refresh failed: "+e.message,"bad"); } };
+$("refreshModelsBtn").onclick = async () => { setMsg($("quantMsg"),"正在重新整理…","warn");
+  try { await refreshModelList(); setMsg($("quantMsg"),`找到 ${KERAS_MODELS.length} 個 model。`,"ok"); } catch(e){ setMsg($("quantMsg"),"重新整理失敗："+e.message,"bad"); } };
 $("uploadModelBtn").onclick = async () => {
-  const f=$("sourceModelFile").files[0]; if(!f){ setMsg($("quantMsg"),"Choose a .keras/.h5 first.","bad"); return; }
+  const f=$("sourceModelFile").files[0]; if(!f){ setMsg($("quantMsg"),"請先選擇 .keras/.h5 檔。","bad"); return; }
   const fd=new FormData(); fd.append("file",f); fd.append("framework",$("uploadModelFramework").value);
-  setMsg($("quantMsg"),"Uploading…","warn"); $("uploadModelBtn").disabled=true;
+  setMsg($("quantMsg"),"正在上傳…","warn"); $("uploadModelBtn").disabled=true;
   try { const r=await api("/api/models/upload",{method:"POST",body:fd}); KERAS_MODELS=r.available_keras_models||[]; populateQuantModels();
-    setMsg($("quantMsg"),`Uploaded ${r.framework}/${r.model}.`,"ok"); } catch(e){ setMsg($("quantMsg"),"Upload failed: "+e.message,"bad"); } $("uploadModelBtn").disabled=false;
+    setMsg($("quantMsg"),`已上傳 ${r.framework}/${r.model}。`,"ok"); } catch(e){ setMsg($("quantMsg"),"上傳失敗： "+e.message,"bad"); } $("uploadModelBtn").disabled=false;
 };
 $("quantBtn").onclick = async () => {
-  if(!$("quantModel").value){ setMsg($("quantMsg"),"No .keras model — train/upload first.","bad"); return; }
+  if(!$("quantModel").value){ setMsg($("quantMsg"),"沒有 .keras model，請先 train 或 upload。","bad"); return; }
   await startJob("/api/quantize",{ model_name:$("quantModel").value, quant_format:$("quantFormat").value,
     quant_granularity:$("quantGranularity").value, skip_source_validation:$("skipValidation").checked }, $("quantMsg"), "quantization", $("quantBtn"));
 };
@@ -1307,7 +1316,7 @@ function setJobButtonFinished(jobId, status){
   if(activeJobButtonJobId && jobId !== activeJobButtonJobId) return;
   const btn = activeJobButton;
   const idle = btn.dataset.idleText || activeJobButtonLabel || "Start";
-  btn.innerHTML = status==="succeeded" ? "Finished" : "Failed";
+  btn.innerHTML = status==="succeeded" ? "完成" : "失敗";
   setTimeout(() => {
     btn.textContent = idle;
     btn.disabled = false;
@@ -1325,7 +1334,7 @@ async function startJob(path, body, msgEl, kind, btn){
   setJobButtonLoading(btn, kind);
   try { const job=await api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
     activeJobButtonJobId = job.id;
-    setMsg(msgEl,(job.status==="queued"?"Queued job ":"Started job ")+job.id,"ok"); attachLog(job.id); refreshJobs();
+    setMsg(msgEl,(job.status==="queued"?"已排入 job ":"已開始 job ")+job.id,"ok"); attachLog(job.id); refreshJobs();
   } catch(e){ resetJobButton(btn); setMsg(msgEl,"Could not start: "+e.message+" (a job may be running)","bad"); }
 }
 
@@ -1351,7 +1360,7 @@ async function openArtifactSaveDialog(artifact, trigger){
   const modal=$("artifactSaveModal"), folder=$("artifactSaveFolder"), name=$("artifactSaveName");
   modal.classList.add("open");
   name.value=artifact.name;
-  setMsg($("artifactSaveMsg"), "Loading AI PC Drive folders...", "warn");
+  setMsg($("artifactSaveMsg"), "正在載入 AI PC Drive folders...", "warn");
   try {
     const r=await api("/api/drive/folders");
     const folders=r.folders||["0_shared"];
@@ -1369,14 +1378,14 @@ async function openArtifactSaveDialog(artifact, trigger){
     const suffix=artifact.name.lastIndexOf(".");
     name.setSelectionRange(0, suffix>0 ? suffix : artifact.name.length);
   } catch(e){
-    setMsg($("artifactSaveMsg"), "Could not load folders: "+e.message, "bad");
+    setMsg($("artifactSaveMsg"), "無法載入 folders："+e.message, "bad");
   }
 }
 async function confirmArtifactSave(){
   if(!artifactSaveTarget) return;
   const button=$("artifactSaveConfirm");
   button.disabled=true;
-  setMsg($("artifactSaveMsg"), "Saving...", "warn");
+  setMsg($("artifactSaveMsg"), "正在儲存...", "warn");
   try {
     const result=await api("/api/artifacts/save-to-drive", {
       method:"POST",
@@ -1387,17 +1396,17 @@ async function confirmArtifactSave(){
         name:$("artifactSaveName").value,
       }),
     });
-    setMsg($("artifactSaveMsg"), `Saved ${result.name} to ${result.folder}.`, "ok");
+    setMsg($("artifactSaveMsg"), `已把 ${result.name} 存到 ${result.folder}。`, "ok");
     if(artifactSaveTrigger){
       const trigger=artifactSaveTrigger;
       const original=trigger.textContent;
-      trigger.textContent="Saved";
+      trigger.textContent="已儲存";
       setTimeout(()=>{ trigger.textContent=original; }, 1800);
     }
     if(document.querySelector("#tabs button.active")?.dataset.topic==="drive") refreshDrive();
     setTimeout(closeArtifactSaveDialog, 900);
   } catch(e){
-    setMsg($("artifactSaveMsg"), "Save failed: "+e.message, "bad");
+    setMsg($("artifactSaveMsg"), "儲存失敗："+e.message, "bad");
   } finally {
     button.disabled=false;
   }
@@ -1415,9 +1424,9 @@ async function refreshArtifacts(){
         const actions=document.createElement("td");
         actions.className="artifact-actions";
         const download=document.createElement("a");
-        download.href=dl; download.textContent="download";
+        download.href=dl; download.textContent="下載";
         const save=document.createElement("button");
-        save.type="button"; save.className="secondary"; save.textContent="Save to Drive";
+        save.type="button"; save.className="secondary"; save.textContent="存到 Drive";
         save.onclick=()=>openArtifactSaveDialog(a, save);
         actions.append(download, save);
         tr.appendChild(actions);
@@ -1437,7 +1446,7 @@ function fillFlashArtifacts(list){
       if(!tfl.length){
         const o = document.createElement("option");
         o.value = "";
-        o.textContent = "(no .tflite yet - quantize first)";
+        o.textContent = "（還沒有 .tflite，請先 quantize）";
         sel.appendChild(o);
         return;
       }
@@ -1466,7 +1475,7 @@ async function refreshJobs(){
 // ---------- deploy results ----------
 async function refreshReports(){
   try { const r=await api("/api/reports"); const tb=$("reportsBody"); tb.innerHTML="";
-    if(!r.reports.length){ tb.innerHTML='<tr><td colspan="5" class="note">No quantization reports yet.</td></tr>'; return; }
+    if(!r.reports.length){ tb.innerHTML='<tr><td colspan="5" class="note">目前還沒有 quantization reports。</td></tr>'; return; }
     r.reports.forEach(x=>{ const acc=(x.tflite_accuracy!=null)?(x.tflite_accuracy*100).toFixed(1)+"%":"—";
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${x.model||"—"}</td><td>${x.quant_format||"—"}${x.granularity&&x.granularity!=="not_applicable"?(" / "+x.granularity):""}</td>
@@ -1487,12 +1496,12 @@ async function loadBenchOptions(){
     const o = await api("/api/benchmark/options");
     const dsel = $("benchDataset"); if(!dsel) return; dsel.innerHTML = "";
     (o.datasets||[]).forEach(d=>{ const opt=document.createElement("option"); opt.value=d.id; opt.textContent=`${d.id} (${d.count} imgs)`; dsel.appendChild(opt); });
-    if(!(o.datasets||[]).length){ const opt=document.createElement("option"); opt.value=""; opt.textContent="(no benchmark dataset found)"; dsel.appendChild(opt); }
+    if(!(o.datasets||[]).length){ const opt=document.createElement("option"); opt.value=""; opt.textContent="（找不到 benchmark dataset）"; dsel.appendChild(opt); }
   } catch(e){}
 }
 
 async function benchImageToFrame(url){
-  const resp = await fetch(ORIGIN + url); if(!resp.ok) throw new Error("image fetch failed ("+resp.status+")");
+  const resp = await fetch(ORIGIN + url); if(!resp.ok) throw new Error("image 下載失敗（"+resp.status+"）");
   const bmp = await createImageBitmap(await resp.blob());
   const cv = document.createElement("canvas"); cv.width = BENCH_W; cv.height = BENCH_H;
   const cx = cv.getContext("2d"); cx.drawImage(bmp, 0, 0, BENCH_W, BENCH_H);
@@ -1511,7 +1520,7 @@ function renderBenchSummary(agg, total, done){
     ["Avg model latency", avg(agg.model, agg.n)],
     ["Avg preprocess latency", avg(agg.pre, agg.preN)],
     ["Avg device compute", avg(agg.dev, agg.preN)],
-    ["Throughput (model)", fps],
+    ["Throughput（model）", fps],
   ];
   $("benchSummary").innerHTML = rows.map(r=>`<tr><th style="width:230px">${r[0]}</th><td>${r[1]}</td></tr>`).join("");
   if(done && agg.labeled > 0 && (agg.correct / agg.labeled) >= 0.9) fireEgg("accuracy");
@@ -1536,20 +1545,20 @@ $("benchRunBtn").onclick = async () => {
   if(!dataset){ setMsg($("benchMsg"),"Pick a dataset.","bad"); return; }
   const sup = webSerialSupport();
   if(!sup.ok){ setMsg($("benchMsg"), sup.reason==="insecure-http" ? "Benchmark needs HTTPS (secure context) — open the https:// portal." : "Use Chrome or Edge for the browser benchmark.", "bad"); return; }
-  if(Serial.acquiring){ setMsg($("benchMsg"),"A serial connection is opening — please wait a moment.","warn"); return; }
+  if(Serial.acquiring){ setMsg($("benchMsg"),"Serial connection 正在開啟，請稍等。","warn"); return; }
   // class order → expected label index
   let order = [];
   try { order = (await api("/api/class-map")).class_order || []; } catch(e){}
   let images = [];
   try { images = (await api(`/api/benchmark/images?dataset=${encodeURIComponent(dataset)}&limit=${limit}`)).images || []; }
   catch(e){ setMsg($("benchMsg"),"Could not load dataset images: "+e.message,"bad"); return; }
-  if(!images.length){ setMsg($("benchMsg"),"No images in that dataset.","bad"); return; }
+  if(!images.length){ setMsg($("benchMsg"),"這個 dataset 裡沒有 images。","bad"); return; }
 
   $("benchRunBtn").disabled = true; $("benchSummary").innerHTML = ""; $("benchLog").textContent = "";
   const agg = { n:0, correct:0, labeled:0, model:0, pre:0, dev:0, preN:0 };
   let running = true;
   try {
-    setMsg($("benchMsg"),"Opening serial chooser — pick your ESP32-S3…","warn");
+    setMsg($("benchMsg"),"正在開啟 serial 選擇視窗，請選 ESP32-S3…","warn");
     // Unified raw acquire (releases any prior flash/control/camera flow, opens the
     // port, starts the shared line-pump that logs to benchLog + feeds waitFor()).
     await serialOpenRaw({ logId:"benchLog", baudRate:BENCH_BAUD });
@@ -1582,14 +1591,14 @@ $("benchRunBtn").onclick = async () => {
     renderBenchSummary(agg, images.length, true);
     const raw = e.message || String(e);
     const m = /No port selected|cancell/i.test(raw)
-        ? "Port selection cancelled."
+        ? "已取消 port 選擇。"
       : /NO_DATA/.test(raw)
-        ? "No serial data at all. The board sent nothing. Check: (1) pick the ESP32-S3 USB-UART bridge COM port (not the USB-JTAG one); (2) close any other program using the port (Arduino Serial Monitor, idf.py monitor, PuTTY); (3) use a data-capable USB cable. Then run again."
+        ? "完全沒有 serial data。板子沒有送出任何資料。請檢查：(1) 選 ESP32-S3 USB-UART bridge COM port，不要選 USB-JTAG；(2) 關掉其他使用此 port 的程式（Arduino Serial Monitor、idf.py monitor、PuTTY）；(3) 使用可傳資料的 USB 線，然後再試一次。"
       : /NO_READY/.test(raw)
         ? "The board is talking but never sent READY. It is probably not running the deploy benchmark firmware, or you opened the USB-JTAG interface instead of the UART bridge (READY is only sent on the UART bridge). Flash the deploy benchmark firmware (step A), pick the UART-bridge COM port, reset the board once, then run again."
       : /timeout/i.test(raw)
-        ? "The board answered READY but returned no RESULT for a frame. The handshake worked but inference did not complete — confirm a model is flashed (step C), then try fewer images."
-        : ("Benchmark failed: " + raw);
+        ? "板子有回 READY，但沒有對 frame 回 RESULT。Handshake 成功但 inference 沒完成；請確認已 flash model（Step C），再嘗試減少圖片數量。"
+        : ("Benchmark 失敗：" + raw);
     appendLog("benchLog", "\n[portal] " + m + "\n");
     setMsg($("benchMsg"), m, "bad");
   } finally {
@@ -1669,12 +1678,12 @@ async function stopLocalWebcam(options={}){
   }
   if($("cameraDeviceSelect")) $("cameraDeviceSelect").value="";
   if($("predictCameraDeviceSelect")) $("predictCameraDeviceSelect").value="";
-  [$("localWebcamBtn"), $("predictCameraBtn")].forEach(b=>{ if(b){ b.disabled=false; b.textContent="Start camera preview"; } });
+  [$("localWebcamBtn"), $("predictCameraBtn")].forEach(b=>{ if(b){ b.disabled=false; b.textContent="開啟 camera preview"; } });
   if($("predictCameraPlaceholderInner")) $("predictCameraPlaceholderInner").style.display="";
   if(options.message !== false) setMsg($("modelMsg"), "Camera preview stopped.", "ok");
 }
 // Rebuild the camera dropdown from scratch and reset the selection, so every
-// "Start camera preview" click makes the student explicitly pick a camera
+// "開啟 camera preview" click makes the student explicitly pick a camera
 // again instead of silently reusing whatever was chosen last time.
 async function populateCameraDeviceSelect(){
   const select=$("cameraDeviceSelect");
@@ -1698,7 +1707,7 @@ async function populateCameraDeviceSelect(){
       devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind==="videoinput");
     } catch(e){
       const denied=e?.name==="NotAllowedError" ? "Camera permission was denied." :
-        e?.name==="NotFoundError" ? "No camera was found on this PC." :
+        e?.name==="NotFoundError" ? "這台 PC 找不到 camera。" :
         "Could not access the camera: "+(e.message||e);
       setMsg($("modelMsg"), denied, "bad");
     }
@@ -1707,7 +1716,7 @@ async function populateCameraDeviceSelect(){
   [select, selC].filter(Boolean).forEach(sel => {
     sel.innerHTML="";
     const placeholder=document.createElement("option");
-    placeholder.value=""; placeholder.textContent = devices.length ? "Choose a camera…" : "No camera found";
+    placeholder.value=""; placeholder.textContent = devices.length ? "選擇 camera…" : "找不到 camera";
     sel.appendChild(placeholder);
     devices.forEach((d, i) => {
       const opt=document.createElement("option");
@@ -1716,13 +1725,13 @@ async function populateCameraDeviceSelect(){
     });
     sel.value="";
   });
-  if(devices.length) setMsg($("modelMsg"), "Choose a camera from the list above.", "warn");
+  if(devices.length) setMsg($("modelMsg"), "請從上方清單選擇 camera。", "warn");
 }
 async function startSelectedCamera(deviceId){
   if(!deviceId) return;
   await stopLocalWebcam({message:false, preserveFrame:false});
   try {
-    setMsg($("modelMsg"), "Opening camera...", "warn");
+    setMsg($("modelMsg"), "正在開啟 camera...", "warn");
     const stream=await navigator.mediaDevices.getUserMedia({
       video:{deviceId:{exact:deviceId}, width:{ideal:640}, height:{ideal:480}},
       audio:false,
@@ -1739,12 +1748,12 @@ async function startSelectedCamera(deviceId){
     captureLocalWebcamFrame();
     localWebcamTimer=setInterval(captureLocalWebcamFrame, 200);
     [$("localWebcamBtn"), $("predictCameraBtn")].forEach(b=>{ if(b) b.textContent="Stop camera preview"; });
-    setMsg($("modelMsg"), "Camera preview connected.", "ok");
+    setMsg($("modelMsg"), "Camera preview 已連線。", "ok");
   } catch(e){
     await stopLocalWebcam({message:false, preserveFrame:false});
     const denied=e?.name==="NotAllowedError" ? "Camera permission was denied." :
-      e?.name==="NotFoundError" ? "That camera is no longer available." :
-      "Camera preview failed: "+(e.message||e);
+      e?.name==="NotFoundError" ? "該 camera 已不可用。" :
+      "Camera preview 失敗："+(e.message||e);
     setMsg($("modelMsg"), denied, "bad");
   }
 }
@@ -1753,7 +1762,7 @@ async function startLocalWebcam(){
     setMsg($("modelMsg"), "Camera preview is unavailable. Use Chrome or Edge over HTTPS.", "bad");
     return;
   }
-  setMsg($("modelMsg"), "Looking for cameras...", "warn");
+  setMsg($("modelMsg"), "正在尋找 cameras...", "warn");
   await populateCameraDeviceSelect();
   if($("cameraDeviceSelect")) $("cameraDeviceSelect").focus();
 }
@@ -1780,7 +1789,7 @@ $("fullCameraToggleBtn").onclick = async () => {
     try{ await serialSend("d0\n"); }catch(_){}
     await releaseSerial("fullCameraLog");
     setMsg($("fullCameraMsg"), "Camera stream stopped.", "ok");
-    btn.textContent="Connect camera stream"; btn.disabled=!webSerialSupport().ok;
+    btn.textContent="連線 camera stream"; btn.disabled=!webSerialSupport().ok;
   } else {
     await connectCameraPreview(FULL_CAMERA_UI);
   }
@@ -1793,7 +1802,7 @@ function actionForControlBoard(action){
 async function connectFullControlBoard(){
   const sup = webSerialSupport();
   if(!sup.ok){ setMsg($("fullControlStatus"), "Web Serial unavailable (Chrome/Edge + HTTPS).", "bad"); return; }
-  if(ControlBoard.connected){ setMsg($("fullControlStatus"), "Control board already connected.", "ok"); return; }
+  if(ControlBoard.connected){ setMsg($("fullControlStatus"), "Control board 已連線。", "ok"); return; }
   try{
     $("fullControlLog").textContent = "";
     const port = await navigator.serial.requestPort();
@@ -1805,7 +1814,7 @@ async function connectFullControlBoard(){
     ControlBoard.reading = true;
     ControlBoard.lastAction = null;
     $("fullControlIdleBtn").disabled = false;
-    setMsg($("fullControlStatus"), "Control board connected. Predictions now forward to servo.", "ok");
+    setMsg($("fullControlStatus"), "Control board 已連線，prediction 會轉送到 servo。", "ok");
     appendLog("fullControlLog", "[portal] control board connected @115200\n");
     (async()=>{
       const decoder = new TextDecoder();
@@ -1816,7 +1825,7 @@ async function connectFullControlBoard(){
       }
     })().catch(e=>appendLog("fullControlLog", "[portal] control read stopped: "+(e.message||e)+"\n"));
   }catch(e){
-    setMsg($("fullControlStatus"), "Control board connect failed: "+(e.message||e), "bad");
+    setMsg($("fullControlStatus"), "Control board 連線失敗："+(e.message||e), "bad");
     try{ await releaseControlBoard(); }catch(_){}
   } finally { syncFlashButtons(); }
 }
@@ -1844,7 +1853,7 @@ async function sendFullControlAction(eff, force=false){
     appendLog("fullControlLog", "> " + cmd + "\n");
     setMsg($("fullControlStatus"), "Forwarded action: " + action, action === "none" ? "warn" : "ok");
   }catch(e){
-    setMsg($("fullControlStatus"), "Control send failed: "+(e.message||e), "bad");
+    setMsg($("fullControlStatus"), "Control 傳送失敗："+(e.message||e), "bad");
     await releaseControlBoard();
   }
 }
@@ -1898,7 +1907,7 @@ function usbCamSyncUi(){
   if($("usbCamPreviewToggleBtn")){
     const toggle=$("usbCamPreviewToggleBtn");
     const running=!!UsbCam.stream;
-    toggle.textContent = running ? "Stop preview" : "Start webcam preview";
+    toggle.textContent = running ? "停止 preview" : "Start webcam preview";
     toggle.className = running ? "secondary" : "";
     toggle.disabled = running ? false : (!controls || !UsbCam.configured);
   }
@@ -1923,7 +1932,7 @@ function usbCamResetControlState(){
   UsbCam.configured=false;
   UsbCam.applying=false;
   usbCamSetStorageOwner("unknown");
-  setMsg("usbCamSettingsMsg", "Connect camera controls, then apply settings before starting Live Camera.", "warn");
+  setMsg("usbCamSettingsMsg", "請先連線 camera controls，再套用 Live Camera settings。", "warn");
   usbCamSyncUi();
 }
 async function usbCamRefreshDevices(selectedId=""){
@@ -1931,7 +1940,7 @@ async function usbCamRefreshDevices(selectedId=""){
   if(!select || !navigator.mediaDevices?.enumerateDevices) return;
   const devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind === "videoinput");
   select.innerHTML="";
-  if(!devices.length){ select.innerHTML='<option value="">No webcam found</option>'; select.disabled=true; return; }
+  if(!devices.length){ select.innerHTML='<option value="">找不到 webcam</option>'; select.disabled=true; return; }
   devices.forEach((device, index)=>{
     const option=document.createElement("option");
     option.value=device.deviceId;
@@ -1967,11 +1976,11 @@ async function usbCamStartPreview(deviceId=""){
     const activeId=UsbCam.stream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId;
     await usbCamRefreshDevices(activeId);
     usbCamSyncUi();
-    setMsg($("usbCamMsg"), `Webcam preview connected at ${cfg.width}×${cfg.height}; requested ${cfg.fps} fps.`, "ok");
+    setMsg($("usbCamMsg"), `Webcam preview 已連線：${cfg.width}×${cfg.height}，目標 ${cfg.fps} fps。`, "ok");
   }catch(e){
     if(deviceId && e?.name === "OverconstrainedError"){
-      setMsg($("usbCamMsg"), "That camera is no longer available. Opening the default webcam instead...", "warn");
-      setMsg($("usbCamMsg"), "The selected webcam is unavailable. Choose the EECamp UVC camera and try again.", "bad");
+      setMsg($("usbCamMsg"), "該 camera 已不可用，改開啟預設 webcam...", "warn");
+      setMsg($("usbCamMsg"), "選取的 webcam 不可用。請選擇 EECamp UVC camera 後再試一次。", "bad");
       return;
     }
     setMsg($("usbCamMsg"), "Could not start webcam preview: "+(e.message||e), "bad");
@@ -1981,10 +1990,10 @@ async function usbCamStartPreview(deviceId=""){
 async function usbCamConnectControls(){
   const sup=webSerialSupport();
   if(!sup.ok){ setMsg($("usbCamControlMsg"), "Camera controls need Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
-  if(Serial.acquiring){ setMsg($("usbCamControlMsg"), "A serial connection is opening - please wait.", "warn"); return; }
+  if(Serial.acquiring){ setMsg($("usbCamControlMsg"), "Serial connection 正在開啟，請稍等。", "warn"); return; }
   camUi=USBCAM_UI;
   $("usbCamLog").textContent="";
-  setMsg($("usbCamControlMsg"), "Choose the EECamp Control serial port...", "warn");
+  setMsg($("usbCamControlMsg"), "請選擇 EECamp Control serial port...", "warn");
   try{
     photoListCapture=false; photoListBuf=[];
     fileAsm={receiving:false, lines:[], size:0, path:""};
@@ -1993,7 +2002,7 @@ async function usbCamConnectControls(){
     await serialOpenRaw({ logId:"usbCamLog", baudRate:115200, bufferSize:65536, onLine:cameraOnLine });
     UsbCam.controls=true;
     usbCamSetStorageOwner("unknown");
-    setMsg($("usbCamControlMsg"), "Camera controls connected. Checking storage ownership...", "ok");
+    setMsg($("usbCamControlMsg"), "Camera controls 已連線，正在檢查 storage owner...", "ok");
     await cameraWrite("storage status");
   }catch(e){
     usbCamResetControlState();
@@ -2002,7 +2011,7 @@ async function usbCamConnectControls(){
   }
 }
 async function usbCamApplySettings(){
-  if(!usbCamControlsReady()){ setMsg("usbCamSettingsMsg", "Connect camera controls first.", "bad"); return; }
+  if(!usbCamControlsReady()){ setMsg("usbCamSettingsMsg", "請先連線 camera controls。", "bad"); return; }
   if(UsbCam.stream){ setMsg("usbCamSettingsMsg", "Stop Live Camera before applying new settings.", "warn"); return; }
   const cfg=usbCamSelectedConfig();
   UsbCam.configured=false;
@@ -2023,13 +2032,13 @@ async function usbCamApplySettings(){
 async function usbCamDisconnectControls(){
   await releaseSerial("usbCamLog");
   usbCamResetControlState();
-  setMsg($("usbCamControlMsg"), "Camera controls disconnected. Webcam preview can remain open.", "ok");
+  setMsg($("usbCamControlMsg"), "Camera controls 已斷線；webcam preview 可以繼續開著。", "ok");
 }
 function usbCamCmd(cmd, label){
-  if(!usbCamControlsReady()){ setMsg($("usbCamCmdMsg"), "Connect camera controls first.", "bad"); return Promise.reject(new Error("camera controls are not connected")); }
+  if(!usbCamControlsReady()){ setMsg($("usbCamCmdMsg"), "請先連線 camera controls。", "bad"); return Promise.reject(new Error("camera controls 尚未連線")); }
   return cameraWrite(cmd)
     .then(()=>{ if(label) setMsg($("usbCamCmdMsg"), label, "ok"); })
-    .catch(e=>{ setMsg($("usbCamCmdMsg"), "Send failed: "+(e.message||e), "bad"); throw e; });
+    .catch(e=>{ setMsg($("usbCamCmdMsg"), "傳送失敗："+(e.message||e), "bad"); throw e; });
 }
 $("usbCamPreviewToggleBtn").onclick = () => { if(UsbCam.stream) usbCamStopPreview(); else usbCamStartPreview($("usbCamDevice").value); };
 $("usbCamDevice").onchange = (e) => usbCamStartPreview(e.target.value);
@@ -2051,11 +2060,11 @@ $("usbCamGain").onchange     = (e) => usbCamCmd("a"+e.target.value, "Gain update
 $("usbCamAwb").onchange    = (e) => usbCamCmd("y"+e.target.value, "White balance updated.");
 $("usbCamMirror").onchange = (e) => usbCamCmd("m"+e.target.value, "Mirror updated.");
 $("usbCamFlip").onchange   = (e) => usbCamCmd("p"+e.target.value, "Flip updated.");
-$("usbStorageEjectConfirmBtn").onclick = () => usbCamCmd("storage status", "Checking whether the camera owns storage...");
-$("usbStorageReturnBtn").onclick = () => usbCamCmd("storage pc", "Returning EECamp storage to the PC...");
-$("usbCamCaptureBtn").onclick = () => { const ts=new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "Saving the current camera frame..."); };
-$("usbCamListBtn").onclick = () => { photoListBuf=[]; photoListCapture=true; usbCamCmd("l", "Listing saved files..."); };
-$("usbCamRawBtn").onclick = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, "Command sent."); };
+$("usbStorageEjectConfirmBtn").onclick = () => usbCamCmd("storage status", "正在檢查 camera 是否擁有 storage...");
+$("usbStorageReturnBtn").onclick = () => usbCamCmd("storage pc", "正在把 EECamp storage 交回 PC...");
+$("usbCamCaptureBtn").onclick = () => { const ts=new Date().toISOString().replace(/[-:T.]/g,"").slice(0,14); usbCamCmd("c"+ts, "正在儲存目前 camera frame..."); };
+$("usbCamListBtn").onclick = () => { photoListBuf=[]; photoListCapture=true; usbCamCmd("l", "正在列出已存檔案..."); };
+$("usbCamRawBtn").onclick = () => { const c=($("usbCamRaw").value||"").trim(); if(c) usbCamCmd(c, "Command 已送出。"); };
 usbCamSyncUi();
 $("mazeFlagInput").oninput = (e) => {
   const flag = e.target.value.trim();
@@ -2063,7 +2072,7 @@ $("mazeFlagInput").oninput = (e) => {
   const fb = $("mazeFeedback");
   if (flag === "EE{MAZE_SOLVER_2026_SHIFT_MINUS_TWO}") {
     btn.disabled = false;
-    setMsg(fb, "Correct flag! Click Claim Prize!", "ok");
+    setMsg(fb, "Flag 正確！可以領取獎勵。", "ok");
     fb.style.display = "block";
   } else {
     btn.disabled = true;
@@ -2075,13 +2084,13 @@ $("mazePrizeBtn").onclick = () => {
 };
 function copyText(text, msgEl, okMsg){
   const done=()=>setMsg(msgEl, okMsg, "ok");
-  const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"Copy failed — select manually.","bad"); } document.body.removeChild(ta); };
+  const fb=()=>{ const ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{document.execCommand("copy"); done();}catch(e){ setMsg(msgEl,"複製失敗，請手動選取。","bad"); } document.body.removeChild(ta); };
   if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(fb); else fb();
 }
 function fillModelOnnx(list){
   const host=$("modelOnnx"); if(!host) return;
   const onnx=(list||[]).filter(a=>a.name.toLowerCase().endsWith(".onnx"));
-  if(!onnx.length){ host.innerHTML='No ONNX model yet. Enable Export ONNX for a supported TensorFlow recipe, then train first.'; return; }
+  if(!onnx.length){ host.innerHTML='目前還沒有 ONNX model。請對支援的 TensorFlow recipe 啟用 Export ONNX，並先完成 training。'; return; }
   host.innerHTML = onnx.map(a=>{ const dl=ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(a.path);
     return `<a href="${dl}">${a.name}</a> (${fmtSize(a.size)})`; }).join("<br>");
 }
@@ -2090,7 +2099,7 @@ function refreshModelDemo(){ refreshArtifacts(); }
 // ==================== Web Serial (esptool-js) ====================
 const ESPTOOL_JS = "/static/vendor/esptool-js/bundle.js";
 function withTimeout(p, ms, m){ let t; return Promise.race([p, new Promise((_,rej)=>t=setTimeout(()=>rej(new Error(m)),ms))]).finally(()=>clearTimeout(t)); }
-function serialTroubleshoot(){ return "Board not responding. Checklist: (1) Chrome/Edge over HTTPS or localhost; (2) close other serial monitors (Arduino/idf.py monitor/PuTTY); (3) hold BOOT, click connect, tap RESET/EN, release BOOT after ~1s; (4) use a data USB cable."; }
+function serialTroubleshoot(){ return "Board 沒有回應。檢查：(1) 使用 Chrome/Edge 並透過 HTTPS 或 localhost；(2) 關閉其他 serial monitors（Arduino/idf.py monitor/PuTTY）；(3) 按住 BOOT，點 connect，按 RESET/EN，約 1 秒後放開 BOOT；(4) 使用可傳資料的 USB 線。"; }
 function webSerialSupport(){ if(navigator.serial) return {ok:true}; if(!window.isSecureContext) return {ok:false,reason:"insecure-http"}; return {ok:false,reason:"unsupported-browser"}; }
 // Flashing write baud from the header selector, applied to every flash flow
 // (model partition + firmware). ROM sync always stays at 115200. Default 921600.
@@ -2274,11 +2283,11 @@ function serialStartPump(){
   })();
 }
 async function serialSend(str){
-  if(!Serial.writer) throw new Error("serial port not connected");
+  if(!Serial.writer) throw new Error("serial port 尚未連線");
   await Serial.writer.write(new TextEncoder().encode(str));
 }
 async function serialSendBytes(u8){
-  if(!Serial.writer) throw new Error("serial port not connected");
+  if(!Serial.writer) throw new Error("serial port 尚未連線");
   await Serial.writer.write(u8);
 }
 function serialNextLine(timeoutMs){
@@ -2306,7 +2315,7 @@ function syncFlashButtons(){
   if($("usbFwFlashBtn")) $("usbFwFlashBtn").disabled = !(sup && USBFW.meta && USBFW.meta.available);
   ["ledToggleBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>{ if($(id)) $(id).disabled = true; });
   if($("ctrlConnectBtn")) $("ctrlConnectBtn").disabled = !sup;
-  if($("fullCameraToggleBtn") && !rawConnected){ $("fullCameraToggleBtn").textContent="Connect camera stream"; $("fullCameraToggleBtn").disabled=!sup; }
+  if($("fullCameraToggleBtn") && !rawConnected){ $("fullCameraToggleBtn").textContent="連線 camera stream"; $("fullCameraToggleBtn").disabled=!sup; }
   if($("fullControlConnectBtn")) $("fullControlConnectBtn").disabled = !sup;
   ["fullControlIdleBtn","fullControlUpBtn","fullControlDownBtn","fullControlLeftBtn","fullControlRightBtn","fullControlClampBtn","fullControlReleaseBtn","fullControlNullBtn"]
     .forEach(id=>{ if($(id)) $(id).disabled = !ControlBoard.connected; });
@@ -2329,7 +2338,7 @@ async function espConnect({ terminal, statusEl, logId }){
   if(Serial.acquiring) throw new Error("serial acquire already in progress");
   Serial.acquiring = true;
   try {
-    setMsg($(statusEl), "Opening serial chooser…", "warn");
+    setMsg($(statusEl), "正在開啟 serial 選擇視窗…", "warn");
     const port = await navigator.serial.requestPort();         // user gesture
     Serial.port = port; Serial.mode = "flash"; Serial.logId = logId;
     const flashBaud = flashBaudValue();                        // header selector; default 921600
@@ -2343,7 +2352,7 @@ async function espConnect({ terminal, statusEl, logId }){
     } catch(e){
       // Manual bootloader retry on the SAME transport (no close/reopen): ask the
       // student to force download mode, then re-sync with no_reset.
-      appendLog(logId, `\n[portal] Auto reset failed: ${e.message||e}\n`);
+      appendLog(logId, `\n[portal] Auto reset 失敗：${e.message||e}\n`);
       appendLog(logId, "[portal] Hold BOOT, tap RESET/EN, release BOOT after ~1s — retrying…\n");
       setMsg($(statusEl), "Hold BOOT, tap RESET/EN, release after ~1s — retrying…", "warn");
       await new Promise(r=>setTimeout(r, 2500));
@@ -2531,7 +2540,7 @@ function cameraOnLine(rawLine){
     const fm=/^---START_FILE:\d+:\d+:\d+:(\d+):(.+)---$/.exec(line);
     fileAsm={receiving:true, lines:[], size:fm?Number(fm[1]):0, path:fm?fm[2]:"file"};
   } else if(line.startsWith("---END_FILE---")){
-    if(fileAsm.receiving) finishPhotoDownload(fileAsm.lines.join(""), fileAsm.path);
+    if(fileAsm.receiving) finishPhoto下載(fileAsm.lines.join(""), fileAsm.path);
     fileAsm={receiving:false, lines:[], size:0, path:""};
   } else if(fileAsm.receiving){
     fileAsm.lines.push(line);
@@ -2550,12 +2559,12 @@ function cameraOnLine(rawLine){
     const storage=/^STORAGE,owner=(app|pc),capture=(ready|blocked)$/.exec(line);
     usbCamSetStorageOwner(storage[1]);
     setMsg($("usbCamCmdMsg"), storage[1] === "app"
-      ? "Camera owns storage. You can save or list files."
+      ? "Camera 擁有 storage，可以儲存或列出檔案。"
       : "PC owns EECamp. Use your file explorer, or safely eject it before capture. Reconnect the cable if the drive does not reappear.", "ok");
     appendLog(camUi.logId, line + "\n");
   } else if(camUi === USBCAM_UI && line === "ERROR,storage_owned_by_pc,eject_usb_drive_first"){
     usbCamSetStorageOwner("pc");
-    setMsg($("usbCamCmdMsg"), "EECamp is still owned by the PC. Safely eject it in your file explorer, then click I ejected EECamp.", "warn");
+    setMsg($("usbCamCmdMsg"), "EECamp 仍由 PC 擁有。請先在 file explorer 安全退出它，再按「我已退出 EECamp」。", "warn");
     appendLog(camUi.logId, line + "\n");
   } else if(camUi === USBCAM_UI && /^\[System\] Image saved to flash! File:/.test(line)){
     setMsg($("usbCamCmdMsg"), line.replace(/^\[System\] /, ""), "ok");
@@ -2565,7 +2574,7 @@ function cameraOnLine(rawLine){
     if(lm) photoListBuf.push({name:lm[1], size:Number(lm[2])});
   } else if(photoListCapture && /^FILE_LIST_END,count=\d+,total=\d+$/.test(line)){
     photoListCapture=false; renderPhotoList(photoListBuf);
-    setMsg($("usbCamCmdMsg"), `Listed ${photoListBuf.length} saved file(s).`, "ok");
+    setMsg($("usbCamCmdMsg"), `已列出 ${photoListBuf.length} 個已存檔案。`, "ok");
     appendLog(camUi.logId, line + "\n");
   } else if(photoListCapture && /^ERROR/.test(line)){
     photoListCapture=false;
@@ -2584,7 +2593,7 @@ function cameraOnLine(rawLine){
 }
 // Decode a base64 file streamed over CDC (r command), download it, and preview
 // images (96x96 photos shown enlarged with crisp pixels).
-function finishPhotoDownload(b64, path){
+function finishPhoto下載(b64, path){
   try{
     const bin=atob((b64||"").replace(/\s+/g,""));
     const bytes=new Uint8Array(bin.length);
@@ -2600,12 +2609,12 @@ function finishPhotoDownload(b64, path){
       if(usbPhotoUrl) URL.revokeObjectURL(usbPhotoUrl);
       usbPhotoUrl=url; img.src=url; img.style.display="block"; if(ph) ph.style.display="none";
     } else { URL.revokeObjectURL(url); }
-    setMsg($("usbCamCmdMsg"), "Downloaded "+name+" ("+bytes.length+" bytes) over CDC.", "ok");
-  }catch(e){ setMsg($("usbCamCmdMsg"), "Download decode failed: "+(e.message||e), "bad"); }
+    setMsg($("usbCamCmdMsg"), "下載ed "+name+" ("+bytes.length+" bytes) over CDC.", "ok");
+  }catch(e){ setMsg($("usbCamCmdMsg"), "下載 decode failed: "+(e.message||e), "bad"); }
 }
 function renderPhotoList(list){
   const host=$("usbPhotoList"); if(!host) return;
-  if(!list.length){ host.innerHTML='<div class="note">No saved images on EECamp yet.</div>'; return; }
+  if(!list.length){ host.innerHTML='<div class="note">EECamp 目前沒有已存 images。</div>'; return; }
   host.innerHTML="";
   list.forEach(f=>{
     const row=document.createElement("div"); row.style.display="flex"; row.style.justifyContent="space-between"; row.style.gap="10px"; row.style.padding="4px 0"; row.style.borderBottom="1px solid var(--border)";
@@ -2617,8 +2626,8 @@ function renderPhotoList(list){
 }
 function downloadPhoto(name){
   if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("usbCamCmdMsg"),"Connect the camera controls first.","bad"); return; }
-  if(UsbCam.storageOwner !== "app"){ setMsg($("usbCamCmdMsg"),"CDC download needs camera-owned storage. Safely eject EECamp, then click I ejected EECamp.","warn"); return; }
-  setMsg($("usbCamCmdMsg"), "Downloading "+name+" over CDC…", "warn");
+  if(UsbCam.storageOwner !== "app"){ setMsg($("usbCamCmdMsg"),"CDC download 需要 camera 擁有 storage。請先安全退出 EECamp，再按「我已退出 EECamp」。","warn"); return; }
+  setMsg($("usbCamCmdMsg"), "下載ing "+name+" over CDC…", "warn");
   cameraWrite("r "+name);
 }
 function parseInputControl(line){
@@ -2643,9 +2652,9 @@ function handleShutterButton(line){
   if(camUi === MODEL_CAMERA_UI){
     handleModelPhysicalShutter();
   } else if(camUi === FULL_CAMERA_UI){
-    setMsg("fullCameraMsg", "Physical shutter pressed: ESP saved the photo to flash. Mount MSC once when you want to view it on the PC.", "ok");
+    setMsg("fullCameraMsg", "已按下實體快門：ESP 已把照片存到 flash。想在 PC 看照片時，再 mount MSC。", "ok");
   } else if(camUi === USBCAM_UI){
-    setMsg("usbCamCmdMsg", "Physical shutter requested a capture. Waiting for the camera storage result...", "warn");
+    setMsg("usbCamCmdMsg", "實體快門已觸發 capture，等待 camera storage 結果...", "warn");
   }
 }
 async function handleModelPhysicalShutter(){
@@ -2653,14 +2662,14 @@ async function handleModelPhysicalShutter(){
   if(!className){
     try {
       await serialSend(`wbtn${shutterLink.button2}\n`);
-      setMsg("captureMsg", "Physical shutter pressed: no class selected, so the frame was saved to ESP flash only. Send 'usb' / mount MSC once to view it on the PC.", "ok");
+      setMsg("captureMsg", "已按下實體快門：沒有選 class，所以只存到 ESP flash。要在 PC 查看時，送出 'usb' / mount MSC。", "ok");
     } catch(e){
-      setMsg("captureMsg", "Physical shutter pressed, but ESP flash save command failed: "+e.message, "bad");
+      setMsg("captureMsg", "已按下實體快門，但 ESP flash 儲存 command 失敗："+e.message, "bad");
     }
     return;
   }
   if(!latestCameraFrame){
-    setMsg("captureMsg", "Physical shutter pressed. Waiting for a preview frame before dataset save.", "warn");
+    setMsg("captureMsg", "已按下實體快門，等待 preview frame 後存入 dataset。", "warn");
     return;
   }
   await saveCurrentFrameToDataset({source:"physical_shutter"});
@@ -2697,10 +2706,10 @@ async function connectCameraPreview(ui){
   camUi = ui;
   const sup=webSerialSupport();
   if(!sup.ok){ setMsg($(camUi.msgId), "OV2640 preview needs Chrome/Edge + HTTPS Web Serial.", "bad"); return; }
-  if(Serial.acquiring){ setMsg($(camUi.msgId), "A serial connection is opening — please wait a moment.", "warn"); return; }
+  if(Serial.acquiring){ setMsg($(camUi.msgId), "Serial connection 正在開啟，請稍等。", "warn"); return; }
   $(camUi.logId).textContent="";
   setText(camUi.resultId, "Prediction: --");
-  setMsg($(camUi.msgId), "Opening serial chooser for OV2640 preview...", "warn");
+  setMsg($(camUi.msgId), "正在開啟 OV2640 preview 的 serial 選擇視窗...", "warn");
   try {
     fpsStart = 0;
     frameCount = 0;
@@ -2723,32 +2732,32 @@ async function connectCameraPreview(ui){
       try { await cameraWrite("j"); } catch(_) {}
       fullInferenceTimer = setInterval(()=>{ if(Serial.mode==="raw" && Serial.writer && camUi===FULL_CAMERA_UI) cameraWrite("j").catch(()=>{}); }, 3000);
     }
-    setMsg($(camUi.msgId), ui === FULL_CAMERA_UI ? "Full firmware preview connected. Triggering inference every 3 seconds..." : "OV2640 preview connected. Waiting for JPEG frames and RESULT lines...", "ok");
+    setMsg($(camUi.msgId), ui === FULL_CAMERA_UI ? "Full firmware preview 已連線，每 3 秒觸發一次 inference..." : "OV2640 preview 已連線，等待 JPEG frames 與 RESULT lines...", "ok");
   } catch(e){
-    const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "Port selection cancelled." : "OV2640 connect failed: "+(e.message||e);
+    const msg=/No port selected|cancell/i.test(e.message||String(e)) ? "已取消 port 選擇。" : "OV2640 連線失敗："+(e.message||e);
     setMsg($(camUi.msgId), msg, "bad");
     await releaseSerial(camUi.logId);
   }
 }
 
 async function saveCurrentFrameToDataset(options={}){
-  if(!latestCameraFrame){ setMsg($("captureMsg"), "No camera frame yet.", "bad"); return; }
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "目前還沒有 camera frame。", "bad"); return; }
   const className = selectedCaptureClass();
-  if(!className){ setMsg($("captureMsg"), "Choose or type a gesture class first.", "bad"); return; }
+  if(!className){ setMsg($("captureMsg"), "請先選擇或輸入 gesture class。", "bad"); return; }
   const fromPhysical = options.source === "physical_shutter";
-  setMsg($("captureMsg"), fromPhysical ? "Physical shutter pressed: saving current frame to dataset..." : "Saving captured frame...", "warn");
+  setMsg($("captureMsg"), fromPhysical ? "已按下實體快門：正在把目前 frame 存入 dataset..." : "正在儲存 captured frame...", "warn");
   try {
     const r = await api("/api/model/ov2640/capture", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({class_name:className, split:$("captureSplit").value, source:latestCameraFrame.source||"camera", image_data:latestCameraFrame.dataUrl})});
     const prefix = fromPhysical ? "Physical shutter: " : "";
     setMsg($("captureMsg"), `${prefix}Saved processed 96x96 grayscale image ${r.filename} -> ${r.split}/${r.class_name}. Count: ${r.counts.train||0} train / ${r.counts.validation||0} val`, "ok");
     if($("newClassName")) $("newClassName").value="";
     await refreshClassMap();
-  } catch(e){ setMsg($("captureMsg"), "Save failed: "+e.message, "bad"); }
+  } catch(e){ setMsg($("captureMsg"), "儲存失敗："+e.message, "bad"); }
 }
 async function predictCurrentFrame(){
-  if(!latestCameraFrame){ setMsg($("captureMsg"), "No camera frame yet.", "bad"); return; }
+  if(!latestCameraFrame){ setMsg($("captureMsg"), "目前還沒有 camera frame。", "bad"); return; }
   const model = $("predictModel")?.value || "";
-  if(!model){ setMsg($("captureMsg"), "Choose a .keras model first.", "bad"); return; }
+  if(!model){ setMsg($("captureMsg"), "請先選擇 .keras model。", "bad"); return; }
   if(predictBusy) return;
   predictBusy = true;
   try {
@@ -2758,7 +2767,7 @@ async function predictCurrentFrame(){
     const raw = r.class_name === "NULL" && r.raw_class_name ? ` · raw ${r.raw_class_name}` : "";
     setText("modelGestureResult", `Prediction: ${r.prediction} (${r.class_name})${action}${conf}${raw}`);
     setMsg($("captureMsg"), r.class_name === "NULL" ? `Low confidence -> NULL${conf}` : `Predicted ${r.class_name}${conf}`, r.class_name === "NULL" ? "warn" : "ok");
-  } catch(e){ setMsg($("captureMsg"), "Predict failed: "+e.message, "bad"); }
+  } catch(e){ setMsg($("captureMsg"), "Prediction 失敗："+e.message, "bad"); }
   finally { predictBusy = false; }
 }
 function maybeLivePredict(){
@@ -2783,7 +2792,7 @@ const MAIN_MODEL_FLASH = { connectBtn:"mainConnectBtn", artifact:"mainFlashArtif
 function initOneModelFlashPanel(ids){
   if(!$(ids.connectBtn)) return;
   const sup=webSerialSupport();
-  if(sup.ok){ setMsg($(ids.status),"Ready. Select a model, then click Connect & flash model.",""); $(ids.connectBtn).disabled=false; return; }
+  if(sup.ok){ setMsg($(ids.status),"Ready。請選擇 model，再按「連線並 flash model」。",""); $(ids.connectBtn).disabled=false; return; }
   $(ids.connectBtn).disabled=true;
   if(sup.reason==="unsupported-browser") setMsg($(ids.status),"Web Serial not supported. Use Chrome or Edge.","bad");
   else setMsg($(ids.status),"Flashing needs HTTPS (secure context).","warn");
@@ -2799,52 +2808,52 @@ function initFlashPanel(){
 // "Connect & flash X firmware" pattern used everywhere else in the app.
 function makeModelConnectAndFlash(ids){ return async () => {
   const path=$(ids.artifact).value;
-  if(!path){ setMsg($(ids.status),"Select a TFLite model first.","bad"); return; }
+  if(!path){ setMsg($(ids.status),"請先選擇 TFLite model。","bad"); return; }
   $(ids.connectBtn).disabled=true;
   try {
     if(!Serial.loader){
       const sup=webSerialSupport(); if(!sup.ok){ setMsg($(ids.status),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
       if(!flashMeta){ try{ flashMeta=await api("/api/flash-meta"); }catch(e){ flashMeta={offset_int:3211264}; } }
       const chip=await espConnect({ terminal:ids.terminal, statusEl:ids.status, logId:ids.log });
-      setMsg($(ids.status),`Connected (${chip}). Flashing selected model...`,"ok");
+      setMsg($(ids.status),`已連線（${chip}）。正在 flash 選取的 model...`,"ok");
     }
     const offset=(flashMeta&&flashMeta.offset_int)||3211264;
-    setMsg($(ids.status),"Downloading model...","warn");
-    const resp=await fetch(ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(path)); if(!resp.ok) throw new Error("download failed ("+resp.status+")");
+    setMsg($(ids.status),"下載ing model...","warn");
+    const resp=await fetch(ORIGIN+"/api/artifacts/download?path="+encodeURIComponent(path)); if(!resp.ok) throw new Error("下載失敗（"+resp.status+"）");
     const data=binaryString(await resp.arrayBuffer()); appendLog(ids.log,`\n[portal] flashing ${path.split("/").pop()} (${data.length} bytes)\n`);
     await Serial.loader.writeFlash({ fileArray:[{data,address:offset}], flashSize:"keep",flashMode:"keep",flashFreq:"keep",eraseAll:false,compress:true,
       reportProgress:(i,w,t)=>{ const p=t?Math.round(w/t*100):0; setMsg($(ids.status),`Writing model... ${p}% (${w}/${t})`,"warn"); } });
-    setMsg($(ids.status),"Flash succeeded - model updated. Click again anytime to reflash.","ok");
+    setMsg($(ids.status),"Flash 成功，model 已更新。之後可再次按下重新 flash。","ok");
   } catch(e){
     const raw=e.message||String(e);
-    const m=/No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect/flash failed: "+raw);
+    const m=/No port selected|cancell/i.test(raw)?"已取消 port 選擇。":("連線/flash 失敗："+raw);
     appendLog(ids.log,"\n[portal] "+m+"\n"); setMsg($(ids.status),m,"bad");
   } finally { await releaseSerial(ids.log); $(ids.connectBtn).disabled=false; }
 }; }
 if($("connectBtn")) $("connectBtn").onclick = makeModelConnectAndFlash(DEPLOY_MODEL_FLASH);
 if($("mainConnectBtn")) $("mainConnectBtn").onclick = makeModelConnectAndFlash(MAIN_MODEL_FLASH);
-if($("copyOriginBtn")) $("copyOriginBtn").onclick = () => copyText(window.location.origin, $("flashStatus"), "Address copied - paste into the flag box, then Relaunch.");
+if($("copyOriginBtn")) $("copyOriginBtn").onclick = () => copyText(window.location.origin, $("flashStatus"), "網址已複製，請貼到 flag 欄位後 Relaunch。");
 // ---------- FIRMWARE FLASH (generic: output_demo + main_board) ----------
 async function loadFirmware(target, ids){
   setMsg($(ids.statusEl),"Checking firmware build…","warn");
-  try { ids.meta = await api("/api/firmware/meta?target="+target); } catch(e){ ids.meta={available:false,message:"Query failed: "+e.message}; }
+  try { ids.meta = await api("/api/firmware/meta?target="+target); } catch(e){ ids.meta={available:false,message:"查詢失敗："+e.message}; }
   renderFwImages(ids);
   const sup=webSerialSupport();
   if(!ids.meta.available){ $(ids.flashBtn).disabled=true; setMsg($(ids.statusEl), ids.meta.message||"Not built.", "bad"); }
   else if(!sup.ok){ $(ids.flashBtn).disabled=true; setMsg($(ids.statusEl), sup.reason==="insecure-http"
       ? "Firmware is built, but flashing needs HTTPS (secure context)." : "Web Serial not supported — use Chrome or Edge.", "bad"); }
-  else { $(ids.flashBtn).disabled=false; setMsg($(ids.statusEl),"Firmware build found. Click Connect & flash.","ok"); }
+  else { $(ids.flashBtn).disabled=false; setMsg($(ids.statusEl),"已找到 firmware build。請按連線並 flash。","ok"); }
 }
 function renderFwImages(ids){
   const host=$(ids.imagesEl); if(!host) return;
-  if(!ids.meta||!ids.meta.available){ host.innerHTML='<div class="note">'+((ids.meta&&ids.meta.message)||"No firmware build.")+'</div>'; return; }
+  if(!ids.meta||!ids.meta.available){ host.innerHTML='<div class="note">'+((ids.meta&&ids.meta.message)||"找不到 firmware build。")+'</div>'; return; }
   // Low-level flash offsets are intentionally hidden from the student UI.
   host.innerHTML=`<div class="note">Firmware images (${ids.meta.chip||"esp32s3"}):</div>`+
     (ids.meta.images||[]).map(im=>`<div><span>${im.name}</span><span>${fmtSize(im.size)}</span></div>`).join("");
 }
 function makeFwFlash(ids){
   return async () => {
-    if(!ids.meta||!ids.meta.available){ setMsg($(ids.statusEl), ids.meta&&ids.meta.message||"No build.","bad"); return; }
+    if(!ids.meta||!ids.meta.available){ setMsg($(ids.statusEl), ids.meta&&ids.meta.message||"沒有 build。","bad"); return; }
     const sup=webSerialSupport(); if(!sup.ok){ setMsg($(ids.statusEl),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
     $(ids.flashBtn).disabled=true;
     const term=makeTerminal(ids.logEl,(line)=>{ const s=String(line);
@@ -2855,15 +2864,15 @@ function makeFwFlash(ids){
       const chip=await espConnect({ terminal:term, statusEl:ids.statusEl, logId:ids.logEl });
       appendLog(ids.logEl,`\n[portal] ${chip} — downloading ${ids.meta.images.length} images…\n`);
       const fileArray=[];
-      for(const im of ids.meta.images){ const resp=await fetch(ORIGIN+im.url); if(!resp.ok) throw new Error("download failed for "+im.name+" ("+resp.status+")");
+      for(const im of ids.meta.images){ const resp=await fetch(ORIGIN+im.url); if(!resp.ok) throw new Error("下載 "+im.name+" 失敗（"+resp.status+"）");
         fileArray.push({data:binaryString(await resp.arrayBuffer()),address:im.offset_int}); appendLog(ids.logEl,`  ${im.name}: ${im.size} bytes @ ${im.offset}\n`); }
       setMsg($(ids.statusEl),"Writing firmware…","warn");
       await Serial.loader.writeFlash({ fileArray, flashSize:"keep", flashMode:ids.meta.flash_mode||"keep", flashFreq:ids.meta.flash_freq||"keep",
         eraseAll:false, compress:true, reportProgress:(i,w,t)=>{ const im=ids.meta.images[i]; const p=t?Math.round(w/t*100):0;
           setMsg($(ids.statusEl),`Writing ${im?im.name:("image "+(i+1))} (${i+1}/${ids.meta.images.length})… ${p}%`,"warn"); } });
-      setMsg($(ids.statusEl),"Firmware flash succeeded — board rebooting.","ok");
+      setMsg($(ids.statusEl),"Firmware flash 成功，board 正在 reboot。","ok");
     } catch(e){ const raw=e.message||String(e);
-      const m=/No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Firmware flash failed: "+raw);
+      const m=/No port selected|cancell/i.test(raw)?"已取消 port 選擇。":("Firmware flash 失敗："+raw);
       appendLog(ids.logEl,"\n[portal] "+m+"\n"); setMsg($(ids.statusEl),m,"bad"); }
     finally { await releaseSerial(ids.logEl); }   // always release the port
   };
@@ -2882,7 +2891,7 @@ let outBuildTimer = null, outBuildOffset = 0, outBuildJobId = null;
 function lockOutputFlash(){
   const b=$("outFwFlashBtn"); if(b) b.disabled=true;
   if(OUTFW) OUTFW.meta=null;
-  const host=$("outFwImages"); if(host) host.innerHTML='<div class="note">Build first to enable flashing.</div>';
+  const host=$("outFwImages"); if(host) host.innerHTML='<div class="note">請先 build，成功後才能 flash。</div>';
   setMsg($("outFwStatus"),"Build your code first to enable flashing.","warn");
 }
 async function loadTeachingBlock(){
@@ -2897,15 +2906,15 @@ async function pollOutBuild(){
     if(r.data){ const el=$("outBuildLog"); el.textContent+=r.data; el.scrollTop=el.scrollHeight; }
     outBuildOffset=r.offset;
     if(r.status==="succeeded"){ clearInterval(outBuildTimer); outBuildTimer=null; $("outBuildBtn").disabled=false;
-      setMsg($("outBuildStatus"),"Build succeeded — flashing unlocked below.","ok"); await loadFirmware("output_demo", OUTFW); refreshJobs(); }
+      setMsg($("outBuildStatus"),"Build 成功，下方 flash 已解鎖。","ok"); await loadFirmware("output_demo", OUTFW); refreshJobs(); }
     else if(r.status==="failed"){ clearInterval(outBuildTimer); outBuildTimer=null; $("outBuildBtn").disabled=false;
-      setMsg($("outBuildStatus"),"Build failed (rc="+r.returncode+"). Read the compiler errors above, fix your code, and build again.","bad"); lockOutputFlash(); refreshJobs(); }
+      setMsg($("outBuildStatus"),"Build 失敗（rc="+r.returncode+"）。請閱讀上方 compiler errors，修正 code 後再 build。","bad"); lockOutputFlash(); refreshJobs(); }
   } catch(e){}
 }
 $("outBuildBtn").onclick = async () => {
   const code=$("outCode").value;
   $("outBuildBtn").disabled=true; lockOutputFlash();
-  $("outBuildLog").textContent=""; setMsg($("outBuildStatus"),"Saving code & starting build…","warn");
+  $("outBuildLog").textContent=""; setMsg($("outBuildStatus"),"正在儲存 code 並開始 build…","warn");
   let job;
   try { const r=await api("/api/output/build",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({code})}); job=r.job; }
   catch(e){ setMsg($("outBuildStatus"),"Could not start build: "+e.message+" (a training/quantization job may be running)","bad"); $("outBuildBtn").disabled=false; return; }
@@ -2918,8 +2927,8 @@ $("outBuildBtn").onclick = async () => {
 $("outResetBtn").onclick = async () => {
   if(!confirm("Reset the code to the default pattern? Your edits will be lost.")) return;
   try { const r=await api("/api/output/reset-block",{method:"POST"}); $("outCode").value=r.code;
-    setMsg($("outBuildStatus"),"Reset to the default pattern. Click Build firmware to compile it.","ok"); lockOutputFlash(); }
-  catch(e){ setMsg($("outBuildStatus"),"Reset failed: "+e.message,"bad"); }
+    setMsg($("outBuildStatus"),"已重設為預設 pattern。請按 Build firmware 重新編譯。","ok"); lockOutputFlash(); }
+  catch(e){ setMsg($("outBuildStatus"),"重設失敗："+e.message,"bad"); }
 };
 $("modelFwRefreshBtn").onclick = () => loadFirmware("model_finetune", MODELFW);
 $("benchFwRefreshBtn").onclick = () => loadFirmware("deploy_benchmark", BENCHFW);
@@ -2932,19 +2941,19 @@ let ledIsOn = false;
 async function ctrlSend(cmd){
   if(!(Serial.mode==="raw" && Serial.writer)){ setMsg($("ctrlStatus"),"Connect for control first.","bad"); return; }
   try { await serialSend(cmd+"\n"); appendLog("ctrlLog","> "+cmd+"\n"); }
-  catch(e){ setMsg($("ctrlStatus"),"Send failed: "+(e.message||e),"bad"); }
+  catch(e){ setMsg($("ctrlStatus"),"傳送失敗："+(e.message||e),"bad"); }
 }
 $("ctrlConnectBtn").onclick = async () => {
   const sup=webSerialSupport(); if(!sup.ok){ setMsg($("ctrlStatus"),"Web Serial unavailable (Chrome/Edge + HTTPS).","bad"); return; }
-  if(Serial.acquiring){ setMsg($("ctrlStatus"),"A serial connection is opening — please wait a moment.","warn"); return; }
+  if(Serial.acquiring){ setMsg($("ctrlStatus"),"Serial connection 正在開啟，請稍等。","warn"); return; }
   try {
     $("ctrlLog").textContent="";
     await serialOpenRaw({ logId:"ctrlLog", baudRate:115200 });   // releases any prior flow, opens, starts pump (echoes to ctrlLog)
     ["ledPatternBtn","ledToggleBtn","ledBlinkBtn","ledTestBtn","ledStatusBtn","pwmSlider"].forEach(id=>$(id).disabled=false);
     ledIsOn = false; setText("ledToggleBtn","Turn LED On");
-    setMsg($("ctrlStatus"),"Connected. Use the buttons / slider.","ok");
+    setMsg($("ctrlStatus"),"已連線。可以使用按鈕與 slider。","ok");
   } catch(e){ const raw=e.message||String(e);
-    setMsg($("ctrlStatus"), /No port selected|cancell/i.test(raw)?"Port selection cancelled.":("Connect failed: "+raw), "bad");
+    setMsg($("ctrlStatus"), /No port selected|cancell/i.test(raw)?"已取消 port 選擇。":("連線失敗："+raw), "bad");
     await releaseSerial("ctrlLog"); }
 };
 $("ledPatternBtn").onclick = () => ctrlSend("PATTERN");
@@ -2990,14 +2999,14 @@ async function refreshDrive(){
   let files=[];
   try { files=(await api("/api/drive/list?folder="+encodeURIComponent(folder))).files||[]; }
   catch(e){ tb.innerHTML='<tr><td colspan="4" class="note">Could not list files: '+e.message+'</td></tr>'; return; }
-  if(!files.length){ tb.innerHTML='<tr><td colspan="4" class="note">No files yet. Upload a zip above.</td></tr>'; return; }
+  if(!files.length){ tb.innerHTML='<tr><td colspan="4" class="note">目前沒有檔案。請先在上方上傳 zip。</td></tr>'; return; }
   tb.innerHTML="";
   files.forEach(f=>{
     const dl=ORIGIN+"/api/drive/download?folder="+encodeURIComponent(folder)+"&name="+encodeURIComponent(f.name);
     const tr=document.createElement("tr");
     tr.innerHTML=`<td>${f.name}${f.is_image?' <span class="tag">img</span>':''}</td><td>${fmtSize(f.size)}</td><td>${f.modified}</td>`;
     const td=document.createElement("td");
-    const a=document.createElement("a"); a.href=dl; a.textContent="download";
+    const a=document.createElement("a"); a.href=dl; a.textContent="下載";
     const del=document.createElement("button"); del.className="secondary"; del.textContent="delete"; del.style.margin="0 0 0 10px"; del.style.padding="2px 8px";
     del.onclick=()=>driveDelete(folder, f.name);
     td.appendChild(a); td.appendChild(del); tr.appendChild(td); tb.appendChild(tr);
@@ -3011,21 +3020,21 @@ async function refreshDrive(){
   });
 }
 async function driveDelete(folder, name){
-  if(!confirm(`Delete "${name}" from ${folder}? This cannot be undone.`)) return;
+  if(!confirm(`刪除 "${name}" from ${folder}? This cannot be undone.`)) return;
   setMsg($("driveMsg"),"Deleting…","warn");
   try { await api("/api/drive/delete",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({folder,name})});
-    setMsg($("driveMsg"),`Deleted ${name}.`,"ok"); await refreshDrive(); }
-  catch(e){ setMsg($("driveMsg"),"Delete failed: "+e.message,"bad"); }
+    setMsg($("driveMsg"),`已刪除 ${name}。`,"ok"); await refreshDrive(); }
+  catch(e){ setMsg($("driveMsg"),"刪除失敗："+e.message,"bad"); }
 }
 function openImgModal(url){ const m=$("imgModal"); if(!m) return; $("imgModalImg").src=url; m.classList.add("open"); }
 if($("imgModal")) $("imgModal").onclick=()=>$("imgModal").classList.remove("open");
 $("driveUploadBtn").onclick = async () => {
-  const f=$("driveFile").files[0]; if(!f){ setMsg($("driveMsg"),"Choose a file first (zip recommended).","bad"); return; }
+  const f=$("driveFile").files[0]; if(!f){ setMsg($("driveMsg"),"請先選擇檔案（建議 zip）。","bad"); return; }
   const fd=new FormData(); fd.append("folder", driveFolder()); fd.append("file", f);
-  setMsg($("driveMsg"),`Uploading ${f.name}…`,"warn"); $("driveUploadBtn").disabled=true;
+  setMsg($("driveMsg"),`正在上傳 ${f.name}…`,"warn"); $("driveUploadBtn").disabled=true;
   try { const r=await api("/api/drive/upload",{method:"POST",body:fd});
-    setMsg($("driveMsg"),`Uploaded ${r.name} (${fmtSize(r.size)}) to ${r.folder}.`,"ok"); $("driveFile").value=""; await refreshDrive(); }
-  catch(e){ setMsg($("driveMsg"),"Upload failed: "+e.message,"bad"); }
+    setMsg($("driveMsg"),`已上傳 ${r.name}（${fmtSize(r.size)}）到 ${r.folder}。`,"ok"); $("driveFile").value=""; await refreshDrive(); }
+  catch(e){ setMsg($("driveMsg"),"上傳失敗： "+e.message,"bad"); }
   $("driveUploadBtn").disabled=false;
 };
 $("driveFolder").onchange = refreshDrive;
@@ -3068,7 +3077,7 @@ async function loadClassImages() {
     renderGallery();
   } catch(e) {
     gallery.innerHTML = "";
-    setMsg($("previewModalMsg"), "Failed to load images: " + e.message, "bad");
+    setMsg($("previewModalMsg"), "載入 images 失敗：" + e.message, "bad");
   }
 }
 
@@ -3077,7 +3086,7 @@ function renderGallery() {
   gallery.innerHTML = "";
   const list = currentPreviewImages[currentPreviewSplit] || [];
   if (!list.length) {
-    gallery.innerHTML = `<div class="note" style="grid-column:1/-1;">No images in ${currentPreviewSplit} split.</div>`;
+    gallery.innerHTML = `<div class="note" style="grid-column:1/-1;">${currentPreviewSplit} split 裡沒有 images。</div>`;
     return;
   }
   
@@ -3119,11 +3128,11 @@ function renderGallery() {
     delBtn.style.alignItems = "center";
     delBtn.style.cursor = "pointer";
     delBtn.style.boxShadow = "0 1px 4px rgba(0,0,0,0.3)";
-    delBtn.title = "Delete this image";
+    delBtn.title = "刪除 this image";
     
     delBtn.onclick = async (e) => {
       e.stopPropagation();
-      if (!confirm(`Delete this image "${filename}"?`)) return;
+      if (!confirm(`刪除 this image "${filename}"?`)) return;
       setMsg($("previewModalMsg"), `Deleting image...`, "warn");
       try {
         await api("/api/dataset/delete-image", {
@@ -3135,11 +3144,11 @@ function renderGallery() {
             filename: filename
           })
         });
-        setMsg($("previewModalMsg"), `Deleted successfully!`, "ok");
+        setMsg($("previewModalMsg"), `已刪除 successfully!`, "ok");
         await loadClassImages();
         await refreshClassMap();
       } catch(err) {
-        setMsg($("previewModalMsg"), "Delete failed: " + err.message, "bad");
+        setMsg($("previewModalMsg"), "刪除失敗：" + err.message, "bad");
       }
     };
     
@@ -3181,3 +3190,4 @@ init();
 </script>
 </body>
 </html>
+

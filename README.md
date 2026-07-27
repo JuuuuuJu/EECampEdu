@@ -1,4 +1,4 @@
-# EECampEdu
+﻿# EECampEdu
 
 ESP32-S3 gesture-recognition robotic arm teaching system.
 
@@ -49,6 +49,16 @@ Formula: portal port is `4430 + team number`; SSH port is `220 + team number`.
 | `firmware/pc/` | PC-side benchmark and quantization tools used by the portal. |
 | `model_finetune/` | Training scripts, dataset placeholders, class mapping, webcam fallback demo. |
 
+## Syncing Code Across AI PCs
+
+For classroom maintenance, one tested AI PC can push its current local working tree to the other AI PCs without using git. Use the rsync-based helper:
+
+```bash
+bash deploy/sync_to_ai_pcs.sh          # dry-run, shows what would change
+bash deploy/sync_to_ai_pcs.sh --apply  # sync Teams 1-9, rebuild firmware, restart services
+```
+
+Details and safety notes are in `docs/AIPC_SERVER_README.md`.
 ## Important Notes
 
 - Passwords are not committed in plaintext. Runtime secrets live in `deploy/eecamp-portal.env`, which is git-ignored.
